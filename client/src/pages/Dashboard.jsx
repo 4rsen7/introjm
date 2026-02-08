@@ -1,13 +1,23 @@
-import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight } from 'lucide-react'
-
-const dummyJourneys = [
-  { id: 1, title: "E-commerce Checkout", date: "2 hours ago", color: "bg-blue-100" },
-  { id: 2, title: "Mobile App Onboarding", date: "Yesterday", color: "bg-purple-100" },
-  { id: 3, title: "Customer Support Flow", date: "3 days ago", color: "bg-green-100" },
-]
+import { useState, useRef, useEffect } from 'react'
+import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Archive, Trash2, Layout } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import ConfirmModal from '../ConfirmModal'
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
-export default function Dashboard({ onNewJourney, onNewPersona, onViewAllJourneys, onNewMetric }) {
+export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
+
+  const handleConfirmAction = () => {
+      const { action, item } = confirmConfig;
+      if (action === 'delete' && onDelete) onDelete(item.id);
+      if (action === 'duplicate' && onDuplicate) onDuplicate(item);
+      setConfirmConfig({ isOpen: false, action: null, item: null });
+  };
+
+  const openConfirm = (action, item) => {
+      setConfirmConfig({ isOpen: true, action, item });
+  };
+
   return (
     <div className="p-8 h-full overflow-auto bg-gray-50/30">
       <header className="mb-8 flex items-center justify-between">
@@ -55,14 +65,25 @@ export default function Dashboard({ onNewJourney, onNewPersona, onViewAllJourney
         </div>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {dummyJourneys.map(journey => (
-                <JourneyCard key={journey.id} journey={journey} onClick={onNewJourney} />
+            {[...journeys]
+                .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
+                .slice(0, 3)
+                .map(journey => (
+                <Link key={journey.id} to={`/journey/${journey.id}`} className="block">
+                    <JourneyCard 
+                        journey={journey} 
+                        onDuplicate={() => openConfirm('duplicate', journey)}
+                        onArchive={() => onArchive && onArchive(journey.id)}
+                        onDelete={() => openConfirm('delete', journey)}
+                    />
+                </Link>
             ))}
             
             {/* Create New Placeholder Card */}
             <button 
+                type="button"
                 onClick={onNewJourney}
-                className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer flex flex-col items-center justify-center h-48 group text-gray-400 hover:text-orange-600"
+                className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer flex flex-col items-center justify-center h-[220px] group text-gray-400 hover:text-orange-600"
             >
                 <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-2 group-hover:border-orange-200 group-hover:bg-orange-100 transition-colors">
                     <Plus size={20} />
@@ -71,6 +92,16 @@ export default function Dashboard({ onNewJourney, onNewPersona, onViewAllJourney
             </button>
         </div>
       </section>
+
+      <ConfirmModal 
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
+        onConfirm={handleConfirmAction}
+        title={confirmConfig.action === 'delete' ? "Delete this map?" : "Duplicate map?"}
+        message={confirmConfig.action === 'delete' ? "Are you sure you want to delete this journey map? This action cannot be undone." : `Create a copy of "${confirmConfig.item?.title}"?`}
+        isDestructive={confirmConfig.action === 'delete'}
+        confirmText={confirmConfig.action === 'delete' ? "Delete" : "Duplicate"}
+      />
     </div>
   )
 }
@@ -78,6 +109,7 @@ export default function Dashboard({ onNewJourney, onNewPersona, onViewAllJourney
 function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
     return (
         <button 
+            type="button"
             onClick={onClick}
             className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all text-left group h-24"
         >
@@ -95,35 +127,177 @@ function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
     )
 }
 
-function JourneyCard({ journey, onClick }) {
+function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
+    const date = getRelativeTime(journey.updated_at || journey.created_at);
+    // Отримуємо унікальний стиль на основі ID
+    const style = getJourneyStyle(journey.id); 
+    const [showMenu, setShowMenu] = useState(false);
+    const menuRef = useRef(null);
+
+    // Закриття меню при кліку поза межами
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (menuRef.current && !menuRef.current.contains(event.target)) {
+                setShowMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleMenuClick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowMenu((prev) => !prev);
+    };
+
+    const handleAction = (e, action) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (action) action();
+        setShowMenu(false);
+    };
+
     return (
         <div 
-            onClick={onClick}
-            className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg hover:border-gray-300 transition-all cursor-pointer group flex flex-col h-48 relative"
+            className="group relative bg-white rounded-xl border border-gray-200 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-gray-300 transition-all duration-200 ease-out h-[220px] flex flex-col"
+            onMouseLeave={() => setShowMenu(false)}
         >
-            {/* Preview Area */}
-            <div className={`h-28 ${journey.color} relative p-4 overflow-hidden`}>
-                {/* Abstract Pattern */}
-                <div className="absolute inset-0 opacity-30 bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:16px_16px]"></div>
+            {/* Preview Area (The "Tech" Look) */}
+            <div className="h-32 relative overflow-hidden bg-gray-50/50 border-b border-gray-100 rounded-t-xl">
+                {/* Dot Grid Pattern - фон у крапочку */}
+                <div className="absolute inset-0 opacity-[0.4]" 
+                     style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '16px 16px' }}>
+                </div>
                 
-                {/* Mini UI Mockup */}
-                <div className="w-full h-full bg-white/60 rounded-t-lg border-t border-l border-r border-white/50 shadow-sm translate-y-2"></div>
-                
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-1.5 bg-white/90 hover:bg-white rounded-md text-gray-600 shadow-sm backdrop-blur-sm">
+                {/* Mockup of a Map (Miniature) - малює схему */}
+                <div className="absolute inset-0 p-4 flex flex-col justify-center items-center opacity-80 group-hover:scale-[1.02] transition-transform duration-500">
+                    <MockMapPreview colorClass={style.accent} />
+                </div>
+
+                {/* Badge Type */}
+                <div className="absolute top-3 left-3 px-2 py-0.5 bg-white/90 backdrop-blur border border-gray-200 rounded text-[10px] font-medium text-gray-500 shadow-sm z-10">
+                    CJM
+                </div>
+            </div>
+
+            {/* Menu Button */}
+            <div className={`absolute top-2 right-2 z-20 transition-opacity duration-200 ${showMenu ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} ref={menuRef}>
+                <div className="relative">
+                    <button 
+                        onClick={handleMenuClick} 
+                        className={`p-1.5 rounded-md transition-colors shadow-sm border ${showMenu ? 'bg-white text-gray-900 border-gray-200' : 'bg-white/80 hover:bg-white text-gray-500 hover:text-gray-900 border-transparent hover:border-gray-200'}`}
+                    >
                         <MoreHorizontal size={16} />
                     </button>
+                    
+                    {showMenu && (
+                        <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 z-30 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                            <button onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> Duplicate</button>
+                            <button onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> Archive</button>
+                            <div className="h-px bg-gray-100 my-1"></div>
+                            <button onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
+                        </div>
+                    )}
                 </div>
             </div>
             
-            {/* Info Area */}
-            <div className="p-4 flex-1 flex flex-col justify-center border-t border-gray-50">
-                <h4 className="font-bold text-gray-900 text-sm mb-1 truncate group-hover:text-orange-600 transition-colors">{journey.title}</h4>
-                <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Clock size={12} />
-                    <span>{journey.date}</span>
+            {/* Content Area */}
+            <div className="p-4 flex-1 flex flex-col justify-between bg-white rounded-b-xl">
+                <div>
+                    <h4 className="font-semibold text-gray-900 text-sm leading-snug truncate pr-4 group-hover:text-indigo-600 transition-colors">
+                        {journey.title}
+                    </h4>
+                    {/* Fake stats to make it look pro */}
+                    <div className="flex items-center gap-3 mt-2">
+                         <div className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                            <Layout size={10} />
+                            <span>5 stages</span>
+                         </div>
+                    </div>
+                </div>
+                
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-3 pt-3 border-t border-gray-50">
+                    <Clock size={11} />
+                    <span>Edited {date}</span>
                 </div>
             </div>
         </div>
     )
+}
+
+function getRelativeTime(dateString) {
+    if (!dateString) return 'Just now';
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    
+    let interval = Math.floor(seconds / 31536000);
+    if (interval >= 1) return interval + (interval === 1 ? " year ago" : " years ago");
+    
+    interval = Math.floor(seconds / 2592000);
+    if (interval >= 1) return interval + (interval === 1 ? " month ago" : " months ago");
+    
+    interval = Math.floor(seconds / 86400);
+    if (interval >= 1) return interval + (interval === 1 ? " day ago" : " days ago");
+    
+    interval = Math.floor(seconds / 3600);
+    if (interval >= 1) return interval + (interval === 1 ? " hour ago" : " hours ago");
+    
+    interval = Math.floor(seconds / 60);
+    if (interval >= 1) return interval + (interval === 1 ? " minute ago" : " minutes ago");
+    
+    return "Just now";
+}
+
+// Компонент, що малює міні-схему (щоб карта виглядала як інтерфейс)
+function MockMapPreview({ colorClass }) {
+    return (
+        <div className="w-full max-w-[180px] flex flex-col gap-2 transform rotate-0">
+             {/* Header Blocks */}
+             <div className="flex gap-2 w-full">
+                <div className={`h-2 w-1/3 rounded-sm opacity-40 ${colorClass}`}></div>
+                <div className={`h-2 w-1/3 rounded-sm opacity-30 ${colorClass}`}></div>
+                <div className={`h-2 w-1/3 rounded-sm opacity-20 ${colorClass}`}></div>
+             </div>
+             {/* Body Lines */}
+             <div className="flex gap-2 w-full mt-1">
+                 <div className="w-1/3 flex flex-col gap-1.5">
+                    <div className="h-1.5 w-full bg-gray-200 rounded-sm"></div>
+                    <div className="h-1.5 w-2/3 bg-gray-100 rounded-sm"></div>
+                 </div>
+                 <div className="w-1/3 flex flex-col gap-1.5 pt-2">
+                    <div className="h-1.5 w-full bg-gray-200 rounded-sm"></div>
+                 </div>
+                 <div className="w-1/3 flex flex-col gap-1.5 pt-1">
+                    <div className="h-1.5 w-3/4 bg-gray-200 rounded-sm"></div>
+                    <div className="h-1.5 w-full bg-gray-100 rounded-sm"></div>
+                 </div>
+             </div>
+             {/* Curve Line (SVG) */}
+             <svg className="w-full h-8 mt-1 text-gray-300" viewBox="0 0 100 20" fill="none" preserveAspectRatio="none">
+                 <path d="M0 15 C 20 15, 30 5, 50 5 C 70 5, 80 12, 100 12" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round"/>
+                 <circle cx="50" cy="5" r="2" className={colorClass.replace('bg-', 'text-')} fill="currentColor" />
+             </svg>
+        </div>
+    )
+}
+
+const JOURNEY_STYLES = [
+    { accent: 'bg-blue-400' },
+    { accent: 'bg-indigo-400' },
+    { accent: 'bg-violet-400' },
+    { accent: 'bg-emerald-400' },
+    { accent: 'bg-orange-400' },
+    { accent: 'bg-rose-400' },
+];
+
+function getJourneyStyle(id) {
+  if (!id) return JOURNEY_STYLES[0];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % JOURNEY_STYLES.length;
+  return JOURNEY_STYLES[index];
 }

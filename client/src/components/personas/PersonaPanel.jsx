@@ -17,7 +17,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, is
     return (
       <button 
         onClick={onToggle}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 transition-colors text-sm font-medium"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 transition-colors text-sm font-medium whitespace-nowrap"
       >
         <Plus size={16} />
         <span>Add Persona</span>
@@ -84,9 +84,9 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, is
             <span className="font-bold text-xs">{persona.name.charAt(0)}</span>
           )}
         </div>
-        <div className="text-left hidden md:block">
+        <div className="text-left hidden md:flex items-center gap-2">
           <div className="text-sm font-bold text-gray-900 leading-none">{persona.name}</div>
-          <div className="text-[10px] text-gray-500 font-medium leading-none mt-1">{persona.role}</div>
+          <div className="text-xs text-gray-500 font-medium leading-none">{persona.role}</div>
         </div>
         
         <ChevronDown size={16} className={`text-gray-400 transition-transform ml-auto ${isExpanded ? 'rotate-180' : ''}`} />
@@ -96,7 +96,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, is
       {isExpanded && (
         <>
           <div className="fixed inset-0 z-40" onClick={onToggle}></div>
-          <div className="absolute top-full right-0 mt-2 w-[500px] bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300 cursor-default">
+          <div className="absolute top-full left-0 mt-2 w-[500px] bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300 cursor-default">
             <div className="p-6 bg-gray-50/30 relative">
               <button 
                 type="button"

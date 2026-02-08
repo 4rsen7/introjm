@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User } from 'lucide-react'
+import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud } from 'lucide-react'
+import { useParams } from 'react-router-dom';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { 
   DndContext, 
   closestCenter, 
@@ -75,6 +78,8 @@ function SortableLaneItem({ id, children, zIndexOverride }) {
 }
 
 export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGlobalPersona, onSaveGlobalMetric }) {
+  const { id } = useParams();
+  const journeyId = id;
   const [gridColumns, setGridColumns] = useState(Array.from({ length: 5 }, (_, i) => ({ id: `col-${i + 1}` })))
   const [elevatedLaneId, setElevatedLaneId] = useState(null)
   const [activeDragItem, setActiveDragItem] = useState(null);
@@ -133,11 +138,90 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
   const [activeColMenu, setActiveColMenu] = useState(null)
   const [isExporting, setIsExporting] = useState(false)
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, type: null, data: null });
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 2000)
-    return () => clearTimeout(timer)
-  }, [])
+    const fetchJourneyData = async () => {
+      if (!journeyId) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/journeys/${journeyId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          const j = data.data;
+          setJourneyMeta({
+            title: j.title,
+            description: j.description || '',
+            status: j.status || 'draft',
+            owner: j.owner || '' // In real app, fetch user name by ID
+          });
+
+          // If map_data exists in DB, load it. Otherwise use defaults.
+          if (j.map_data) {
+             if (j.map_data.lanes) setLanes(j.map_data.lanes);
+             if (j.map_data.cells) setCells(j.map_data.cells);
+             if (j.map_data.gridColumns) setGridColumns(j.map_data.gridColumns);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load journey:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchJourneyData();
+  }, [journeyId]);
+
+  // Auto-save Effect
+  useEffect(() => {
+    if (!journeyId || isLoading) return;
+
+    const saveData = async () => {
+      setIsSaving(true);
+      try {
+        const token = localStorage.getItem('token');
+        const map_data = {
+          lanes,
+          cells,
+          gridColumns
+        };
+        
+        const payload = {
+          title: journeyMeta.title,
+          description: journeyMeta.description,
+          status: journeyMeta.status,
+          map_data
+        };
+
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/journeys/${journeyId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(payload)
+        });
+        
+        if (response.ok) {
+            setLastSaved(new Date());
+        }
+      } catch (error) {
+        console.error("Auto-save failed:", error);
+      } finally {
+        setIsSaving(false);
+      }
+    };
+
+    const timer = setTimeout(saveData, 2000); // Debounce 2s
+    return () => clearTimeout(timer);
+  }, [journeyId, lanes, cells, gridColumns, journeyMeta, isLoading]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -321,11 +405,42 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
       setIsExporting(true);
       setSelectedCardId(null); // Deselect any active card
       setIsHeaderMenuOpen(false);
-      
+
       // Allow DOM to update
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      window.print();
+
+      // Store current zoom and reset to 1 for capture to ensure best quality
+      const originalZoom = zoom;
+      setZoom(1);
+
+      // Wait for zoom reset render
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      const element = scrollContainerRef.current.firstChild;
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // Higher quality
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [canvas.width, canvas.height] // Custom format matching the map size
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save(`${journeyMeta.title || 'journey-map'}.pdf`);
+
+      // Restore zoom
+      setZoom(originalZoom);
     } catch (error) {
       console.error("Export failed:", error);
     } finally {
@@ -547,19 +662,28 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
                   </>
                 )}
               </div>
+
+              {/* PERSONA PANEL (Moved here) */}
+              <PersonaPanel 
+                persona={persona} 
+                isExpanded={isPersonaExpanded} 
+                onToggle={() => {
+                  if (!persona) setIsPersonaPickerOpen(true);
+                  else setIsPersonaExpanded(!isPersonaExpanded);
+                }} 
+                onEdit={() => setIsPersonaModalOpen(true)}
+                isExporting={isExporting}
+              />
             </div>
 
-            {/* PERSONA PANEL (Right Side) */}
-            <PersonaPanel 
-              persona={persona} 
-              isExpanded={isPersonaExpanded} 
-              onToggle={() => {
-                if (!persona) setIsPersonaPickerOpen(true);
-                else setIsPersonaExpanded(!isPersonaExpanded);
-              }} 
-              onEdit={() => setIsPersonaModalOpen(true)}
-              isExporting={isExporting}
-            />
+            {/* Save Status Indicator */}
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-400 hide-on-export min-w-[80px] justify-end ml-auto">
+                {isSaving ? (
+                    <><div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div> Saving...</>
+                ) : lastSaved ? (
+                    <><Cloud size={14} /> Saved</>
+                ) : null}
+            </div>
           </div>
         </div>
 

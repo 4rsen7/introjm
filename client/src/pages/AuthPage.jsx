@@ -11,6 +11,8 @@ const AuthPage = ({ onLogin }) => {
     password: ''
   });
   const [errors, setErrors] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
 
 
   const validateForm = () => {
@@ -38,10 +40,68 @@ const AuthPage = ({ onLogin }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setServerError('');
+
     if (validateForm()) {
-      if (onLogin) onLogin();
+      setIsLoading(true);
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL;
+        const endpoint = isLogin ? '/login' : '/register';
+        
+        const payload = {
+          email: formData.email,
+          password: formData.password,
+          ...(!isLogin && {
+            firstName: formData.firstName,
+            lastName: formData.lastName
+          })
+        };
+
+        const response = await fetch(`${apiUrl}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || data.message || 'Authentication failed');
+        }
+
+        if (!isLogin) {
+           // Try to auto-login after registration
+           const loginRes = await fetch(`${apiUrl}/login`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ email: formData.email, password: formData.password })
+           });
+           
+           if (loginRes.ok) {
+             const loginData = await loginRes.json();
+             localStorage.setItem('token', loginData.session?.access_token);
+             localStorage.setItem('user', JSON.stringify(loginData.user));
+             if (onLogin) onLogin(loginData.user);
+             return;
+           }
+           
+           setIsLogin(true);
+           alert('Account created successfully! Please sign in.');
+           return;
+        }
+
+        // Login Success
+        localStorage.setItem('token', data.session?.access_token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        if (onLogin) onLogin(data.user);
+
+      } catch (err) {
+        setServerError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -68,6 +128,12 @@ const AuthPage = ({ onLogin }) => {
           <p className="text-gray-500 mb-8">
             {isLogin ? 'Enter your details to access your workspace.' : 'Start your 14-day free trial. No credit card required.'}
           </p>
+
+          {serverError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg flex items-center gap-2">
+              <span className="font-medium">Error:</span> {serverError}
+            </div>
+          )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             {!isLogin && (
@@ -144,8 +210,12 @@ const AuthPage = ({ onLogin }) => {
               </div>
             )}
 
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all transform active:scale-[0.98] shadow-md hover:shadow-lg mt-2">
-              {isLogin ? 'Sign In' : 'Create Account'}
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all transform active:scale-[0.98] shadow-md hover:shadow-lg mt-2 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center"
+            >
+              {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : (isLogin ? 'Sign In' : 'Create Account')}
             </button>
           </form>
 
@@ -185,7 +255,7 @@ const AuthPage = ({ onLogin }) => {
               {isLogin ? "Don't have an account? " : "Already have an account? "}
             </span>
             <button 
-              onClick={() => { setIsLogin(!isLogin); setErrors({}); }}
+              onClick={() => { setIsLogin(!isLogin); setErrors({}); setServerError(''); }}
               className="text-blue-600 hover:text-blue-700 font-bold hover:underline transition-colors"
             >
               {isLogin ? 'Sign up' : 'Sign in'}
