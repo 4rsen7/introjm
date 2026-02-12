@@ -7,7 +7,7 @@ export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, on
   }
 
   return (
-    <div className="w-72 shrink-0 px-2 border-l border-gray-100 relative group">
+    <div className="w-72 shrink-0 px-2 border-l border-gray-100 relative group z-0">
       {/* Hoverable Block with Menu Icon */}
       <div 
         className="h-6 flex items-center justify-center rounded hover:bg-gray-100 cursor-pointer transition-colors"

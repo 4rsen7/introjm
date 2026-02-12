@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Type, Link as LinkIcon } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Type, Link as LinkIcon, Maximize2, X } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import RichTextEditor from '../common/RichTextEditor'
@@ -9,11 +10,12 @@ import JourneyMetricCard from './JourneyMetricCard'
 const STAGE_COLORS = ['bg-blue-100', 'bg-green-100', 'bg-purple-100', 'bg-orange-100', 'bg-pink-100', 'bg-yellow-100', 'bg-red-100', 'bg-teal-100'];
 const COL_WIDTH = 288; // 18rem
 
-export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard }) {
+export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage }) {
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
   const [isStageFocused, setIsStageFocused] = useState(false)
   const isActive = selectedCardId === card.id
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false)
   const editorRef = useRef(null)
   const menuRef = useRef(null)
   const buttonRef = useRef(null)
@@ -228,7 +230,10 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
           </div>
         )}
         <div className="flex items-center gap-2 mb-2 text-gray-400 text-xs uppercase font-bold select-none"><ImageIcon size={12} /> Image</div>
-        <div className="h-24 bg-gray-50 border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition cursor-pointer">
+        <div 
+            onClick={(e) => { e.stopPropagation(); onUploadImage && onUploadImage(card.id); }}
+            className="h-24 bg-gray-50 border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition cursor-pointer"
+        >
            <ImageIcon size={20} className="mb-1" /> <span className="text-xs">Upload</span>
         </div>
       </div>
@@ -295,6 +300,43 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
              // Find the metric in globalMetrics using the ID stored in card.content
              <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
            )
+         ) : card.type === 'image' ? (
+             <div className="relative group/image">
+                 <img 
+                    src={card.content} 
+                    alt="Uploaded content" 
+                    className="w-full h-auto rounded-md object-cover border border-gray-100 cursor-pointer hover:opacity-95 transition-opacity" 
+                    onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
+                 />
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
+                    className="absolute bottom-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full opacity-0 group-hover/image:opacity-100 transition-opacity backdrop-blur-sm"
+                    title="Expand image"
+                 >
+                    <Maximize2 size={14} />
+                 </button>
+
+                 {isImageModalOpen && createPortal(
+                    <div 
+                        className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in fade-in duration-200"
+                        onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(false); }}
+                    >
+                        <button 
+                            className="absolute top-6 right-6 p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                            onClick={() => setIsImageModalOpen(false)}
+                        >
+                            <X size={32} />
+                        </button>
+                        <img 
+                            src={card.content} 
+                            alt="Full size" 
+                            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200"
+                            onClick={(e) => e.stopPropagation()} 
+                        />
+                    </div>,
+                    document.body
+                 )}
+             </div>
          ) : (
            <RichTextEditor 
               ref={editorRef}

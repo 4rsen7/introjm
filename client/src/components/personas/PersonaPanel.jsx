@@ -1,4 +1,4 @@
-import { ChevronDown, MapPin, Calendar, Quote, Plus, Target, AlertCircle, Edit2, User, Briefcase, GraduationCap, Smile, Bot, Baby } from 'lucide-react'
+import { ChevronDown, MapPin, Calendar, Plus, Target, AlertCircle, Edit2, User, Briefcase, GraduationCap, Smile, Bot, Baby, Trash2, Quote } from 'lucide-react'
 
 const getAvatarIcon = (id) => {
   switch(id) {
@@ -12,7 +12,7 @@ const getAvatarIcon = (id) => {
   }
 }
 
-export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, isExporting }) {
+export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, onDisconnect, isExporting }) {
   if (!persona) {
     return (
       <button 
@@ -47,7 +47,6 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, is
                 <div><span className="font-bold text-gray-800">Age:</span> {persona.age}</div>
                 <div><span className="font-bold text-gray-800">Location:</span> {persona.location}</div>
               </div>
-              <div className="italic text-gray-600 border-l-4 border-orange-200 pl-4">"{persona.quote}"</div>
            </div>
         </div>
         <div className="grid grid-cols-2 gap-8 mt-6 pt-6 border-t border-gray-200">
@@ -98,22 +97,35 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, is
           <div className="fixed inset-0 z-40" onClick={onToggle}></div>
           <div className="absolute top-full left-0 mt-2 w-[500px] bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300 cursor-default">
             <div className="p-6 bg-gray-50/30 relative">
-              <button 
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition cursor-pointer z-10"
-                title="Edit Persona"
-              >
-                <Edit2 size={16} />
-              </button>
+              <div className="absolute top-4 right-4 flex gap-1 z-10">
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition cursor-pointer"
+                  title="Edit Persona"
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDisconnect && onDisconnect(); }}
+                  onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition cursor-pointer"
+                  title="Remove from Map"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
               <div className="grid grid-cols-1 gap-6">
                 {/* About */}
                 <div className="space-y-4">
-                  <div className="relative pl-4 border-l-4 border-orange-200 italic text-gray-600 text-sm leading-relaxed break-words pr-10">
-                    <Quote size={16} className="absolute -top-2 -left-2 text-orange-300 fill-orange-100" />
-                    "{persona.quote}"
-                  </div>
+                  {persona.bio && (
+                    <div className="relative pl-4 border-l-4 border-orange-200 italic text-gray-600 text-sm leading-relaxed break-words pr-10">
+                      <Quote size={16} className="absolute -top-2 -left-2 text-orange-300 fill-orange-100" />
+                      "{persona.bio}"
+                    </div>
+                  )}
                   <div className="flex items-center gap-4 text-xs font-medium text-gray-500 uppercase tracking-wide">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={14} /> {persona.age} years

@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { Search, RotateCcw, Trash2, Map, User, Archive as ArchiveIcon } from 'lucide-react';
+import { getAuthToken } from '../services/auth';
+import Tooltip from '../components/common/Tooltip';
+
+// Fallback to localhost:5001 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const ArchivePage = ({ 
   archivedJourneys = [], 
@@ -20,6 +25,78 @@ const ArchivePage = ({
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.role.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // --- API Handlers ---
+  const handleRestoreJourneyClick = async (id) => {
+      try {
+          const token = await getAuthToken();
+          console.log(`[Archive] Restoring journey ${id}...`);
+          const response = await fetch(`${API_URL}/journeys/${id}/restore`, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+              const { data } = await response.json();
+              console.log('[Archive] Restore success', data);
+              if (onRestoreJourney) onRestoreJourney(id);
+          } else {
+              console.error('[Archive] Failed to restore journey');
+          }
+      } catch (error) {
+          console.error('[Archive] Error restoring journey:', error);
+      }
+  };
+
+  const handleDeleteJourneyClick = async (id) => {
+      if (!confirm('Are you sure you want to permanently delete this journey?')) return;
+      try {
+          const token = await getAuthToken();
+          const response = await fetch(`${API_URL}/journeys/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+              if (onDeleteJourney) onDeleteJourney(id);
+          }
+      } catch (error) {
+          console.error('Error deleting journey:', error);
+      }
+  };
+
+  const handleRestorePersonaClick = async (id) => {
+      try {
+          const token = await getAuthToken();
+          const response = await fetch(`${API_URL}/personas/${id}/restore`, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+              if (onRestorePersona) onRestorePersona(id);
+          }
+      } catch (error) {
+          console.error('Error restoring persona:', error);
+      }
+  };
+
+  const handleDeletePersonaClick = async (id) => {
+      if (!confirm('Are you sure you want to permanently delete this persona?')) return;
+      try {
+          const token = await getAuthToken();
+          const response = await fetch(`${API_URL}/personas/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+              if (onDeletePersona) onDeletePersona(id);
+          }
+      } catch (error) {
+          console.error('Error deleting persona:', error);
+      }
+  };
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
@@ -66,7 +143,7 @@ const ArchivePage = ({
             <thead className="bg-gray-50/50">
                 <tr>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Deleted Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Archived Date</th>
                     <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
             </thead>
@@ -89,16 +166,20 @@ const ArchivePage = ({
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {journey.date || 'Unknown'}
+                                    {journey.updated_at ? new Date(journey.updated_at).toLocaleDateString() : 'Unknown'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                        <button onClick={() => onRestoreJourney(journey.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Restore">
-                                            <RotateCcw size={18} />
-                                        </button>
-                                        <button onClick={() => onDeleteJourney(journey.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Forever">
-                                            <Trash2 size={18} />
-                                        </button>
+                                        <Tooltip content="Restore">
+                                            <button onClick={() => handleRestoreJourneyClick(journey.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                                                <RotateCcw size={18} />
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip content="Delete">
+                                            <button onClick={() => handleDeleteJourneyClick(journey.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                <Trash2 size={18} />
+                                            </button>
+                                        </Tooltip>
                                     </div>
                                 </td>
                             </tr>
@@ -126,16 +207,20 @@ const ArchivePage = ({
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {persona.updatedAt || 'Unknown'}
+                                    {persona.updated_at ? new Date(persona.updated_at).toLocaleDateString() : 'Unknown'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                        <button onClick={() => onRestorePersona(persona.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Restore">
-                                            <RotateCcw size={18} />
-                                        </button>
-                                        <button onClick={() => onDeletePersona(persona.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete Forever">
-                                            <Trash2 size={18} />
-                                        </button>
+                                        <Tooltip content="Restore">
+                                            <button onClick={() => handleRestorePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                                                <RotateCcw size={18} />
+                                            </button>
+                                        </Tooltip>
+                                        <Tooltip content="Delete">
+                                            <button onClick={() => handleDeletePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                <Trash2 size={18} />
+                                            </button>
+                                        </Tooltip>
                                     </div>
                                 </td>
                             </tr>

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
+import { supabase } from '../supabaseClient';
+import { useQueryClient } from '@tanstack/react-query';
 
 const AuthPage = ({ onLogin }) => {
+  const queryClient = useQueryClient();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -48,6 +51,43 @@ const AuthPage = ({ onLogin }) => {
       setIsLoading(true);
       try {
         const apiUrl = import.meta.env.VITE_API_URL;
+
+        if (!isLogin) {
+           // Use Supabase SDK directly for registration to avoid race conditions 
+           // with backend triggers (duplicate key error in profiles table).
+           const { data, error } = await supabase.auth.signUp({
+             email: formData.email,
+             password: formData.password,
+             options: {
+               data: {
+                 full_name: `${formData.firstName} ${formData.lastName}`.trim(),
+               }
+             }
+           });
+
+           if (error) throw error;
+
+           if (data.session) {
+             // Explicitly upsert profile to ensure name is saved (fixes missing name issue)
+             const { error: profileError } = await supabase.from('profiles').upsert({
+                id: data.user.id,
+                email: formData.email,
+                full_name: `${formData.firstName} ${formData.lastName}`.trim()
+             });
+             
+             if (profileError) console.error("Profile update failed:", profileError);
+
+             localStorage.setItem('token', data.session.access_token);
+             localStorage.setItem('user', JSON.stringify(data.user));
+             queryClient.removeQueries(); // Clear cache for new user
+             if (onLogin) onLogin(data.user);
+           } else {
+             setIsLogin(true);
+             alert('Account created successfully! Please check your email to confirm.');
+           }
+           return;
+        }
+
         const endpoint = isLogin ? '/login' : '/register';
         
         const payload = {
@@ -71,30 +111,16 @@ const AuthPage = ({ onLogin }) => {
           throw new Error(data.error || data.message || 'Authentication failed');
         }
 
-        if (!isLogin) {
-           // Try to auto-login after registration
-           const loginRes = await fetch(`${apiUrl}/login`, {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ email: formData.email, password: formData.password })
-           });
-           
-           if (loginRes.ok) {
-             const loginData = await loginRes.json();
-             localStorage.setItem('token', loginData.session?.access_token);
-             localStorage.setItem('user', JSON.stringify(loginData.user));
-             if (onLogin) onLogin(loginData.user);
-             return;
-           }
-           
-           setIsLogin(true);
-           alert('Account created successfully! Please sign in.');
-           return;
-        }
-
         // Login Success
         localStorage.setItem('token', data.session?.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        queryClient.removeQueries(); // Clear cache for new user
+
+        // Sync session with Supabase Client SDK
+        if (data.session) {
+            await supabase.auth.setSession(data.session);
+        }
+
         if (onLogin) onLogin(data.user);
 
       } catch (err) {

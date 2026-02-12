@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
-import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
+import Tooltip from '../components/common/Tooltip';
+import ConfirmModal from '../ConfirmModal';
 
 const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedType, setSelectedType] = useState('');
 
-  const filteredMetrics = metrics.filter(m => 
-    m.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredMetrics = metrics.filter(m => {
+    const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = selectedType ? m.type === selectedType : true;
+    return matchesSearch && matchesType;
+  });
 
   const getTypeIcon = (type) => {
     switch(type) {
@@ -14,6 +20,17 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
       case 'Comparison': return <ArrowUpRight size={16} className="text-green-600" />;
       default: return <Hash size={16} className="text-orange-600" />;
     }
+  };
+
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, item: null });
+
+  const handleDeleteClick = (metric) => {
+      setConfirmConfig({ isOpen: true, item: metric });
+  };
+
+  const handleConfirmDelete = () => {
+      if (onDelete && confirmConfig.item) onDelete(confirmConfig.item.id);
+      setConfirmConfig({ isOpen: false, item: null });
   };
 
   return (
@@ -29,7 +46,8 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
         </button>
       </header>
 
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-col mb-6">
+       <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
@@ -40,10 +58,41 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
         </div>
-        <button className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 font-medium shadow-sm transition-colors">
+        <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+        >
             <Filter size={16} />
             <span>Filters</span>
         </button>
+      </div>
+
+      <div className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+        <div className="overflow-hidden">
+          <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
+            <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+                <div className="flex flex-col gap-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Type</label>
+                    <select 
+                        className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
+                        value={selectedType}
+                        onChange={(e) => setSelectedType(e.target.value)}
+                    >
+                        <option value="">All Types</option>
+                        <option value="Number">Number</option>
+                        <option value="Comparison">Comparison</option>
+                        <option value="Series">Series</option>
+                    </select>
+                </div>
+                {selectedType && (
+                    <button onClick={() => setSelectedType('')} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="Clear filters">
+                        <X size={16} />
+                    </button>
+                )}
+            </div>
+          </div>
+        </div>
+      </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -92,19 +141,42 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {metric.updatedAt}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {metric.linkedMaps} maps
+                <td className="px-6 py-4 whitespace-nowrap">
+                   {metric.linkedMaps > 0 ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                        Linked to {metric.linkedMaps} {metric.linkedMaps === 1 ? 'map' : 'maps'}
+                      </span>
+                  ) : (
+                      <span className="text-sm text-gray-400">(not used)</span>
+                  )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                        <MoreHorizontal size={18} />
-                    </button>
+                <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
+                    <Tooltip content="Edit">
+                        <button onClick={(e) => { e.stopPropagation(); onEdit && onEdit(metric); }} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <Edit size={18} />
+                        </button>
+                    </Tooltip>
+                    <Tooltip content="Delete">
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(metric); }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                            <Trash2 size={18} />
+                        </button>
+                    </Tooltip>
                 </td>
               </tr>
             )))}
           </tbody>
         </table>
       </div>
+
+      <ConfirmModal 
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig({ isOpen: false, item: null })}
+        onConfirm={handleConfirmDelete}
+        title="Delete Metric?"
+        message={`Are you sure you want to delete "${confirmConfig.item?.name}"? This action cannot be undone.`}
+        isDestructive={true}
+        confirmText="Delete"
+      />
     </div>
   );
 };

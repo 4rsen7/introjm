@@ -1,11 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud } from 'lucide-react'
-import { useParams } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2 } from 'lucide-react'
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   DndContext, 
   closestCenter, 
+  closestCorners,
   KeyboardSensor, 
   PointerSensor, 
   useSensor, 
@@ -31,10 +33,15 @@ import PersonaPicker from '../components/personas/PersonaPicker'
 import MetricPicker from '../components/metrics/MetricPicker'
 import MetricModal from '../components/metrics/MetricModal'
 import ConfirmModal from '../ConfirmModal'
+import { supabase } from '../supabaseClient'
+import { getAuthToken } from '../services/auth'
+
+// Fallback to localhost:5001 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const PRINT_STYLES = `
   /* Clean Print Mode */
-  .is-exporting .hide-on-export { display: none !important; }
+  /* .is-exporting .hide-on-export { display: none !important; } */ /* Disabled to keep all elements visible */
   .is-exporting { background: white !important; height: auto !important; overflow: visible !important; }
 
   @media print {
@@ -57,16 +64,31 @@ const PRINT_STYLES = `
   @media print { .hide-on-export { display: none !important; } }
 `;
 
-function SortableLaneItem({ id, children, zIndexOverride }) {
+const fetchJourney = async ({ queryKey }) => {
+  const [_key, id] = queryKey;
+  if (!id) return null;
+  const token = await getAuthToken();
+  const response = await fetch(`${API_URL}/journeys/${id}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (response.status === 401) throw new Error('Unauthorized');
+  if (!response.ok) throw new Error('Failed to fetch');
+  const data = await response.json();
+  return data.data;
+};
+
+function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = {
-    transform: CSS.Transform.toString(transform),
+    // Only apply transform if dragging to prevent breaking 'position: sticky'
+    transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
-    zIndex: isDragging ? 100 : (zIndexOverride || 'auto'),
-    position: 'relative',
+    zIndex: isDragging ? 100 : (isPinned ? 40 : (zIndexOverride || 'auto')),
+    position: isPinned ? 'sticky' : 'relative',
+    top: isPinned ? stickyTop : 'auto', 
   };
   return (
-    <div ref={setNodeRef} style={style} className={isDragging ? "opacity-50 shadow-lg ring-1 ring-orange-200 rounded-lg z-50 bg-white" : ""}>
+    <div ref={setNodeRef} style={style} className={`${isDragging ? "opacity-50 shadow-lg ring-1 ring-orange-200 rounded-lg z-50 bg-white" : ""} mb-4`}>
       {React.Children.map(children, child => {
         if (React.isValidElement(child)) {
           return React.cloneElement(child, { dragHandleProps: { ...attributes, ...listeners } });
@@ -77,14 +99,20 @@ function SortableLaneItem({ id, children, zIndexOverride }) {
   );
 }
 
-export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGlobalPersona, onSaveGlobalMetric }) {
+export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], onSaveGlobalPersona, onSaveGlobalMetric }) {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const location = useLocation();
   const journeyId = id;
+  const headerRef = useRef(null);
   const [gridColumns, setGridColumns] = useState(Array.from({ length: 5 }, (_, i) => ({ id: `col-${i + 1}` })))
   const [elevatedLaneId, setElevatedLaneId] = useState(null)
   const [activeDragItem, setActiveDragItem] = useState(null);
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [activePickerId, setActivePickerId] = useState(null);
+  const fileInputRef = useRef(null);
+  const [uploadTargetCardId, setUploadTargetCardId] = useState(null);
 
   const [lanes, setLanes] = useState([
     { id: 'stages-1', title: 'Journey Stages', type: 'stage', color: 'bg-gray-50', isPinned: true }, 
@@ -134,66 +162,123 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
   const scrollContainerRef = useRef(null)
   const hasMoved = useRef(false)
   const [isAddLaneMenuOpen, setIsAddLaneMenuOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [activeColMenu, setActiveColMenu] = useState(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, type: null, data: null });
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isMinLoadComplete, setIsMinLoadComplete] = useState(false);
+
+  // Sync local persona with global data (DB source of truth) whenever globalPersonas updates
+  useEffect(() => {
+    if (persona?.id && globalPersonas.length > 0) {
+      const freshPersona = globalPersonas.find(p => p.id === persona.id);
+      if (freshPersona && JSON.stringify(freshPersona) !== JSON.stringify(persona)) {
+        setPersona(freshPersona);
+      }
+    }
+  }, [globalPersonas, persona?.id]);
+
+  // Ensure persona has all expected arrays to prevent crashes in PersonaPanel
+  const safePersona = useMemo(() => {
+      if (!persona) return null;
+      return {
+          ...persona,
+          goals: Array.isArray(persona.goals) ? persona.goals : [],
+          frustrations: Array.isArray(persona.frustrations) ? persona.frustrations : [],
+          motivations: Array.isArray(persona.motivations) ? persona.motivations : [],
+          painPoints: Array.isArray(persona.painPoints) ? persona.painPoints : [],
+          bio: persona.bio || '',
+          age: persona.age || '',
+          location: persona.location || ''
+      };
+  }, [persona]);
+
+  // --- DATA LOADING (React Query) ---
+  const { 
+    data: journeyData, 
+    error: queryError, 
+    isLoading: isQueryLoading,
+    isError: isQueryError 
+  } = useQuery({
+    queryKey: ['journey', journeyId],
+    queryFn: fetchJourney,
+    enabled: !!journeyId,
+    initialData: location.state?.preloadedJourney,
+    staleTime: 1000 * 60 * 5, // 5 mins
+    gcTime: 1000 * 60 * 60 * 24, // 24 hours (persist)
+  });
+
+  // Helper to load data into state
+  const loadJourneyState = (j) => {
+    setJourneyMeta({
+      title: j.title,
+      description: j.description || '',
+      status: j.status || 'draft',
+      owner: j.owner || ''
+    });
+
+    if (j.map_data) {
+       let mapData = j.map_data;
+       if (typeof mapData === 'string') {
+           try { mapData = JSON.parse(mapData); } catch (e) { console.error(e); setLoadError(true); return; }
+       }
+       if (mapData.lanes) setLanes(mapData.lanes);
+       if (mapData.cells) setCells(mapData.cells);
+       if (mapData.gridColumns) setGridColumns(mapData.gridColumns);
+       if (mapData.emotionValues) setEmotionValues(mapData.emotionValues);
+       if (mapData.persona) {
+           // Try to find fresh data from global state, fallback to snapshot
+           const freshPersona = globalPersonas.find(p => p.id === mapData.persona.id);
+           setPersona(freshPersona || mapData.persona);
+       }
+    }
+  };
 
   useEffect(() => {
-    const fetchJourneyData = async () => {
-      if (!journeyId) {
-        setIsLoading(false);
-        return;
-      }
+    if (journeyData && !isDataLoaded) {
+      loadJourneyState(journeyData);
+      setIsDataLoaded(true);
+    }
+  }, [journeyData, isDataLoaded]);
 
-      setIsLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/journeys/${journeyId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-          const j = data.data;
-          setJourneyMeta({
-            title: j.title,
-            description: j.description || '',
-            status: j.status || 'draft',
-            owner: j.owner || '' // In real app, fetch user name by ID
-          });
+  // Force minimum load time for UX (to show tips and smooth transition)
+  useEffect(() => {
+    const timer = setTimeout(() => setIsMinLoadComplete(true), 1500); // 1.5s delay
+    return () => clearTimeout(timer);
+  }, []);
 
-          // If map_data exists in DB, load it. Otherwise use defaults.
-          if (j.map_data) {
-             if (j.map_data.lanes) setLanes(j.map_data.lanes);
-             if (j.map_data.cells) setCells(j.map_data.cells);
-             if (j.map_data.gridColumns) setGridColumns(j.map_data.gridColumns);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load journey:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchJourneyData();
-  }, [journeyId]);
+  // Handle Auth Errors
+  useEffect(() => {
+    if (queryError?.message === 'Unauthorized') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      supabase.auth.signOut();
+      queryClient.removeQueries(); // Clear cache on unauthorized
+      navigate('/');
+    }
+  }, [queryError, navigate]);
 
   // Auto-save Effect
   useEffect(() => {
-    if (!journeyId || isLoading) return;
+    // SAVE GUARD: Never save if data hasn't loaded successfully or if there's an error
+    if (!journeyId || !isDataLoaded || loadError || isQueryError) return;
+
+    const controller = new AbortController();
 
     const saveData = async () => {
       setIsSaving(true);
       try {
-        const token = localStorage.getItem('token');
+        const token = await getAuthToken();
         const map_data = {
           lanes,
           cells,
-          gridColumns
+          gridColumns,
+          persona,
+          emotionValues
         };
         
         const payload = {
@@ -203,25 +288,44 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
           map_data
         };
 
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/journeys/${journeyId}`, {
+        const response = await fetch(`${API_URL}/journeys/${journeyId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: controller.signal
         });
         
         if (response.ok) {
             setLastSaved(new Date());
+            // Update cache with latest state to ensure persistence is up to date
+            queryClient.setQueryData(['journey', journeyId], (old) => ({
+              ...old,
+              title: payload.title,
+              description: payload.description,
+              status: payload.status,
+              map_data: payload.map_data
+            }));
+
+            // Оновлюємо загальний список мап, щоб Дашборд побачив нову назву та дату
+            queryClient.invalidateQueries({ queryKey: ['journeys'] });
         }
       } catch (error) {
-        console.error("Auto-save failed:", error);
+        if (error.name !== 'AbortError') {
+          console.error("Auto-save failed:", error);
+        }
       } finally {
-        setIsSaving(false);
+        if (!controller.signal.aborted) {
+          setIsSaving(false);
+        }
       }
     };
 
     const timer = setTimeout(saveData, 2000); // Debounce 2s
-    return () => clearTimeout(timer);
-  }, [journeyId, lanes, cells, gridColumns, journeyMeta, isLoading]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [journeyId, lanes, cells, gridColumns, journeyMeta, isDataLoaded, loadError, isQueryError, persona, queryClient, emotionValues]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -246,10 +350,9 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
   }
   const handleMouseUp = () => setIsPanning(false)
   const handleMouseMove = (e) => {
-    if (isPanning && scrollContainerRef.current) {
+    if (isPanning) {
       hasMoved.current = true;
-      scrollContainerRef.current.scrollLeft -= e.movementX;
-      scrollContainerRef.current.scrollTop -= e.movementY;
+      window.scrollBy(-e.movementX, -e.movementY);
     }
   }
 
@@ -386,7 +489,56 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
     setIsHeaderMenuOpen(false);
   }
 
-  const handleConfirmAction = () => {
+  const handleTriggerImageUpload = (cardId) => {
+    setUploadTargetCardId(cardId);
+    fileInputRef.current?.click();
+  }
+
+  const handleImageFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 1. Validate Size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("File is too large. Maximum size is 2MB.");
+        e.target.value = '';
+        return;
+    }
+
+    try {
+        // 2. Upload to Supabase Storage
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${uploadTargetCardId}-${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from('journey_images')
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // 3. Get Public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('journey_images')
+            .getPublicUrl(filePath);
+
+        // 4. Update Card Content
+        const container = findContainer(uploadTargetCardId);
+        if (container) {
+            const { laneId, colId } = container;
+            const card = cells[laneId][colId].cards.find(c => c.id === uploadTargetCardId);
+            if (card) handleUpdateCard(laneId, colId, { ...card, content: publicUrl });
+        }
+    } catch (error) {
+        console.error("Image upload failed:", error);
+        alert(`Failed to upload image: ${error.message || "Unknown error"}`);
+    } finally {
+        setUploadTargetCardId(null);
+        e.target.value = '';
+    }
+  }
+
+  const handleConfirmAction = async () => {
       if (confirmConfig.type === 'delete-lane') {
           setLanes(lanes.filter(l => l.id !== confirmConfig.data));
       } else if (confirmConfig.type === 'clear-map') {
@@ -395,7 +547,19 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
           setLanes(prev => prev.filter(l => l.isPinned)); // Optional: keep only pinned lanes or reset to default
           // For now, let's just clear content as before
       } else if (confirmConfig.type === 'duplicate-map') {
-          setJourneyMeta(prev => ({ ...prev, title: `Copy of ${prev.title}` }))
+          try {
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/journeys/${journeyId}/duplicate`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!response.ok) throw new Error('Failed to duplicate journey');
+              const { data } = await response.json();
+              // Pass the new data directly to the route state to avoid race conditions
+              navigate(`/journey/${data.id}`, { state: { preloadedJourney: data } });
+          } catch (error) {
+              console.error("Failed to duplicate journey:", error);
+          }
       }
       setConfirmConfig({ isOpen: false, type: null, data: null });
   }
@@ -403,6 +567,7 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
   const handleExport = async () => {
     try {
       setIsExporting(true);
+      setIsGeneratingPdf(true);
       setSelectedCardId(null); // Deselect any active card
       setIsHeaderMenuOpen(false);
 
@@ -412,31 +577,122 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
       // Store current zoom and reset to 1 for capture to ensure best quality
       const originalZoom = zoom;
       setZoom(1);
-
+      
+      // Save window scroll and scroll to top to prevent html2canvas offsets
+      const originalScrollX = window.scrollX;
+      const originalScrollY = window.scrollY;
+      window.scrollTo(0, 0);
+      
       // Wait for zoom reset render
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      const element = scrollContainerRef.current.firstChild;
+      const headerElement = headerRef.current;
+      const mapElement = scrollContainerRef.current.firstElementChild;
+      
+      const mapWidth = mapElement.scrollWidth;
+      const mapHeight = mapElement.scrollHeight;
+      const headerHeight = headerElement.offsetHeight;
+      
+      // Calculate total dimensions
+      // Ensure header spans full width if map is wider than viewport
+      const totalWidth = Math.max(mapWidth, headerElement.offsetWidth);
+      const totalHeight = headerHeight + mapHeight + 50; // Add buffer to prevent bottom clipping
+      
+      // --- CLONE STRATEGY (FIXED) ---
+      // Create a temporary container to hold the clone
+      // Using absolute position at 0,0 ensures html2canvas captures the full content
+      // regardless of viewport size, provided we scrolled to top.
+      const container = document.createElement('div');
+      Object.assign(container.style, {
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          zIndex: '-9999',
+          width: `${totalWidth}px`,
+          height: `${totalHeight}px`,
+          overflow: 'visible', // Ensure content isn't clipped
+          backgroundColor: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column'
+      });
 
-      const canvas = await html2canvas(element, {
+      // 1. Clone Header
+      const headerClone = headerElement.cloneNode(true);
+      Object.assign(headerClone.style, {
+          width: '100%',
+          flexShrink: '0',
+          height: `${headerHeight}px`, // Fix height to match original exactly
+          minHeight: `${headerHeight}px`,
+          position: 'static',
+          overflow: 'visible', // Keep shadows and borders visible
+          zIndex: '10'
+      });
+
+      // 2. Clone Map
+      const mapClone = mapElement.cloneNode(true);
+      
+      // Force dimensions and reset transforms on clone
+      Object.assign(mapClone.style, {
+          width: `${mapWidth}px`,
+          height: `${mapHeight}px`,
+          transform: 'none',
+          zoom: '1',
+          overflow: 'visible',
+          position: 'relative' // Ensure proper stacking context
+      });
+
+      container.appendChild(headerClone);
+      container.appendChild(mapClone);
+      
+      // Add class to trigger hide-on-export styles inside clones
+      container.classList.add('is-exporting');
+
+      document.body.appendChild(container);
+
+      // --- CRITICAL FIX FOR STICKY HEADERS ---
+      // Convert sticky elements to relative in the clone to ensure they are captured 
+      // in their natural position and not clipped or displaced by html2canvas.
+      const stickyElements = container.querySelectorAll('.sticky');
+      stickyElements.forEach(el => {
+          el.style.position = 'relative';
+          el.style.top = 'auto';
+          el.style.left = 'auto';
+          el.style.transform = 'none';
+      });
+
+      // Wait for clone to render layout
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      const canvas = await html2canvas(container, {
         scale: 2, // Higher quality
         useCORS: true,
+        allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
-        width: element.scrollWidth,
-        height: element.scrollHeight,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight
+        width: totalWidth,
+        height: totalHeight,
+        windowWidth: totalWidth,
+        windowHeight: totalHeight,
+        x: 0,
+        y: 0,
+        scrollX: 0,
+        scrollY: 0,
       });
+
+      // Cleanup: Remove clone from DOM
+      document.body.removeChild(container);
+      window.scrollTo(originalScrollX, originalScrollY); // Restore scroll position
 
       const imgData = canvas.toDataURL('image/png');
+      
+      // Create PDF with dimensions matching the canvas (Auto-Landscape/Portrait)
       const pdf = new jsPDF({
-        orientation: 'landscape',
+        orientation: totalWidth > totalHeight ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [canvas.width, canvas.height] // Custom format matching the map size
+        format: [totalWidth, totalHeight]
       });
 
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'PNG', 0, 0, totalWidth, totalHeight);
       pdf.save(`${journeyMeta.title || 'journey-map'}.pdf`);
 
       // Restore zoom
@@ -445,17 +701,29 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
       console.error("Export failed:", error);
     } finally {
       setIsExporting(false);
+      setIsGeneratingPdf(false);
     }
   }
 
-  const handleSavePersona = (formData) => {
-    const newPersona = { 
+  const handleSavePersona = async (formData) => {
+    const tempId = persona?.id || Date.now();
+    const newPersona = {
+        ...persona, // Зберігаємо існуючі поля (наприклад, ті, що не редагуються в модалці)
         ...formData, 
-        id: persona?.id || Date.now() 
+        id: tempId
     }
-    setPersona(newPersona)
-    onSaveGlobalPersona(newPersona)
+    setPersona(newPersona) // Optimistic update
     setIsPersonaModalOpen(false)
+
+    const savedPersona = await onSaveGlobalPersona(newPersona)
+    if (savedPersona) {
+        setPersona(savedPersona) // Update with real ID/Data from server
+    }
+  }
+
+  const handleDisconnectPersona = () => {
+    setPersona(null);
+    setIsPersonaExpanded(false);
   }
 
   // --- DRAG & DROP LOGIC ---
@@ -609,20 +877,37 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
   const handleMoveColumnRight = (index) => { if (index === gridColumns.length - 1) return; const newCols = [...gridColumns]; const [col] = newCols.splice(index, 1); newCols.splice(index + 1, 0, col); setGridColumns(newCols); }
   const handleDeleteColumn = (index) => { const newCols = [...gridColumns]; newCols.splice(index, 1); setGridColumns(newCols); }
 
-  if (isLoading) return <JourneyLoader />
+  if ((!isMinLoadComplete || !isDataLoaded || isQueryLoading) && !isQueryError) return <JourneyLoader />
+
+  // Calculate dynamic sticky offsets based on zoom
+  // 64px is the height of the fixed main header
+  // 48px is the height of the column header row
+  const stickyColHeaderTop = `${64 / zoom}px`;
+  const stickyLaneTop = `${(64 / zoom) + 48}px`;
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col min-h-screen bg-white pt-16">
+      {/* PDF Generation Overlay */}
+      {isGeneratingPdf && (
+        <div className="fixed inset-0 z-[9999] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-200">
+            <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center">
+                <Loader2 className="w-10 h-10 text-orange-600 animate-spin mb-4" />
+                <h3 className="text-lg font-bold text-gray-900">Generating PDF...</h3>
+                <p className="text-sm text-gray-500 mt-1">Preparing your journey map for export</p>
+            </div>
+        </div>
+      )}
       <style>{PRINT_STYLES}</style>
       <header 
-        className={`bg-white border-b border-gray-200 shrink-0 z-[70] relative shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
+        ref={headerRef}
+        className={`bg-white border-b border-gray-200 shrink-0 z-[70] fixed top-0 left-0 w-full shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
         onMouseDown={() => setSelectedCardId(null)}
       >
         <div className="h-16 flex items-center px-6 justify-between">
           <div className="flex items-center gap-4 flex-1 w-full">
             <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition hide-on-export"><ArrowLeft size={20} /></button>
             
-            <div className="flex items-center gap-2 flex-1 max-w-xl hide-on-export">
+            <div className="flex items-center gap-2 flex-1 max-w-xl">
               <input 
                 className="text-lg font-bold text-gray-900 bg-transparent outline-none hover:bg-gray-50 focus:bg-gray-50 rounded px-2 py-1 transition-colors w-full"
                 value={journeyMeta.title}
@@ -630,12 +915,12 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
               />
               <button 
                 onClick={() => setShowDetails(!showDetails)}
-                className={`p-1 rounded-full hover:bg-gray-100 text-gray-400 transition ${showDetails ? 'bg-gray-100 text-gray-600 rotate-180' : ''}`}
+                className={`p-1 rounded-full hover:bg-gray-100 text-gray-400 transition hide-on-export ${showDetails ? 'bg-gray-100 text-gray-600 rotate-180' : ''}`}
               >
                 <ChevronDown size={20} />
               </button>
 
-              <div className="relative">
+              <div className="relative hide-on-export">
                 <button 
                   onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
                   className={`p-1 rounded-full hover:bg-gray-100 transition ${isHeaderMenuOpen ? 'bg-gray-100 text-gray-900' : 'text-gray-400'}`}
@@ -655,8 +940,8 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
                           <Copy size={16} className="text-gray-400" /> Duplicate Journey
                         </button>
                         <div className="h-px bg-gray-100 my-1"></div>
-                        <button onClick={handleClearMap} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                          <Trash2 size={16} /> Clear Map
+                        <button onClick={handleClearMap} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                          <RotateCcw size={16} className="text-gray-400" /> Clear Content
                         </button>
                     </div>
                   </>
@@ -665,14 +950,15 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
 
               {/* PERSONA PANEL (Moved here) */}
               <PersonaPanel 
-                persona={persona} 
+                persona={safePersona} 
                 isExpanded={isPersonaExpanded} 
                 onToggle={() => {
                   if (!persona) setIsPersonaPickerOpen(true);
                   else setIsPersonaExpanded(!isPersonaExpanded);
                 }} 
                 onEdit={() => setIsPersonaModalOpen(true)}
-                isExporting={isExporting}
+                onDisconnect={handleDisconnectPersona}
+                isExporting={false}
               />
             </div>
 
@@ -731,17 +1017,23 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
       <div 
         ref={scrollContainerRef}
         id="journey-editor-container"
-        className={`flex-1 overflow-auto bg-white relative ${isHandMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isExporting ? 'is-exporting' : ''}`}
+        className={`flex-1 bg-white relative ${isHandMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isExporting ? 'is-exporting' : ''}`}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onMouseMove={handleMouseMove}
         onClick={() => { if (!hasMoved.current) { setSelectedCardId(null); setActivePickerId(null); } }}
       >
-        <div className="inline-flex flex-col min-w-full pb-20" style={{ zoom: zoom, pointerEvents: isHandMode ? 'none' : 'auto' }}>
+        <div className="inline-flex flex-col w-max pb-20 origin-top-left" style={{ zoom: zoom, pointerEvents: isHandMode ? 'none' : 'auto' }}>
 
-          <div className={`flex sticky top-0 ${activeColMenu ? 'z-[90]' : 'z-[60]'} bg-white pt-4 pb-2 border-b border-transparent`}>
-            <div className="w-64 shrink-0 sticky left-0 bg-white z-20 border-r border-gray-100"></div>
+          <div 
+            className={`flex sticky ${activeColMenu ? 'z-[90]' : 'z-[60]'} bg-white h-12 items-end pb-2 border-b border-transparent shadow-sm`}
+            style={{ top: stickyColHeaderTop }}
+          >
+            <div 
+              className="w-64 shrink-0 sticky left-0 bg-white border-r border-gray-100 h-full"
+              style={{ zIndex: 50, transform: 'translate3d(0,0,0)' }}
+            ></div>
             <div className="flex">
               {gridColumns.map((col, i) => (
                 <ColumnHeader key={col.id} index={i}
@@ -757,10 +1049,10 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
             </div>
           </div>
 
-          <div className="flex flex-col gap-y-4">
+          <div className="flex flex-col">
             <DndContext 
                 sensors={sensors} 
-                collisionDetection={closestCenter} 
+                collisionDetection={closestCorners} 
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
@@ -771,6 +1063,8 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
                     key={lane.id} 
                     id={lane.id}
                     zIndexOverride={elevatedLaneId === lane.id || activeLaneId === lane.id ? 80 : 1}
+                    isPinned={lane.isPinned}
+                    stickyTop={stickyLaneTop}
                   >
                     {lane.type === 'emotion' ? (
                       <EmotionLane 
@@ -804,6 +1098,7 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
                         onTogglePin={() => handleTogglePin(lane.id)}
                         activePickerId={activePickerId}
                         onSetActivePicker={setActivePickerId}
+                        onUploadImage={handleTriggerImageUpload}
                       />
                     )}
                   </SortableLaneItem>
@@ -877,13 +1172,13 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
         isOpen={isPersonaModalOpen} 
         onClose={() => setIsPersonaModalOpen(false)} 
         onSave={handleSavePersona}
-        initialPersona={persona}
+        initialPersona={safePersona}
       />
 
       <PersonaPicker 
         isOpen={isPersonaPickerOpen}
         onClose={() => setIsPersonaPickerOpen(false)}
-        personas={globalPersonas}
+        personas={globalPersonas || []}
         onSelect={(p) => { setPersona(p); setIsPersonaPickerOpen(false); }}
         onCreateNew={() => { setIsPersonaPickerOpen(false); setIsPersonaModalOpen(true); }}
       />
@@ -918,6 +1213,14 @@ export default function Editor({ onBack, globalPersonas, globalMetrics, onSaveGl
         }
         confirmText={confirmConfig.type === 'duplicate-map' ? "Duplicate" : "Delete"}
         isDestructive={confirmConfig.type !== 'duplicate-map'}
+      />
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/png, image/jpeg, image/gif, image/webp"
+        onChange={handleImageFileChange}
       />
     </div>
   )

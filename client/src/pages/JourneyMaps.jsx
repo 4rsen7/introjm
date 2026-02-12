@@ -1,6 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, Copy, Trash2, Plus, Map, ArrowRight, X, Archive } from 'lucide-react';
+import { Search, Filter, Copy, Trash2, Plus, Map, ArrowRight, X, Archive, RotateCcw } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
+import { getAuthToken } from '../services/auth';
+import Tooltip from '../components/common/Tooltip';
+
+// Fallback to localhost:5001 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -24,11 +29,71 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
       setConfirmConfig({ isOpen: true, action, item });
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
       const { action, item } = confirmConfig;
-      if (action === 'delete' && onDelete) onDelete(item.id);
-      if (action === 'duplicate' && onDuplicate) onDuplicate(item);
+      if (action === 'delete') {
+          try {
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/journeys/${item.id}`, {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!response.ok) {
+                  throw new Error('Failed to delete journey');
+              }
+              if (onDelete) onDelete(item.id);
+          } catch (error) {
+              console.error("Failed to delete journey:", error);
+          }
+      }
+      if (action === 'duplicate') {
+          try {
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/journeys/${item.id}/duplicate`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!response.ok) throw new Error('Failed to duplicate journey');
+              const { data } = await response.json();
+              if (onDuplicate) onDuplicate(data);
+          } catch (error) {
+              console.error("Failed to duplicate journey:", error);
+          }
+      }
       setConfirmConfig({ isOpen: false, action: null, item: null });
+  };
+
+  const handleArchive = async (id) => {
+      try {
+          const token = await getAuthToken();
+          const response = await fetch(`${API_URL}/journeys/${id}/archive`, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error('Failed to archive journey');
+          if (onArchive) onArchive(id);
+      } catch (error) {
+          console.error("Failed to archive journey:", error);
+      }
+  };
+
+  const handleRestore = async (id) => {
+      try {
+          const token = await getAuthToken();
+          const url = `${API_URL}/journeys/${id}/restore`;
+          
+          console.log(`[CLIENT] Sending PUT request to: ${url}`, { token: !!token });
+          
+          const response = await fetch(url, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error('Failed to restore journey');
+          if (onArchive) onArchive(id); // Trigger refresh in parent
+      } catch (error) {
+          console.error("Failed to restore journey:", error);
+          alert("Failed to restore journey. Please try again.");
+      }
   };
 
   return (
@@ -44,7 +109,7 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
         </button>
       </header>
 
-      <div className="flex flex-col gap-4 mb-6">
+      <div className="flex flex-col mb-6">
        <div className="flex items-center gap-4">
         <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -65,8 +130,10 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
         </button>
       </div>
 
-      {showFilters && (
-        <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm animate-in fade-in slide-in-from-top-2">
+      <div className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+        <div className="overflow-hidden">
+          <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
+            <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500 uppercase">Status</label>
                 <select 
@@ -94,8 +161,10 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
                     <X size={16} />
                 </button>
             )}
+            </div>
+          </div>
         </div>
-      )}
+      </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -158,27 +227,43 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
                     </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); openConfirm('duplicate', journey); }}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        title="Duplicate"
-                    >
-                        <Copy size={18} />
-                    </button>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onArchive && onArchive(journey.id); }}
-                        className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        title="Archive"
-                    >
-                        <Archive size={18} />
-                    </button>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); openConfirm('delete', journey); }}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        title="Delete"
-                    >
-                        <Trash2 size={18} />
-                    </button>
+                    <Tooltip content="Duplicate">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); openConfirm('duplicate', journey); }}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                            <Copy size={18} />
+                        </button>
+                    </Tooltip>
+                    
+                    {journey.status === 'archived' ? (
+                        <Tooltip content="Restore">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleRestore(journey.id); }}
+                                className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            >
+                                <RotateCcw size={18} />
+                            </button>
+                        </Tooltip>
+                    ) : (
+                        <Tooltip content="Archive">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleArchive(journey.id); }}
+                                className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                            >
+                                <Archive size={18} />
+                            </button>
+                        </Tooltip>
+                    )}
+
+                    <Tooltip content="Delete">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); openConfirm('delete', journey); }}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    </Tooltip>
                 </td>
               </tr>
             )))}

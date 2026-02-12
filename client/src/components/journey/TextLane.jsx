@@ -36,7 +36,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   )
 }
 
-function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker }) {
+function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage }) {
   const containerId = `${laneId}::${colId}`;
   
   const { setNodeRef } = useDroppable({
@@ -89,6 +89,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard
               onMenuToggle={onPickerToggle}
               selectedCardId={selectedCardId}
               onSelectCard={onSelectCard}
+              onUploadImage={onUploadImage}
             /> 
           )
         })}
@@ -107,7 +108,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const calculateLayout = () => {
@@ -236,6 +237,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, o
               onSelectCard={onSelectCard}
               activePickerId={activePickerId}
               onSetActivePicker={onSetActivePicker}
+              onUploadImage={onUploadImage}
             />
           )
         })}

@@ -17,7 +17,7 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
     image: '',
     age: '',
     location: '',
-    quote: '',
+    bio: '',
     goals: [''],
     frustrations: ['']
   })
@@ -32,7 +32,7 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
                 image: initialPersona.image || '',
                 age: initialPersona.age || '',
                 location: initialPersona.location || '',
-                quote: initialPersona.quote || '',
+                bio: initialPersona.bio || '',
                 goals: initialPersona.goals?.length ? initialPersona.goals : [''],
                 frustrations: initialPersona.frustrations?.length ? initialPersona.frustrations : ['']
             })
@@ -43,7 +43,7 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
                 image: '',
                 age: '',
                 location: '',
-                quote: '',
+                bio: '',
                 goals: [''],
                 frustrations: ['']
             })
@@ -151,8 +151,8 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bio / Quote</label>
-                <textarea className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition h-24 resize-none" value={formData.quote} onChange={e => handleChange('quote', e.target.value)} placeholder="A short quote..." />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
+                <textarea className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none transition h-24 resize-none" value={formData.bio} onChange={e => handleChange('bio', e.target.value)} placeholder="Background story and details..." />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

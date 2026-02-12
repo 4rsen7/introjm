@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowUp, ArrowDown, Minus, BarChart3 } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, BarChart, Bar } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, LabelList } from 'recharts';
 
 const JourneyMetricCard = ({ metric }) => {
   if (!metric) {
@@ -55,9 +55,6 @@ const JourneyMetricCard = ({ metric }) => {
         );
 
       case 'Series':
-        const ChartComponent = chartType === 'line' ? LineChart : BarChart;
-        const DataComponent = chartType === 'line' ? Line : Bar;
-
         return (
           <div className="w-full h-full flex flex-col">
             <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 px-1 truncate">
@@ -65,9 +62,31 @@ const JourneyMetricCard = ({ metric }) => {
             </div>
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
-                <ChartComponent data={seriesData}>
-                  <DataComponent type="monotone" dataKey="value" stroke="#3b82f6" fill="#3b82f6" strokeWidth={2} dot={false} radius={[2, 2, 0, 0]} />
-                </ChartComponent>
+                {chartType === 'line' ? (
+                  <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                    <Line 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke="#3b82f6" 
+                      strokeWidth={2} 
+                      dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }}
+                      isAnimationActive={true}
+                    >
+                      <LabelList dataKey="value" position="top" offset={5} fontSize={10} fill="#6b7280" />
+                    </Line>
+                  </LineChart>
+                ) : (
+                  <BarChart data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                    <Bar 
+                      dataKey="value" 
+                      fill="#3b82f6" 
+                      radius={[2, 2, 0, 0]}
+                      isAnimationActive={true}
+                    >
+                      <LabelList dataKey="value" position="insideTop" offset={5} fontSize={10} fill="#ffffff" style={{ fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.1)' }} />
+                    </Bar>
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>

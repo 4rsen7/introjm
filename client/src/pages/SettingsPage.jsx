@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap } from 'lucide-react';
+import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import PricingModal from '../components/common/PricingModal';
+import { getAuthToken } from '../services/auth';
 
-const SettingsPage = ({ initialTab = 'workspace' }) => {
-  // 1. Mock User State (RBAC)
-  // Змінюй це значення ('admin' | 'editor' | 'viewer') щоб тестувати UI
-  const CURRENT_USER_ROLE = 'admin'; 
+// Fallback API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+
+const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, userProfile, onUpdateProfile }) => {
+  // 1. Real Role Check
+  const isOwner = workspace?.role === 'owner';
 
   // 2. Логіка Вкладок (Tabs Logic)
   const TABS = [
-    { id: 'workspace', label: 'Workspace', allowedRoles: ['admin'] },
-    { id: 'team', label: 'Team', allowedRoles: ['admin'] },
-    { id: 'profile', label: 'Profile', allowedRoles: ['admin', 'editor', 'viewer'] },
+    { id: 'workspace', label: 'Workspace', restricted: true },
+    { id: 'team', label: 'Team', restricted: true },
+    { id: 'profile', label: 'Profile', restricted: false },
   ];
 
-  const allowedTabs = TABS.filter(tab => tab.allowedRoles.includes(CURRENT_USER_ROLE));
+  const allowedTabs = TABS.filter(tab => !tab.restricted || isOwner);
 
   const [activeTab, setActiveTab] = useState(() => {
     return allowedTabs.find(t => t.id === initialTab) ? initialTab : allowedTabs[0]?.id;
@@ -31,19 +34,26 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
   }, [initialTab]);
 
   // Mock Data
-  const [workspaceName, setWorkspaceName] = useState('My Awesome Workspace');
-  const [teamMembers, setTeamMembers] = useState([
-    { id: 1, email: 'alex@example.com', role: 'Admin', status: 'Active' },
-    { id: 2, email: 'sarah@example.com', role: 'Editor', status: 'Active' },
-    { id: 3, email: 'mike@example.com', role: 'Viewer', status: 'Pending' },
-  ]);
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [workspaceName, setWorkspaceName] = useState(workspace?.name || '');
   
-  const [profile, setProfile] = useState({
-    name: 'New Account',
-    email: 'user@example.com',
-    color: 'bg-blue-100 text-blue-600'
-  });
+  useEffect(() => {
+    if (workspace?.name) setWorkspaceName(workspace.name);
+  }, [workspace]);
+
+  // Team Data State
+  const [teamData, setTeamData] = useState({ members: [], invites: [] });
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  
+  const [profileName, setProfileName] = useState(userProfile?.full_name || '');
+  const [profileColor, setProfileColor] = useState('bg-blue-100 text-blue-600');
+
+  useEffect(() => {
+    if (userProfile) {
+        setProfileName(userProfile.full_name || '');
+    }
+  }, [userProfile]);
+
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
 
@@ -55,10 +65,52 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
     'bg-pink-100 text-pink-600',
   ];
 
-  const handleInvite = () => {
-    if(!inviteEmail) return;
-    setTeamMembers([...teamMembers, { id: Date.now(), email: inviteEmail, role: 'Viewer', status: 'Pending' }]);
-    setInviteEmail('');
+  // Fetch Team Data
+  useEffect(() => {
+    if (activeTab === 'team' && isOwner) {
+        fetchTeam();
+    }
+  }, [activeTab, isOwner]);
+
+  const fetchTeam = async () => {
+      const token = await getAuthToken();
+      try {
+          const res = await fetch(`${API_URL}/workspace/team`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const json = await res.json();
+          if (json.status === 'success') setTeamData(json.data);
+      } catch (e) { console.error(e); }
+  };
+
+  const handleInvite = async () => {
+      if (!inviteEmail) return;
+      setIsInviting(true);
+      const token = await getAuthToken();
+      try {
+          const res = await fetch(`${API_URL}/workspace/invite`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ email: inviteEmail })
+          });
+          if (res.ok) {
+              setInviteEmail('');
+              fetchTeam(); // Refresh list
+          } else {
+              const err = await res.json();
+              alert(err.error || 'Failed to invite user');
+          }
+      } catch (e) { console.error(e); }
+      setIsInviting(false);
+  };
+
+  const getInitials = (name) => {
+      if (!name) return 'U';
+      return name
+        .trim()
+        .split(' ')
+        .map(n => n[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase();
   };
 
   return (
@@ -113,7 +165,10 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
                   />
                 </div>
-                <button className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition">
+                <button 
+                  onClick={() => onUpdateWorkspace && onUpdateWorkspace(workspaceName)}
+                  className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
+                >
                   Save Changes
                 </button>
               </div>
@@ -189,27 +244,52 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
                 </div>
                 <button 
                   onClick={handleInvite}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2"
+                  disabled={isInviting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-70"
                 >
-                  <Plus size={16} /> Invite
+                  {isInviting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Invite
                 </button>
               </div>
 
               <div className="space-y-1">
-                {teamMembers.map(member => (
+                {/* Active Members */}
+                {teamData.members.map(member => (
                   <div key={member.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition group">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs">
-                        {member.email[0].toUpperCase()}
+                        {(member.full_name || member.email || 'U')[0].toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{member.email}</div>
+                        <div className="text-sm font-medium text-gray-900">{member.full_name || member.email}</div>
                         <div className="text-xs text-gray-500">{member.role}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${member.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-                        {member.status}
+                      <span className="text-xs px-2 py-1 rounded-full font-medium bg-green-50 text-green-700">
+                        Active
+                      </span>
+                      <button className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Pending Invites */}
+                {teamData.invites.map(invite => (
+                  <div key={invite.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition group border border-dashed border-gray-200">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400">
+                        <Mail size={14} />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{invite.email}</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={10} /> Pending Invite</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs px-2 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
+                        Pending
                       </span>
                       <button className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
                         <Trash2 size={16} />
@@ -233,15 +313,15 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
               <div className="flex items-start gap-8">
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-gray-700">Avatar</label>
-                  <div className={`w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold border-4 border-white shadow-sm ${profile.color}`}>
-                    {profile.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  <div className={`w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold border-4 border-white shadow-sm ${profileColor}`}>
+                    {getInitials(profileName || userProfile?.email)}
                   </div>
                   <div className="flex gap-2 justify-center">
                     {AVATAR_COLORS.map(color => (
                       <button
                         key={color}
-                        onClick={() => setProfile({ ...profile, color })}
-                        className={`w-6 h-6 rounded-full border border-gray-200 ${color.split(' ')[0]} ${profile.color === color ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+                        onClick={() => setProfileColor(color)}
+                        className={`w-6 h-6 rounded-full border border-gray-200 ${color.split(' ')[0]} ${profileColor === color ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
                       />
                     ))}
                   </div>
@@ -251,21 +331,25 @@ const SettingsPage = ({ initialTab = 'workspace' }) => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
                     <input 
-                      value={profile.name}
-                      onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                      placeholder="Your Name"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
                     <input 
-                      value={profile.email}
-                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                      value={userProfile?.email || ''}
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-gray-500 rounded-lg outline-none cursor-not-allowed"
                     />
                   </div>
                   <div className="pt-2">
-                    <button className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition">
+                    <button 
+                        onClick={() => onUpdateProfile && onUpdateProfile(profileName)}
+                        className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
+                    >
                       Update Profile
                     </button>
                   </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, BarChart3, Save, ArrowUp, ArrowDown, Minus, Trash2, Plus, TrendingUp, ChevronDown, Upload } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import MetricCard from '../components/metrics/MetricCard';
 
 const MetricBuilder = ({ onBack, onSave, initialData }) => {
@@ -320,16 +320,20 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                     <div className="w-full h-64 mt-4">
                         <ResponsiveContainer width="100%" height="100%">
                             {formData.chartType === 'line' ? (
-                                <LineChart data={formData.seriesData}>
+                                <LineChart data={formData.seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 0 }}>
                                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ stroke: '#e5e7eb' }} />
-                                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                                    <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }}>
+                                        <LabelList dataKey="value" position="top" offset={10} fontSize={12} fill="#6b7280" />
+                                    </Line>
                                 </LineChart>
                             ) : (
-                                <BarChart data={formData.seriesData}>
+                                <BarChart data={formData.seriesData} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
                                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: '#f3f4f6' }} />
-                                    <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                                        <LabelList dataKey="value" position="insideTop" offset={10} fontSize={12} fill="#ffffff" style={{ fontWeight: 'bold' }} />
+                                    </Bar>
                                 </BarChart>
                             )}
                         </ResponsiveContainer>

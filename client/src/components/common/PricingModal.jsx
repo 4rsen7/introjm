@@ -1,43 +1,37 @@
-import React, { useState } from 'react';
-import { X, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Check, Loader2 } from 'lucide-react';
+
+// Fallback API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 const PricingModal = ({ isOpen, onClose }) => {
   const [billingCycle, setBillingCycle] = useState('monthly');
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+        setLoading(true);
+        fetch(`${API_URL}/plans`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    setPlans(data.data);
+                }
+            })
+            .catch(err => console.error("Failed to load plans:", err))
+            .finally(() => setLoading(false));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const plans = [
-    {
-      name: 'Starter',
-      price: billingCycle === 'monthly' ? '€0' : '€0',
-      period: '/mo',
-      description: 'For individuals and small teams just getting started.',
-      features: ['3 Journey Maps', '1 Persona', 'Basic Export', 'Community Support'],
-      buttonText: 'Current Plan',
-      buttonStyle: 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-      highlight: false
-    },
-    {
-      name: 'Pro',
-      price: billingCycle === 'monthly' ? '€33' : '€29',
-      period: '/mo',
-      description: 'For growing teams that need more power and flexibility.',
-      features: ['Unlimited Journey Maps', 'Unlimited Personas', 'Advanced Export (PDF, PPT)', 'Priority Support', 'Team Collaboration'],
-      buttonText: 'Upgrade to Pro',
-      buttonStyle: 'bg-purple-600 text-white hover:bg-purple-700 shadow-md',
-      highlight: true
-    },
-    {
-      name: 'Enterprise',
-      price: 'Custom',
-      period: '',
-      description: 'For large organizations with specific security and control needs.',
-      features: ['SSO & Advanced Security', 'Dedicated Success Manager', 'Custom Contracts', 'On-premise Deployment', 'Audit Logs'],
-      buttonText: 'Contact Sales',
-      buttonStyle: 'bg-gray-900 text-white hover:bg-gray-800',
-      highlight: false
-    }
-  ];
+  // Helper to style plans based on tier
+  const getPlanStyle = (tier) => {
+      if (tier === 2) return { highlight: true, btn: 'bg-purple-600 text-white hover:bg-purple-700 shadow-md' };
+      if (tier === 3) return { highlight: false, btn: 'bg-gray-900 text-white hover:bg-gray-800' };
+      return { highlight: false, btn: 'bg-gray-100 text-gray-700 hover:bg-gray-200' };
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto">
@@ -68,41 +62,51 @@ const PricingModal = ({ isOpen, onClose }) => {
         </div>
 
         <div className="p-8 md:p-12 bg-white">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {plans.map((plan) => (
-              <div key={plan.name} className={`relative rounded-2xl border p-8 flex flex-col ${plan.highlight ? 'border-purple-200 shadow-xl ring-1 ring-purple-100 scale-105 z-10' : 'border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all'}`}>
-                {plan.highlight && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wide shadow-sm">
-                    Most Popular
-                  </div>
-                )}
-                <div className="mb-6">
-                  <h3 className={`text-lg font-bold mb-2 ${plan.highlight ? 'text-purple-600' : 'text-gray-900'}`}>{plan.name}</h3>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-gray-900">{plan.price}</span>
-                    <span className="text-gray-500 font-medium">{plan.period}</span>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-4 leading-relaxed">{plan.description}</p>
-                </div>
+          {loading ? (
+              <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" size={32} /></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {plans.map((plan) => {
+                    const style = getPlanStyle(plan.tier);
+                    const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly;
+                    const period = billingCycle === 'monthly' ? '/mo' : '/yr';
 
-                <ul className="space-y-3 mb-8 flex-1">
-                  {plan.features.map((feature, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
-                      <Check size={18} className={`shrink-0 ${plan.highlight ? 'text-purple-600' : 'text-green-600'}`} />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+                    return (
+                    <div key={plan.id} className={`relative rounded-2xl border p-8 flex flex-col ${style.highlight ? 'border-purple-200 shadow-xl ring-1 ring-purple-100 scale-105 z-10' : 'border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all'}`}>
+                        {style.highlight && (
+                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wide shadow-sm">
+                            Most Popular
+                        </div>
+                        )}
+                        <div className="mb-6">
+                        <h3 className={`text-lg font-bold mb-2 ${style.highlight ? 'text-purple-600' : 'text-gray-900'}`}>{plan.name}</h3>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-4xl font-bold text-gray-900">€{price}</span>
+                            <span className="text-gray-500 font-medium">{period}</span>
+                        </div>
+                        <p className="text-sm text-gray-500 mt-4 leading-relaxed">{plan.description}</p>
+                        </div>
 
-                <button 
-                  onClick={() => alert(`Selected ${plan.name} plan`)}
-                  className={`w-full py-3 rounded-xl font-bold transition-all ${plan.buttonStyle}`}
-                >
-                  {plan.buttonText}
-                </button>
-              </div>
-            ))}
-          </div>
+                        <ul className="space-y-3 mb-8 flex-1">
+                        {plan.features && plan.features.map((feature, i) => (
+                            <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
+                            <Check size={18} className={`shrink-0 ${style.highlight ? 'text-purple-600' : 'text-green-600'}`} />
+                            <span>{feature}</span>
+                            </li>
+                        ))}
+                        </ul>
+
+                        <button 
+                        onClick={() => alert(`Selected ${plan.name} plan (Integration coming soon)`)}
+                        className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn}`}
+                        >
+                        {plan.tier === 1 ? 'Current Plan' : (plan.tier === 3 ? 'Contact Sales' : 'Upgrade')}
+                        </button>
+                    </div>
+                    );
+                })}
+            </div>
+          )}
           
           <div className="mt-12 text-center text-sm text-gray-400">
             Need help choosing? <a href="#" className="text-blue-600 hover:underline">Contact our sales team</a>

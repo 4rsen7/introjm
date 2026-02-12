@@ -2,16 +2,65 @@ import { useState, useRef, useEffect } from 'react'
 import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Archive, Trash2, Layout } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmModal from '../ConfirmModal'
+import { getAuthToken } from '../services/auth'
+import { useQueryClient } from '@tanstack/react-query'
+
+// Fallback to localhost:5001 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
 export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
+  const queryClient = useQueryClient();
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
       const { action, item } = confirmConfig;
-      if (action === 'delete' && onDelete) onDelete(item.id);
-      if (action === 'duplicate' && onDuplicate) onDuplicate(item);
+      if (action === 'delete') {
+          try {
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/journeys/${item.id}`, {
+                  method: 'DELETE',
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!response.ok) {
+                  throw new Error('Failed to delete journey');
+              }
+              // Invalidate queries to refresh list
+              queryClient.invalidateQueries(['journeys']);
+          } catch (error) {
+              console.error("Failed to delete journey:", error);
+          }
+      }
+      if (action === 'duplicate') {
+          try {
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/journeys/${item.id}/duplicate`, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (!response.ok) throw new Error('Failed to duplicate journey');
+              const { data } = await response.json();
+              // Refresh list
+              queryClient.invalidateQueries(['journeys']);
+          } catch (error) {
+              console.error("Failed to duplicate journey:", error);
+          }
+      }
       setConfirmConfig({ isOpen: false, action: null, item: null });
+  };
+
+  const handleArchive = async (id) => {
+      try {
+          const token = await getAuthToken();
+          const response = await fetch(`${API_URL}/journeys/${id}/archive`, {
+              method: 'PUT',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error('Failed to archive journey');
+          queryClient.invalidateQueries(['journeys']);
+      } catch (error) {
+          console.error("Failed to archive journey:", error);
+      }
   };
 
   const openConfirm = (action, item) => {
@@ -66,6 +115,7 @@ export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, 
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[...journeys]
+                .filter(j => j.status !== 'archived')
                 .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
                 .slice(0, 3)
                 .map(journey => (
@@ -73,7 +123,7 @@ export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, 
                     <JourneyCard 
                         journey={journey} 
                         onDuplicate={() => openConfirm('duplicate', journey)}
-                        onArchive={() => onArchive && onArchive(journey.id)}
+                        onArchive={() => handleArchive(journey.id)}
                         onDelete={() => openConfirm('delete', journey)}
                     />
                 </Link>
@@ -129,6 +179,14 @@ function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
 
 function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
     const date = getRelativeTime(journey.updated_at || journey.created_at);
+    
+    // Calculate real stage count from map_data
+    let stageCount = 0;
+    try {
+        const md = typeof journey.map_data === 'string' ? JSON.parse(journey.map_data) : journey.map_data;
+        if (md?.gridColumns) stageCount = md.gridColumns.length;
+    } catch (e) {}
+
     // Отримуємо унікальний стиль на основі ID
     const style = getJourneyStyle(journey.id); 
     const [showMenu, setShowMenu] = useState(false);
@@ -193,10 +251,10 @@ function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
                     
                     {showMenu && (
                         <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 z-30 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-                            <button onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> Duplicate</button>
-                            <button onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> Archive</button>
+                            <button title="Duplicate journey" onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> Duplicate</button>
+                            <button title="Archive journey" onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> Archive</button>
                             <div className="h-px bg-gray-100 my-1"></div>
-                            <button onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
+                            <button title="Delete journey" onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
                         </div>
                     )}
                 </div>
@@ -212,7 +270,7 @@ function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
                     <div className="flex items-center gap-3 mt-2">
                          <div className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                             <Layout size={10} />
-                            <span>5 stages</span>
+                            <span>{stageCount} {stageCount === 1 ? 'stage' : 'stages'}</span>
                          </div>
                     </div>
                 </div>
