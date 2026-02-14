@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
+import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,6 +24,7 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
   };
 
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, item: null });
+  const [linkedMapsConfig, setLinkedMapsConfig] = useState({ isOpen: false, items: [], title: '' });
 
   const handleDeleteClick = (metric) => {
       setConfirmConfig({ isOpen: true, item: metric });
@@ -143,9 +145,19 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                    {metric.linkedMaps > 0 ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setLinkedMapsConfig({ 
+                            isOpen: true, 
+                            items: metric.linkedJourneys || [], 
+                            title: `Maps using ${metric.name}` 
+                          }); 
+                        }}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 hover:border-blue-200 transition-colors cursor-pointer"
+                      >
                         Linked to {metric.linkedMaps} {metric.linkedMaps === 1 ? 'map' : 'maps'}
-                      </span>
+                      </button>
                   ) : (
                       <span className="text-sm text-gray-400">(not used)</span>
                   )}
@@ -176,6 +188,13 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
         message={`Are you sure you want to delete "${confirmConfig.item?.name}"? This action cannot be undone.`}
         isDestructive={true}
         confirmText="Delete"
+      />
+
+      <LinkedMapsModal 
+        isOpen={linkedMapsConfig.isOpen}
+        onClose={() => setLinkedMapsConfig({ ...linkedMapsConfig, isOpen: false })}
+        title={linkedMapsConfig.title}
+        items={linkedMapsConfig.items}
       />
     </div>
   );

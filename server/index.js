@@ -4,7 +4,7 @@ require('dotenv').config();
 const supabase = require('./supabaseClient');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // GLOBAL LOGGER: Log every single request hitting the server
 app.use((req, res, next) => {
@@ -33,9 +33,11 @@ app.use((req, res, next) => {
 
 // Middleware
 app.use(cors({
-    origin: 'http://localhost:5173', // Дозволяємо запити з клієнта
-    credentials: true
+    origin: true, // Автоматично дозволяє той домен, який робить запит (localhost:3000, 5173, 5174...)
+    credentials: true, // Дозволяє авторизацію
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
 }));
+app.options('*', cors()); // Вмикає pre-flight (OPTIONS) для всіх маршрутів
 app.use(express.json());
 
 // --- SYSTEM LOGGING HELPER ---
@@ -196,6 +198,7 @@ app.get('/api/journeys', async (req, res) => {
 
         const journeysWithOwners = journeys.map(j => ({
             ...j,
+            updated_at: j.updated_at || j.created_at, // Fallback to created_at if updated_at is missing
             owner: profilesMap[j.user_id] || 'Unknown'
         }));
 
@@ -620,7 +623,11 @@ app.get('/api/personas', async (req, res) => {
         if (profiles) profiles.forEach(p => { profilesMap[p.id] = p.full_name || p.email; });
     }
 
-    const personasWithOwners = data.map(p => ({ ...p, owner: profilesMap[p.user_id] || 'Unknown' }));
+    const personasWithOwners = data.map(p => ({ 
+        ...p, 
+        updated_at: p.updated_at || p.created_at, // Fallback to created_at if updated_at is missing
+        owner: profilesMap[p.user_id] || 'Unknown' 
+    }));
     res.json({ status: 'success', data: personasWithOwners });
   } catch (err) {
     console.error('Error fetching personas:', err);
@@ -1222,6 +1229,114 @@ app.post('/api/subscriptions/assign', async (req, res) => {
         console.error('Error assigning plan:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// --- ADMIN USER MANAGEMENT ---
+
+// Get User Details (Full View)
+// Приймаємо обидва варіанти URL, щоб не залежати від кешу фронтенда
+app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
+    const { id } = req.params;
+    console.log(`🔍 [MANAGE] Fetching details for user: ${id}`);
+
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        console.log('❌ No token provided');
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        // Check Admin
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) {
+             console.log('❌ Auth error:', authError);
+             return res.status(401).json({ error: 'Invalid token' });
+        }
+
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile?.role !== 'admin') {
+            console.log(`❌ Access denied for user ${user.id} (role: ${profile?.role})`);
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // 1. Profile
+        const { data: userProfile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', id)
+            .single();
+        
+        if (profileError) {
+            console.error("❌ Profile error:", profileError);
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // 2. Workspaces (Owned & Joined)
+        const { data: ownedWorkspaces } = await supabase
+            .from('workspaces')
+            .select('*, workspace_members(count)')
+            .eq('owner_id', id);
+        
+        const { data: joinedWorkspaces } = await supabase
+            .from('workspace_members')
+            .select('role, joined_at, workspaces(*)')
+            .eq('user_id', id);
+
+        // 3. Subscriptions (History)
+        const { data: subscriptions } = await supabase
+            .from('subscriptions')
+            .select('*, plans(name, price_monthly)')
+            .eq('user_id', id)
+            .order('created_at', { ascending: false });
+
+        console.log(`✅ Found user: ${userProfile.email}`);
+
+        res.json({
+            status: 'success',
+            data: {
+                profile: userProfile,
+                owned_workspaces: ownedWorkspaces || [],
+                joined_workspaces: joinedWorkspaces || [],
+                subscriptions: subscriptions || []
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ SERVER ERROR:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Assign Plan (Manual Admin Override)
+// Приймаємо обидва варіанти URL
+app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { userId, planId, durationDays, customEndDate } = req.body;
+
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const { data: { user } } = await supabase.auth.getUser(token);
+        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        if (profile?.role !== 'admin') return res.status(403).json({ error: 'Access denied' });
+
+        let endDate = new Date();
+        if (customEndDate) {
+            endDate = new Date(customEndDate);
+        } else if (durationDays) {
+            endDate.setDate(endDate.getDate() + parseInt(durationDays));
+        } else {
+            endDate.setMonth(endDate.getMonth() + 1);
+        }
+
+        // Call existing logic or reuse code. For simplicity, we reuse the logic but with custom date.
+        // Deactivate old active subs
+        await supabase.from('subscriptions').update({ status: 'canceled' }).eq('user_id', userId).eq('status', 'active');
+
+        const { data, error } = await supabase.from('subscriptions').insert([{ user_id: userId, plan_id: planId, status: 'active', current_period_start: new Date(), current_period_end: endDate }]).select().single();
+        if (error) throw error;
+        res.json({ status: 'success', data });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(PORT, () => {

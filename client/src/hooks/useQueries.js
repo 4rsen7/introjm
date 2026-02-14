@@ -3,6 +3,16 @@ import { getAuthToken } from '../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
+// Helper for consistent date formatting
+const formatDate = (dateString) => {
+  if (!dateString) return 'Just now';
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+};
+
 // Helpers for data mapping
 export const mapMetricToClient = (m) => ({
   ...m,
@@ -11,11 +21,12 @@ export const mapMetricToClient = (m) => ({
   dataSource: m.data_source,
   chartType: m.chart_type,
   seriesData: m.series_data,
-  updatedAt: new Date(m.updated_at).toLocaleDateString()
+  updatedAt: formatDate(m.updated_at)
 });
 
 export const mapPersonaToClient = (p) => ({
   ...p,
+  updatedAt: formatDate(p.updated_at || p.created_at),
   painPoints: p.pain_points || p.painPoints || [],
   goals: p.goals || [],
   frustrations: p.frustrations || [],
@@ -23,6 +34,11 @@ export const mapPersonaToClient = (p) => ({
   bio: p.bio || '',
   age: p.age || '',
   location: p.location || ''
+});
+
+export const mapJourneyToClient = (j) => ({
+  ...j,
+  updatedAt: formatDate(j.updated_at || j.created_at),
 });
 
 // Generic fetcher
@@ -43,7 +59,10 @@ const fetchData = async (endpoint) => {
 export const useJourneys = () => {
   return useQuery({
     queryKey: ['journeys'],
-    queryFn: () => fetchData('/journeys'),
+    queryFn: async () => {
+      const data = await fetchData('/journeys');
+      return data.map(mapJourneyToClient);
+    },
   });
 };
 

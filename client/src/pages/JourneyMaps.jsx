@@ -216,7 +216,7 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
                    </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {journey.date || 'Just now'}
+                    {journey.updatedAt || 'Just now'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">

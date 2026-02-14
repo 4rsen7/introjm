@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, Filter, Copy, Trash2, Plus, User, X, Archive } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
+import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,6 +10,7 @@ const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onAr
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
+  const [linkedMapsConfig, setLinkedMapsConfig] = useState({ isOpen: false, items: [], title: '' });
 
   const roles = useMemo(() => [...new Set(personas.map(p => p.role).filter(Boolean))], [personas]);
   const locations = useMemo(() => [...new Set(personas.map(p => p.location).filter(Boolean))], [personas]);
@@ -149,9 +151,19 @@ const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onAr
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {persona.usedIn > 0 ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setLinkedMapsConfig({ 
+                            isOpen: true, 
+                            items: persona.linkedJourneys || [], 
+                            title: `Maps using ${persona.name}` 
+                          }); 
+                        }}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 hover:border-blue-200 transition-colors cursor-pointer"
+                      >
                         Linked to {persona.usedIn} maps
-                      </span>
+                      </button>
                   ) : (
                       <span className="text-sm text-gray-400">(not used)</span>
                   )}
@@ -209,6 +221,13 @@ const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onAr
             : `Create a copy of "${confirmConfig.item?.name}"?`}
         confirmText={confirmConfig.action === 'delete' ? "Delete" : "Duplicate"}
         isDestructive={confirmConfig.action === 'delete'}
+      />
+
+      <LinkedMapsModal 
+        isOpen={linkedMapsConfig.isOpen}
+        onClose={() => setLinkedMapsConfig({ ...linkedMapsConfig, isOpen: false })}
+        title={linkedMapsConfig.title}
+        items={linkedMapsConfig.items}
       />
     </div>
   );

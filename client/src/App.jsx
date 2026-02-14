@@ -212,7 +212,7 @@ function App() {
   // Calculate usage stats for metrics
   const metricsWithUsage = useMemo(() => {
     return globalMetrics.map(m => {
-      const linkedCount = globalJourneys.filter(j => {
+      const linked = globalJourneys.filter(j => {
         let md = j.map_data;
         if (!md) return false;
         if (typeof md === 'string') {
@@ -227,9 +227,13 @@ function App() {
                 col.cards?.some(c => c.type === 'metric' && String(c.content) === String(m.id))
             )
         );
-      }).length;
+      });
 
-      return { ...m, linkedMaps: linkedCount };
+      return { 
+        ...m, 
+        linkedMaps: linked.length,
+        linkedJourneys: linked.map(j => ({ id: j.id, title: j.title }))
+      };
     });
   }, [globalMetrics, globalJourneys]);
 
