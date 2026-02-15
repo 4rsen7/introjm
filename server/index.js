@@ -32,28 +32,49 @@ app.use((req, res, next) => {
     }
 })();
 
-// Middleware — явний список origin для надійного CORS (localhost та 127.0.0.1)
+// Middleware: CORS налаштування (Local + Production)
 const allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:5174',
+  // Локальна розробка
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  
+  // Продакшн (Vercel) - ДОДАЙ СВОЇ РЕАЛЬНІ ПОСИЛАННЯ
+  'https://iterojm.vercel.app',        // Основне посилання (якщо є)
+  'https://iterojm-app.vercel.app',    // Твій Клієнт
+  'https://iterojm-admin.vercel.app'   // Твоя Адмінка
 ];
+
 app.use(cors({
-    origin: (origin, cb) => {
-        if (!origin) return cb(null, true); // same-origin або Postman
-        if (allowedOrigins.includes(origin)) return cb(null, true);
-        // У dev дозволяємо будь-який localhost/127.0.0.1
-        if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return cb(null, true);
-        return cb(null, false); // не кидаємо Error, щоб CORS-заголовки все одно відправились
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: (origin, callback) => {
+      // 1. Дозволяємо запити без origin (Postman, серверні скрипти)
+      if (!origin) return callback(null, true);
+
+      // 2. Перевіряємо, чи є origin у білому списку
+      if (allowedOrigins.indexOf(origin) !== -1) {
+          return callback(null, true);
+      }
+
+      // 3. Додаткова перевірка для будь-якого Localhost (на випадок інших портів)
+      // Це дозволить тобі працювати локально, навіть якщо порт зміниться
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          return callback(null, true);
+      }
+
+      // 4. Якщо нічого не підійшло — блокуємо
+      console.log('Blocked by CORS:', origin);
+      return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-app.options('*', cors()); // Вмикає pre-flight (OPTIONS) для всіх маршрутів
+
+// Вмикає pre-flight для всіх маршрутів
+app.options('*', cors()); 
 app.use(express.json());
 
 // --- SYSTEM LOGGING HELPER ---
