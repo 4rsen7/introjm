@@ -9,7 +9,8 @@ import {
   useNotificationProvider,
 } from "@refinedev/antd";
 import "@refinedev/antd/dist/reset.css";
-import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined } from "@ant-design/icons";
+import "./global.css";
+import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 
 import routerProvider, {
   CatchAllNavigate,
@@ -18,7 +19,7 @@ import routerProvider, {
   UnsavedChangesNotifier,
 } from "@refinedev/react-router";
 import { liveProvider } from "@refinedev/supabase";
-import { App as AntdApp, ConfigProvider, theme } from "antd";
+import { App as AntdApp } from "antd";
 import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom"; // Використовуємо react-router-dom
 import { ColorModeContextProvider } from "./contexts/color-mode";
 import authProvider from "./providers/auth";
@@ -32,6 +33,9 @@ import { UserList } from "./pages/users/list";
 import { PlanList } from "./pages/plans/list";
 import { PlanCreate } from "./pages/plans/create";
 import { PlanEdit } from "./pages/plans/edit";
+import { SupportList } from "./pages/support/list";
+import { Header } from "./components/header";
+import { Sider } from "./components/sider";
 
 function App() {
   return (
@@ -39,38 +43,6 @@ function App() {
       <RefineKbarProvider>
         <ColorModeContextProvider>
           <AntdApp>
-            <ConfigProvider
-              theme={{
-                algorithm: theme.darkAlgorithm,
-                token: {
-                  colorPrimary: "#3E7BFA", // Electric Blue
-                  colorBgBase: "#0F1014", // Deep dark background
-                  colorBgContainer: "#16181D", // Slightly lighter for cards
-                  colorBorder: "rgba(255, 255, 255, 0.08)", // Subtle borders
-                  borderRadius: 8,
-                  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-                  fontSize: 15,
-                  colorTextSecondary: "rgba(255, 255, 255, 0.45)",
-                },
-                components: {
-                  Card: {
-                    colorBgContainer: "#16181D",
-                    colorBorderSecondary: "rgba(255, 255, 255, 0.08)",
-                    boxShadowTertiary: "none", // Remove heavy shadows
-                  },
-                  Layout: {
-                    bodyBg: "#0F1014",
-                    headerBg: "#0F1014",
-                    siderBg: "#16181D",
-                  },
-                  Table: {
-                    colorBgContainer: "#16181D",
-                    headerBg: "transparent",
-                    borderColor: "rgba(255, 255, 255, 0.08)",
-                  }
-                }
-              }}
-            >
             <DevtoolsProvider>
               <Refine
                 dataProvider={dataProvider}
@@ -82,6 +54,7 @@ function App() {
                   syncWithLocation: true,
                   warnWhenUnsavedChanges: true,
                   projectId: "Ec91Ix-DwFSGV-M4UMOR",
+                  title: { text: "CRM iteroJM" },
                 }}
                 // 1. ОПИСУЄМО РЕСУРСИ (Меню зліва)
                 resources={[
@@ -127,6 +100,14 @@ function App() {
                       icon: <CreditCardOutlined />,
                     },
                   },
+                  {
+                    name: "support",
+                    list: "/support",
+                    meta: {
+                      label: "Support",
+                      icon: <CustomerServiceOutlined />,
+                    },
+                  },
                 ]}
               >
                 <Routes>
@@ -158,7 +139,7 @@ function App() {
                         key="authenticated-inner"
                         fallback={<CatchAllNavigate to="/login" />}
                       >
-                        <ThemedLayout>
+                        <ThemedLayout Header={Header} Sider={Sider}>
                           <Outlet />
                         </ThemedLayout>
                       </Authenticated>
@@ -179,7 +160,8 @@ function App() {
                     <Route path="/plans" element={<PlanList />} />
                     <Route path="/plans/create" element={<PlanCreate />} />
                     <Route path="/plans/edit/:id" element={<PlanEdit />} />
-                    
+                    <Route path="/support" element={<SupportList />} />
+
                     {/* Сторінка помилки 404 */}
                     <Route path="*" element={<ErrorComponent />} />
                   </Route>
@@ -191,7 +173,6 @@ function App() {
               </Refine>
               <DevtoolsPanel />
             </DevtoolsProvider>
-            </ConfigProvider>
           </AntdApp>
         </ColorModeContextProvider>
       </RefineKbarProvider>

@@ -29,6 +29,20 @@ export const PlanCreate: React.FC = () => {
         <Form.Item label="Tier Level (1=Low, 3=High)" name="tier">
           <InputNumber />
         </Form.Item>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <Form.Item label="Max Members (per workspace)" name="max_members" help="Leave empty for unlimited">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="Max Journeys (per workspace)" name="max_journeys" help="Leave empty for unlimited">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="Max Personas (per workspace)" name="max_personas" help="Leave empty for unlimited">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="Max Metrics (per workspace)" name="max_metrics" help="Leave empty for unlimited">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="Unlimited" />
+          </Form.Item>
+        </div>
         <Form.Item name="is_active" valuePropName="checked">
           <Checkbox>Active Plan</Checkbox>
         </Form.Item>

@@ -5,7 +5,8 @@ import { MoreOutlined, StopOutlined, KeyOutlined, EyeOutlined } from "@ant-desig
 import { supabaseClient } from "../../providers/supabase-client";
 import dayjs from "dayjs";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Завжди ходимо на бекенд напряму (CORS на сервері дозволяє localhost:3000)
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5005/api";
 
 // Sub-component to fix "useForm not connected" warning
 const PlanAssignmentForm: React.FC<{ 
@@ -83,7 +84,11 @@ export const UserList: React.FC = () => {
         setLoadingDetails(true);
         const fetchDetails = async () => {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session) return;
+            if (!session) {
+                setLoadingDetails(false);
+                message.error("Please log in to view user details");
+                return;
+            }
 
             try {
                 console.log(`Fetching user details from: ${API_URL}/users-manage/${selectedUserId}`);
@@ -94,7 +99,8 @@ export const UserList: React.FC = () => {
 
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({}));
-                    throw new Error(errorData.error || `Request failed with status ${res.status}`);
+                    const errMsg = errorData.message || errorData.error || `Request failed with status ${res.status}`;
+                    throw new Error(errMsg);
                 }
 
                 const json = await res.json();
@@ -103,7 +109,8 @@ export const UserList: React.FC = () => {
                 }
             } catch (e) {
                 console.error(e);
-                message.error("Failed to load user details");
+                const text = e instanceof Error ? e.message : "Failed to load user details";
+                message.error(text);
             } finally {
                 setLoadingDetails(false);
             }

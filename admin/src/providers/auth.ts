@@ -227,9 +227,21 @@ const authProvider: AuthProvider = {
     const { data } = await supabaseClient.auth.getUser();
 
     if (data?.user) {
+      const u = data.user;
+      const { data: profile } = await supabaseClient
+        .from("profiles")
+        .select("full_name")
+        .eq("id", u.id)
+        .maybeSingle();
+      const name =
+        (profile?.full_name && profile.full_name.trim()) ||
+        u.user_metadata?.full_name ||
+        u.email ||
+        "";
       return {
-        ...data.user,
-        name: data.user.email,
+        ...u,
+        name: name || u.email,
+        email: u.email,
       };
     }
 
