@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
-import PricingModal from '../components/common/PricingModal';
 import { getAuthToken } from '../services/auth';
+import { useWorkspaceLimits } from '../hooks/useQueries';
 
 // Fallback API URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
-const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, userProfile, onUpdateProfile }) => {
+const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
   // 1. Real Role Check
   const isOwner = workspace?.role === 'owner';
 
@@ -44,6 +44,8 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   const [teamData, setTeamData] = useState({ members: [], invites: [] });
   const [inviteEmail, setInviteEmail] = useState('');
   const [isInviting, setIsInviting] = useState(false);
+  const [teamConfirm, setTeamConfirm] = useState(null); // { type: 'cancelInvite', invite } | { type: 'removeMember', member }
+  const [teamActionLoading, setTeamActionLoading] = useState(false);
   
   const [profileName, setProfileName] = useState(userProfile?.full_name || '');
   const [profileColor, setProfileColor] = useState('bg-blue-100 text-blue-600');
@@ -55,7 +57,14 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   }, [userProfile]);
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [isPricingOpen, setIsPricingOpen] = useState(false);
+
+  const { data: limitsData } = useWorkspaceLimits(workspace?.id);
+  const limits = limitsData?.limits;
+  const usage = limits?.usage ?? { members: 0, journeys: 0, personas: 0, metrics: 0 };
+  const maxMembers = limits?.maxMembers ?? null;
+  const maxJ = limits?.maxJourneys ?? null;
+  const maxP = limits?.maxPersonas ?? null;
+  const maxM = limits?.maxMetrics ?? null;
 
   const AVATAR_COLORS = [
     'bg-blue-100 text-blue-600',
@@ -75,7 +84,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   const fetchTeam = async () => {
       const token = await getAuthToken();
       try {
-          const res = await fetch(`${API_URL}/workspace/team`, { headers: { 'Authorization': `Bearer ${token}` } });
+          const res = await fetch(`${API_URL}/workspace/team?workspaceId=${workspace?.id}`, { headers: { 'Authorization': `Bearer ${token}` } });
           const json = await res.json();
           if (json.status === 'success') setTeamData(json.data);
       } catch (e) { console.error(e); }
@@ -86,20 +95,34 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
       setIsInviting(true);
       const token = await getAuthToken();
       try {
-          const res = await fetch(`${API_URL}/workspace/invite`, {
+          // Додаємо workspaceId в URL query string, оскільки middleware авторизації може очікувати його саме там
+          const res = await fetch(`${API_URL}/workspace/invite?workspaceId=${workspace?.id}&workspace_id=${workspace?.id}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ email: inviteEmail })
+              body: JSON.stringify({ 
+                email: inviteEmail,
+                workspaceId: workspace?.id,
+                workspace_id: workspace?.id
+              })
           });
-          if (res.ok) {
-              setInviteEmail('');
-              fetchTeam(); // Refresh list
-          } else {
-              const err = await res.json();
-              alert(err.error || 'Failed to invite user');
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 403 && data.code === 'LIMIT_REACHED' && data.limit === 'members') {
+              onLimitReached?.(data.limit);
+              return;
           }
-      } catch (e) { console.error(e); }
-      setIsInviting(false);
+          if (res.ok && (data.status === 'success' || data.message)) {
+              setInviteEmail('');
+              alert(data.message || 'Invite sent successfully!');
+              fetchTeam();
+          } else {
+              alert(data.error || data.message || 'Failed to invite user');
+          }
+      } catch (e) {
+          console.error(e);
+          alert('Failed to send invite. Please try again.');
+      } finally {
+          setIsInviting(false);
+      }
   };
 
   const getInitials = (name) => {
@@ -111,6 +134,52 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         .slice(0, 2)
         .join('')
         .toUpperCase();
+  };
+
+  const handleCancelInviteClick = (invite) => {
+    setTeamConfirm({ type: 'cancelInvite', invite });
+  };
+
+  const handleRemoveMemberClick = (member) => {
+    setTeamConfirm({ type: 'removeMember', member });
+  };
+
+  const handleTeamConfirmAction = async () => {
+    if (!teamConfirm || teamActionLoading) return;
+    const token = await getAuthToken();
+    setTeamActionLoading(true);
+    try {
+      if (teamConfirm.type === 'cancelInvite') {
+        const res = await fetch(`${API_URL}/workspace/invite/${teamConfirm.invite.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json();
+        if (res.ok) {
+          setTeamConfirm(null);
+          fetchTeam();
+        } else {
+          alert(json.error || 'Failed to cancel invite');
+        }
+      } else {
+        const res = await fetch(`${API_URL}/workspace/member/${teamConfirm.member.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json();
+        if (res.ok) {
+          setTeamConfirm(null);
+          fetchTeam();
+        } else {
+          alert(json.error || 'Failed to remove member');
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Request failed');
+    } finally {
+      setTeamActionLoading(false);
+    }
   };
 
   return (
@@ -125,7 +194,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors relative ${
+            className={`px-6 py-3 text-sm font-medium transition-colors relative cursor-pointer ${
               activeTab === tab.id 
                 ? 'text-blue-600' 
                 : 'text-gray-500 hover:text-gray-700'
@@ -183,32 +252,58 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
                         <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Current Plan</div>
                         <div className="flex items-center gap-2 mb-2">
-                            <span className="text-lg font-bold text-gray-900">Free Trial</span>
+                            <span className="text-lg font-bold text-gray-900">{limits?.planName ?? '—'}</span>
                             <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase">Active</span>
                         </div>
-                        <div className="text-sm text-gray-500">Trial ends in 14 days</div>
+                        {limits?.currentPeriodEnd && (
+                            <div className="text-sm text-gray-500">
+                                Renews {new Date(limits.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                        )}
+                        {!limits?.planName && (
+                            <div className="text-sm text-gray-500">No plan assigned</div>
+                        )}
                     </div>
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 flex flex-col justify-center">
-                        <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-                            <span>Seat Usage</span>
-                            <span>2 of 5 used</span>
-                        </div>
-                        <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-blue-500 w-2/5 rounded-full"></div>
-                        </div>
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
+                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Usage (this workspace)</div>
+                        {[
+                            { label: 'Members', used: usage.members, max: maxMembers },
+                            { label: 'Journeys', used: usage.journeys, max: maxJ },
+                            { label: 'Personas', used: usage.personas, max: maxP },
+                            { label: 'Metrics', used: usage.metrics, max: maxM },
+                        ].map(({ label, used, max }) => (
+                            <div key={label}>
+                                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                                    <span>{label}</span>
+                                    <span>{max != null ? `${used} of ${max}` : `${used} used`}</span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-blue-500 rounded-full transition-all" 
+                                        style={{ width: max != null && max > 0 ? `${Math.min(100, (used / max) * 100)}%` : '0%' }} 
+                                    />
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-2">
-                    <div className="text-sm text-gray-500">
-                        Want to unlock more features?
-                    </div>
-                    <button 
-                        onClick={() => setIsPricingOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium shadow-md hover:shadow-lg hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:-translate-y-0.5"
-                    >
-                        <Zap size={16} fill="currentColor" /> Upgrade Plan
-                    </button>
+                    {isOwner ? (
+                        <>
+                            <div className="text-sm text-gray-500">Want to unlock more features?</div>
+                            <button 
+                                onClick={() => onOpenPricing?.()}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium shadow-md hover:shadow-lg hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:-translate-y-0.5"
+                            >
+                                <Zap size={16} fill="currentColor" /> Upgrade Plan
+                            </button>
+                        </>
+                    ) : (
+                        <div className="text-sm text-gray-500">
+                            Plan is managed by the workspace owner. Contact the owner to change the plan.
+                        </div>
+                    )}
                 </div>
             </section>
 
@@ -257,10 +352,10 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   <div key={member.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition group">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 font-bold text-xs">
-                        {(member.full_name || member.email || 'U')[0].toUpperCase()}
+                        {(member.full_name || member.email || 'M')[0].toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{member.full_name || member.email}</div>
+                        <div className="text-sm font-medium text-gray-900">{member.full_name || member.email || 'Member'}</div>
                         <div className="text-xs text-gray-500">{member.role}</div>
                       </div>
                     </div>
@@ -268,7 +363,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                       <span className="text-xs px-2 py-1 rounded-full font-medium bg-green-50 text-green-700">
                         Active
                       </span>
-                      <button className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMemberClick(member)}
+                        className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
+                        aria-label="Remove from workspace"
+                      >
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -291,7 +391,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                       <span className="text-xs px-2 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
                         Pending
                       </span>
-                      <button className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={() => handleCancelInviteClick(invite)}
+                        className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"
+                        aria-label="Cancel invite"
+                      >
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -321,7 +426,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                       <button
                         key={color}
                         onClick={() => setProfileColor(color)}
-                        className={`w-6 h-6 rounded-full border border-gray-200 ${color.split(' ')[0]} ${profileColor === color ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
+                        className={`w-6 h-6 rounded-full border border-gray-200 cursor-pointer ${color.split(' ')[0]} ${profileColor === color ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`}
                       />
                     ))}
                   </div>
@@ -363,13 +468,31 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
       <ConfirmModal 
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={() => { alert('Workspace deleted (simulated)'); setIsDeleteModalOpen(false); }}
+        onConfirm={async () => {
+          if (workspace?.id && onDeleteWorkspace) {
+            const ok = await onDeleteWorkspace(workspace.id);
+            if (ok) setIsDeleteModalOpen(false);
+          }
+        }}
         title="Delete Workspace?"
         message="Are you sure you want to delete this workspace? All data will be permanently lost."
         isDestructive={true}
       />
 
-      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      <ConfirmModal
+        isOpen={!!teamConfirm}
+        onClose={() => !teamActionLoading && setTeamConfirm(null)}
+        onConfirm={handleTeamConfirmAction}
+        title={teamConfirm?.type === 'cancelInvite' ? 'Cancel invite?' : 'Remove from workspace?'}
+        message={
+          teamConfirm?.type === 'cancelInvite'
+            ? `Cancel the invite for ${teamConfirm.invite?.email}? They will no longer be able to join via this link.`
+            : `Remove ${teamConfirm?.member?.full_name || teamConfirm?.member?.email || 'this member'} from the workspace? They will lose access immediately.`
+        }
+        confirmText={teamActionLoading ? '...' : (teamConfirm?.type === 'cancelInvite' ? 'Cancel invite' : 'Remove')}
+        isDestructive={true}
+      />
+
     </div>
   );
 };

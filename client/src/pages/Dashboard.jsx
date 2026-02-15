@@ -5,11 +5,11 @@ import ConfirmModal from '../ConfirmModal'
 import { getAuthToken } from '../services/auth'
 import { useQueryClient } from '@tanstack/react-query'
 
-// Fallback to localhost:5001 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Fallback to localhost:5005 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
-export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
+export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
   const queryClient = useQueryClient();
 
@@ -121,7 +121,8 @@ export default function Dashboard({ journeys = [], onNewJourney, onEditJourney, 
                 .map(journey => (
                 <Link key={journey.id} to={`/journey/${journey.id}`} className="block">
                     <JourneyCard 
-                        journey={journey} 
+                        journey={journey}
+                        canDelete={currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner)}
                         onDuplicate={() => openConfirm('duplicate', journey)}
                         onArchive={() => handleArchive(journey.id)}
                         onDelete={() => openConfirm('delete', journey)}
@@ -177,7 +178,7 @@ function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
     )
 }
 
-function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
+function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDelete }) {
     const date = getRelativeTime(journey.updated_at || journey.created_at);
     
     // Calculate real stage count from map_data
@@ -253,8 +254,12 @@ function JourneyCard({ journey, onDuplicate, onArchive, onDelete }) {
                         <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 z-30 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
                             <button title="Duplicate journey" onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> Duplicate</button>
                             <button title="Archive journey" onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> Archive</button>
-                            <div className="h-px bg-gray-100 my-1"></div>
-                            <button title="Delete journey" onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
+                            {canDelete && (
+                              <>
+                                <div className="h-px bg-gray-100 my-1"></div>
+                                <button title="Delete journey" onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
+                              </>
+                            )}
                         </div>
                     )}
                 </div>

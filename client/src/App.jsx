@@ -11,12 +11,16 @@ import MetricBuilder from './pages/MetricBuilder'
 import SettingsPage from './pages/SettingsPage'
 import ArchivePage from './pages/ArchivePage'
 import AuthPage from './pages/AuthPage'
+import PricingModal from './components/common/PricingModal'
+import SupportFeedback from './components/common/SupportFeedback'
 import { getAuthToken } from './services/auth'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, useMetrics, useWorkspace, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, useMetrics, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
-// Fallback to localhost:5001 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
+
+// Fallback to localhost:5005 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 // Helper wrapper for editing metrics
 const MetricEditorWrapper = ({ metrics, onSave, onBack }) => {
@@ -30,13 +34,17 @@ const MainLayout = ({
   isWorkspaceExpanded, 
   setIsWorkspaceExpanded, 
   currentWorkspace, 
+  workspaces = [],
+  onSwitchWorkspace,
   userProfile, 
+  planName,
   isNavigating, 
   setSettingsTab 
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const getUserInitials = () => {
       const name = userProfile?.full_name || userProfile?.email || '';
@@ -58,16 +66,54 @@ const MainLayout = ({
             <MenuItem icon={LayoutGrid} label="Dashboard" isActive={location.pathname === '/dashboard'} onClick={() => navigate('/dashboard')} />
           </div>
           <div>
-            <div 
-              className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center cursor-pointer hover:text-gray-600 select-none"
-              onClick={() => setIsWorkspaceExpanded(!isWorkspaceExpanded)}
-            >
-              {currentWorkspace?.name || 'Workspace'} 
-              <ChevronDown 
-                size={14} 
-                className={`transition-transform duration-500 ${isWorkspaceExpanded ? '' : '-rotate-90'}`} 
-                style={{ transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)' }}
-              />
+            <div className="relative">
+              <div 
+                className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center cursor-pointer hover:text-gray-600 select-none"
+                onClick={() => workspaces.length > 1 ? setSwitcherOpen((o) => !o) : setIsWorkspaceExpanded(!isWorkspaceExpanded)}
+              >
+                <span className="truncate flex-1">{currentWorkspace?.name || 'Workspace'}</span>
+                <ChevronDown 
+                  size={14} 
+                  className={`flex-shrink-0 ml-1 transition-transform duration-500 ${(workspaces.length > 1 ? switcherOpen : isWorkspaceExpanded) ? '' : '-rotate-90'}`} 
+                  style={{ transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)' }}
+                />
+              </div>
+              {switcherOpen && workspaces.length > 1 && (
+                <div className="fixed inset-0 z-20 cursor-pointer" onClick={() => setSwitcherOpen(false)} aria-hidden="true" />
+              )}
+              {workspaces.length > 1 && (
+                <div 
+                  className="grid overflow-hidden transition-all duration-500 z-30 relative"
+                  style={{ 
+                    gridTemplateRows: switcherOpen ? '1fr' : '0fr',
+                    transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                    transitionProperty: 'grid-template-rows'
+                  }}
+                >
+                  <div className="overflow-hidden min-h-0">
+                    <div 
+                      className="mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-48 overflow-y-auto transition-all duration-500"
+                      style={{
+                        opacity: switcherOpen ? 1 : 0,
+                        transform: switcherOpen ? 'translateY(0)' : 'translateY(-0.5rem)',
+                        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
+                      }}
+                    >
+                      {workspaces.map((ws) => (
+                        <button
+                          key={ws.id}
+                          type="button"
+                          onClick={() => { onSwitchWorkspace(ws.id); setSwitcherOpen(false); }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex justify-between items-center ${currentWorkspace?.id === ws.id ? 'bg-orange-50 text-orange-700 font-medium' : 'text-gray-700'}`}
+                        >
+                          <span className="truncate">{ws.name}</span>
+                          <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{ws.role === 'owner' ? 'Owner' : 'Member'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div 
               className="grid transition-all duration-500"
@@ -107,7 +153,7 @@ const MainLayout = ({
             </div>
             <div className="flex flex-col">
                <span className="text-sm font-medium text-gray-700 truncate max-w-[140px]">{userProfile?.full_name || userProfile?.email || 'User'}</span>
-               <span className="text-xs text-gray-400">Trial Plan</span>
+               <span className="text-xs text-gray-400">{planName || '—'}</span>
             </div>
           </div>
           <button 
@@ -136,6 +182,7 @@ const MainLayout = ({
             <Outlet />
          </div>
       </main>
+      <SupportFeedback />
     </div>
   );
 };
@@ -178,21 +225,62 @@ function App() {
   const { data: globalJourneys = [] } = useJourneys();
   const { data: globalPersonas = [] } = usePersonas();
   const { data: globalMetrics = [] } = useMetrics();
-  const { data: currentWorkspace } = useWorkspace();
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
+  const workspaces = useWorkspaceList().data ?? [];
+  const currentWorkspace = useMemo(() => {
+    if (!workspaces.length) return null;
+    const found = workspaces.find((w) => w.id === selectedWorkspaceId);
+    return found || workspaces[0];
+  }, [workspaces, selectedWorkspaceId]);
+
   const { data: userProfile } = useProfile();
+  const { data: workspaceLimits } = useWorkspaceLimits(currentWorkspace?.id);
+  const planName = workspaceLimits?.limits?.planName ?? null;
+
+  useEffect(() => {
+    if (workspaces.length > 0 && (!selectedWorkspaceId || !workspaces.some((w) => w.id === selectedWorkspaceId))) {
+      const next = workspaces[0].id;
+      setSelectedWorkspaceId(next);
+      localStorage.setItem(SELECTED_WORKSPACE_KEY, next);
+    }
+  }, [workspaces, selectedWorkspaceId]);
+
+  const handleSwitchWorkspace = (id) => {
+    setSelectedWorkspaceId(id);
+    localStorage.setItem(SELECTED_WORKSPACE_KEY, id);
+    queryClient.invalidateQueries({ queryKey: ['journeys'] });
+    queryClient.invalidateQueries({ queryKey: ['personas'] });
+    queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
+  };
+
+  const filteredJourneys = useMemo(() => 
+    currentWorkspace ? globalJourneys.filter((j) => j.workspace_id === currentWorkspace.id) : globalJourneys,
+    [globalJourneys, currentWorkspace]
+  );
+  const filteredPersonas = useMemo(() =>
+    currentWorkspace ? globalPersonas.filter((p) => p.workspace_id === currentWorkspace.id) : globalPersonas,
+    [globalPersonas, currentWorkspace]
+  );
+  const filteredMetrics = useMemo(() =>
+    currentWorkspace ? globalMetrics.filter((m) => m.workspace_id === currentWorkspace.id) : globalMetrics,
+    [globalMetrics, currentWorkspace]
+  );
 
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
   const [editingPersona, setEditingPersona] = useState(null);
+  const [limitReached, setLimitReached] = useState({ open: false, limit: null });
+  const [showPricingModal, setShowPricingModal] = useState(false);
 
   // Navigation Loading State
   const [isNavigating, setIsNavigating] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [settingsTab, setSettingsTab] = useState('workspace');
 
-  // Calculate usage stats and linked journeys for personas
+  // Calculate usage stats and linked journeys for personas (per current workspace)
   const personasWithUsage = useMemo(() => {
-    return globalPersonas.map(p => {
-      const linked = globalJourneys.filter(j => {
+    return filteredPersonas.map(p => {
+      const linked = filteredJourneys.filter(j => {
         let md = j.map_data;
         if (!md) return false;
         if (typeof md === 'string') {
@@ -207,12 +295,12 @@ function App() {
         linkedJourneys: linked.map(j => ({ id: j.id, title: j.title }))
       };
     });
-  }, [globalPersonas, globalJourneys]);
+  }, [filteredPersonas, filteredJourneys]);
 
-  // Calculate usage stats for metrics
+  // Calculate usage stats for metrics (per current workspace)
   const metricsWithUsage = useMemo(() => {
-    return globalMetrics.map(m => {
-      const linked = globalJourneys.filter(j => {
+    return filteredMetrics.map(m => {
+      const linked = filteredJourneys.filter(j => {
         let md = j.map_data;
         if (!md) return false;
         if (typeof md === 'string') {
@@ -235,7 +323,7 @@ function App() {
         linkedJourneys: linked.map(j => ({ id: j.id, title: j.title }))
       };
     });
-  }, [globalMetrics, globalJourneys]);
+  }, [filteredMetrics, filteredJourneys]);
 
   const handleSaveGlobalPersona = async (personaData) => {
       const token = await getAuthToken();
@@ -248,7 +336,8 @@ function App() {
       
       const dataToSave = { ...personaData };
       if (id) dataToSave.id = id;
-      
+      if (isNew && currentWorkspace?.id) dataToSave.workspace_id = currentWorkspace.id;
+
       try {
           let response;
           if (isNew) {
@@ -268,6 +357,10 @@ function App() {
           }
 
           const data = await response.json();
+          if (response.status === 403 && data.code === 'LIMIT_REACHED') {
+              setLimitReached({ open: true, limit: data.limit });
+              return;
+          }
           if (data.status === 'success') {
               const savedPersona = mapPersonaToClient(data.data);
               queryClient.invalidateQueries(['personas']); // Refresh data
@@ -309,7 +402,10 @@ function App() {
   }
 
   const handleCreateJourney = async () => {
-    console.log('Creating new journey...');
+    if (!currentWorkspace?.id) {
+      alert('Please select a workspace first (use the workspace switcher in the sidebar).');
+      return;
+    }
     const token = await getAuthToken();
     try {
       const response = await fetch(`${API_URL}/journeys`, {
@@ -318,9 +414,13 @@ function App() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ title: 'Untitled Journey', description: '' })
+        body: JSON.stringify({ title: 'Untitled Journey', description: '', workspace_id: currentWorkspace.id })
       });
       const data = await response.json();
+      if (response.status === 403 && data.code === 'LIMIT_REACHED') {
+        setLimitReached({ open: true, limit: data.limit });
+        return;
+      }
       if (data.status === 'success') {
         queryClient.invalidateQueries(['journeys']);
         navigate(`/journey/${data.data.id}`);
@@ -388,6 +488,7 @@ function App() {
         series_data: metricData.seriesData,
         reverse_colors: metricData.reverseColors
       };
+      if (isNew && currentWorkspace?.id) payload.workspace_id = currentWorkspace.id;
 
       try {
         let response;
@@ -406,6 +507,10 @@ function App() {
         }
         
         const data = await response.json();
+        if (response.status === 403 && data.code === 'LIMIT_REACHED') {
+          setLimitReached({ open: true, limit: data.limit });
+          return;
+        }
         if (data.status === 'success') {
            const savedMetric = mapMetricToClient(data.data);
            queryClient.invalidateQueries(['metrics']);
@@ -429,19 +534,50 @@ function App() {
   }
 
   const handleUpdateWorkspace = async (newName) => {
+      if (!currentWorkspace?.id) return;
       const token = await getAuthToken();
       try {
           const response = await fetch(`${API_URL}/workspace`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ name: newName })
+              body: JSON.stringify({ name: newName, workspace_id: currentWorkspace.id })
           });
           const data = await response.json();
           if (data.status === 'success') {
               queryClient.invalidateQueries(['workspace']);
+              queryClient.invalidateQueries(['workspace_list']);
           }
       } catch (error) {
           console.error('Error updating workspace:', error);
+      }
+  };
+
+  const handleDeleteWorkspace = async (workspaceId) => {
+      if (!workspaceId) return false;
+      const token = await getAuthToken();
+      try {
+          const response = await fetch(`${API_URL}/workspace`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ workspace_id: workspaceId })
+          });
+          const data = await response.json();
+          if (data.status === 'success') {
+              setSelectedWorkspaceId('');
+              queryClient.invalidateQueries(['workspace_list']);
+              queryClient.invalidateQueries(['workspace']);
+              queryClient.invalidateQueries(['journeys']);
+              queryClient.invalidateQueries(['personas']);
+              queryClient.invalidateQueries(['metrics']);
+              navigate('/dashboard');
+              return true;
+          }
+          alert(data.error || data.message || 'Failed to delete workspace');
+          return false;
+      } catch (error) {
+          console.error('Error deleting workspace:', error);
+          alert('Failed to delete workspace. Please try again.');
+          return false;
       }
   };
 
@@ -483,8 +619,8 @@ function App() {
         <Route path="/journey/:id" element={
             <Editor 
               onBack={() => navigate('/dashboard')} 
-              globalPersonas={globalPersonas}
-              globalMetrics={globalMetrics}
+              globalPersonas={filteredPersonas}
+              globalMetrics={filteredMetrics}
               onSaveGlobalPersona={handleSaveGlobalPersona}
               onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
             />
@@ -495,14 +631,19 @@ function App() {
              isWorkspaceExpanded={isWorkspaceExpanded}
              setIsWorkspaceExpanded={setIsWorkspaceExpanded}
              currentWorkspace={currentWorkspace}
+             workspaces={workspaces}
+             onSwitchWorkspace={handleSwitchWorkspace}
              userProfile={userProfile}
+             planName={planName}
              isNavigating={isNavigating}
              setSettingsTab={setSettingsTab}
           />
         }>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard 
-                journeys={globalJourneys}
+                journeys={filteredJourneys}
+                currentUserId={userProfile?.id}
+                isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onNewJourney={handleCreateJourney} 
                 onEditJourney={handleEditJourney}
                 onNewPersona={handleNewPersona} 
@@ -513,7 +654,9 @@ function App() {
                 onDelete={handleDeleteJourney}
             />} />
             <Route path="/journeys" element={<JourneyMaps 
-                journeys={globalJourneys.filter(j => j.status !== 'archived')}
+                journeys={filteredJourneys.filter(j => j.status !== 'archived')}
+                currentUserId={userProfile?.id}
+                isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onCreate={handleCreateJourney}
                 onEdit={handleEditJourney}
                 onDelete={handleDeleteJourney}
@@ -522,19 +665,22 @@ function App() {
             />} />
             <Route path="/personas" element={<Personas 
                 personas={personasWithUsage.filter(p => p.status !== 'archived')} 
+                currentUserId={userProfile?.id}
                 onCreate={() => { setEditingPersona(null); setIsPersonaModalOpen(true); }} 
                 onEdit={(p) => { setEditingPersona(p); setIsPersonaModalOpen(true); }}
                 onDelete={handleDeletePersona}
                 onDuplicate={handleDuplicatePersona}
                 onArchive={handleArchivePersona}
             />} />
-            <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
+            <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
-            <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={globalMetrics} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
-            <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} />} />
+            <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
+            <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
-                archivedJourneys={globalJourneys.filter(j => j.status === 'archived')}
-                archivedPersonas={globalPersonas.filter(p => p.status === 'archived')}
+                archivedJourneys={filteredJourneys.filter(j => j.status === 'archived')}
+                archivedPersonas={filteredPersonas.filter(p => p.status === 'archived')}
+                currentUserId={userProfile?.id}
+                isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onRestoreJourney={handleRestoreJourney}
                 onDeleteJourney={handleDeleteJourney}
                 onRestorePersona={handleRestorePersona}
@@ -550,6 +696,33 @@ function App() {
         onSave={handleSaveGlobalPersona}
         initialPersona={editingPersona}
       />
+
+      {/* Limit reached modal: owner can upgrade, member is told to contact owner */}
+      {limitReached.open && (
+        <div className="fixed inset-0 z-[99] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 cursor-pointer" onClick={() => setLimitReached({ open: false, limit: null })} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Limit reached</h3>
+            <p className="text-gray-600 mb-4">
+              {currentWorkspace?.role === 'owner'
+                ? `You've reached the limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit}. Upgrade your plan to add more.`
+                : `You've reached the workspace limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit}. Contact the workspace owner to upgrade the plan.`}
+            </p>
+            <div className="flex gap-2 justify-end">
+              {currentWorkspace?.role === 'owner' ? (
+                <>
+                  <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Close</button>
+                  <button onClick={() => { setShowPricingModal(true); setLimitReached({ open: false, limit: null }); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Upgrade plan</button>
+                </>
+              ) : (
+                <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">OK</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} />
     </>
   )
 }

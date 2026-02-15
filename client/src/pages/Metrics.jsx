@@ -4,7 +4,7 @@ import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
-const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
+const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedType, setSelectedType] = useState('');
@@ -168,11 +168,13 @@ const Metrics = ({ metrics = [], onCreate, onEdit, onDelete }) => {
                             <Edit size={18} />
                         </button>
                     </Tooltip>
-                    <Tooltip content="Delete">
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(metric); }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                            <Trash2 size={18} />
-                        </button>
-                    </Tooltip>
+                    {currentUserId != null && metric.user_id === currentUserId && (
+                        <Tooltip content="Delete">
+                            <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(metric); }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                <Trash2 size={18} />
+                            </button>
+                        </Tooltip>
+                    )}
                 </td>
               </tr>
             )))}

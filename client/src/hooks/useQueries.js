@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../services/auth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 // Helper for consistent date formatting
 const formatDate = (dateString) => {
@@ -63,6 +63,7 @@ export const useJourneys = () => {
       const data = await fetchData('/journeys');
       return data.map(mapJourneyToClient);
     },
+    refetchOnWindowFocus: true, // щоб інші учасники воркспейсу бачили нові мапи після перемикання на вкладку
   });
 };
 
@@ -90,6 +91,34 @@ export const useWorkspace = () => {
   return useQuery({
     queryKey: ['workspace'],
     queryFn: () => fetchData('/workspace'),
+  });
+};
+
+const WORKSPACE_LIST_KEY = 'workspace_list';
+export const useWorkspaceList = () => {
+  return useQuery({
+    queryKey: [WORKSPACE_LIST_KEY],
+    queryFn: () => fetchData('/workspace/list'),
+  });
+};
+
+export const useWorkspaceLimits = (workspaceId) => {
+  return useQuery({
+    queryKey: ['workspace', 'limits', workspaceId ?? 'current'],
+    queryFn: async () => {
+      const token = await getAuthToken();
+      if (!token) throw new Error('No token');
+      const url = new URL(`${API_URL}/workspace/limits`);
+      if (workspaceId) url.searchParams.set('workspaceId', workspaceId);
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || json.message || 'Failed to fetch limits');
+      return json.data || null;
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 60 * 1000,
   });
 };
 

@@ -4,10 +4,10 @@ import ConfirmModal from '../ConfirmModal';
 import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
 
-// Fallback to localhost:5001 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Fallback to localhost:5005 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
-const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
+const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState('');
@@ -256,14 +256,16 @@ const JourneyMaps = ({ journeys = [], onCreate, onEdit, onDelete, onDuplicate, o
                         </Tooltip>
                     )}
 
-                    <Tooltip content="Delete">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); openConfirm('delete', journey); }}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                            <Trash2 size={18} />
-                        </button>
-                    </Tooltip>
+                    {currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner) && (
+                        <Tooltip content="Delete">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); openConfirm('delete', journey); }}
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        </Tooltip>
+                    )}
                 </td>
               </tr>
             )))}

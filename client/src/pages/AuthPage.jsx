@@ -115,6 +115,14 @@ const AuthPage = ({ onLogin }) => {
         localStorage.setItem('token', data.session?.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
         queryClient.removeQueries(); // Clear cache for new user
+        // Ensure workspace/journeys refetch so invited users see the inviter's workspace
+        queryClient.invalidateQueries({ queryKey: ['workspace'] });
+        queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
+        queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
+        queryClient.invalidateQueries({ queryKey: ['profile'] });
+        queryClient.invalidateQueries({ queryKey: ['journeys'] });
+        queryClient.invalidateQueries({ queryKey: ['personas'] });
+        queryClient.invalidateQueries({ queryKey: ['metrics'] });
 
         // Sync session with Supabase Client SDK
         if (data.session) {

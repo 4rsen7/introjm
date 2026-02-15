@@ -4,7 +4,7 @@ import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
-const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
+const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
@@ -196,14 +196,16 @@ const Personas = ({ personas = [], onCreate, onEdit, onDelete, onDuplicate, onAr
                             <Archive size={18} />
                         </button>
                     </Tooltip>
-                    <Tooltip content="Delete">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); openConfirm('delete', persona); }}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                            <Trash2 size={18} />
-                        </button>
-                    </Tooltip>
+                    {currentUserId != null && persona.user_id === currentUserId && (
+                        <Tooltip content="Delete">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); openConfirm('delete', persona); }}
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        </Tooltip>
+                    )}
                 </td>
               </tr>
             )))}

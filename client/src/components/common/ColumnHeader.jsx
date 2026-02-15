@@ -19,7 +19,7 @@ export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, on
       {/* Dropdown Menu */}
       {isMenuOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => onToggleMenu(false)}></div>
+          <div className="fixed inset-0 z-40 cursor-pointer" onClick={() => onToggleMenu(false)}></div>
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-[100] overflow-hidden py-1">
             <button 
               onClick={() => handleAction(onAddRight)}

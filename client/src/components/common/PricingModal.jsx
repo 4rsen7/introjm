@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, Loader2 } from 'lucide-react';
 
 // Fallback API URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 const PricingModal = ({ isOpen, onClose }) => {
   const [billingCycle, setBillingCycle] = useState('monthly');
@@ -35,7 +35,7 @@ const PricingModal = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}></div>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 cursor-pointer" onClick={onClose}></div>
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-8">
         <button onClick={onClose} className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full text-gray-500 transition z-10">
           <X size={24} />

@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Клікабельні елементи — курсор «рука» */
+button,
+[role="button"],
+a[href] {
+  cursor: pointer;
+}
+
 /* Додатково для фону */
 body {
   background-color: #ffffff;

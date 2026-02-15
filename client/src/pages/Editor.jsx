@@ -36,32 +36,40 @@ import ConfirmModal from '../ConfirmModal'
 import { supabase } from '../supabaseClient'
 import { getAuthToken } from '../services/auth'
 
-// Fallback to localhost:5001 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Fallback to localhost:5005 if env var is missing
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 const PRINT_STYLES = `
-  /* Clean Print Mode */
-  /* .is-exporting .hide-on-export { display: none !important; } */ /* Disabled to keep all elements visible */
+  /* Clean Print Mode (is-exporting used by legacy flow only) */
   .is-exporting { background: white !important; height: auto !important; overflow: visible !important; }
 
   @media print {
     @page { size: landscape; margin: 0.5cm; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
     
-    /* Hide non-printable elements */
-    header, .fixed.bottom-6, .sticky button, .group\\/header button { display: none !important; }
+    /* Hide non-printable elements when not in journey-print */
+    header:not(.journey-editor-header), .fixed.bottom-6, .sticky button, .group\\/header button { display: none !important; }
     
-    /* Reset layout for print */
     .flex-col { display: block !important; }
     .h-full { height: auto !important; }
     .overflow-auto { overflow: visible !important; }
     .sticky { position: static !important; }
-    
-    /* Ensure content visibility */
     .inline-flex { display: block !important; }
   }
-  /* Ensure hidden elements are hidden in print media as well if class is present */
   @media print { .hide-on-export { display: none !important; } }
+
+  /* Journey Print to PDF: only when body has journey-print */
+  @media print {
+    body.journey-print aside { display: none !important; }
+    body.journey-print main ~ * { display: none !important; }
+    body.journey-print main { width: 100% !important; max-width: none !important; overflow: visible !important; }
+    body.journey-print .journey-print-root { padding-top: 0 !important; }
+    body.journey-print .journey-editor-header { position: static !important; top: auto !important; }
+    body.journey-print #journey-editor-container { overflow: visible !important; height: auto !important; min-height: auto !important; }
+    body.journey-print #journey-editor-container > * { overflow: visible !important; }
+    body.journey-print .hide-on-export { display: none !important; }
+    body.journey-print .sticky { position: static !important; }
+  }
 `;
 
 const fetchJourney = async ({ queryKey }) => {
@@ -565,106 +573,86 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   }
 
   const handleExport = async () => {
+    const headerEl = headerRef.current;
+    const scrollContainer = scrollContainerRef.current;
+    const mapEl = scrollContainer?.firstElementChild;
+    if (!headerEl || !mapEl) return;
+
+    setSelectedCardId(null);
+    setIsHeaderMenuOpen(false);
+    setIsExporting(true);
+    setIsGeneratingPdf(true);
+
     try {
-      setIsExporting(true);
-      setIsGeneratingPdf(true);
-      setSelectedCardId(null); // Deselect any active card
-      setIsHeaderMenuOpen(false);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      await new Promise((r) => setTimeout(r, 100));
 
-      // Allow DOM to update
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Store current zoom and reset to 1 for capture to ensure best quality
       const originalZoom = zoom;
       setZoom(1);
-      
-      // Save window scroll and scroll to top to prevent html2canvas offsets
-      const originalScrollX = window.scrollX;
-      const originalScrollY = window.scrollY;
+      const savedScrollX = window.scrollX;
+      const savedScrollY = window.scrollY;
       window.scrollTo(0, 0);
-      
-      // Wait for zoom reset render
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+        scrollContainer.scrollLeft = 0;
+      }
+      await new Promise((r) => setTimeout(r, 450));
 
-      const headerElement = headerRef.current;
-      const mapElement = scrollContainerRef.current.firstElementChild;
-      
-      const mapWidth = mapElement.scrollWidth;
-      const mapHeight = mapElement.scrollHeight;
-      const headerHeight = headerElement.offsetHeight;
-      
-      // Calculate total dimensions
-      // Ensure header spans full width if map is wider than viewport
-      const totalWidth = Math.max(mapWidth, headerElement.offsetWidth);
-      const totalHeight = headerHeight + mapHeight + 50; // Add buffer to prevent bottom clipping
-      
-      // --- CLONE STRATEGY (FIXED) ---
-      // Create a temporary container to hold the clone
-      // Using absolute position at 0,0 ensures html2canvas captures the full content
-      // regardless of viewport size, provided we scrolled to top.
-      const container = document.createElement('div');
-      Object.assign(container.style, {
-          position: 'absolute',
-          top: '0',
-          left: '0',
-          zIndex: '-9999',
-          width: `${totalWidth}px`,
-          height: `${totalHeight}px`,
-          overflow: 'visible', // Ensure content isn't clipped
-          backgroundColor: '#ffffff',
-          display: 'flex',
-          flexDirection: 'column'
+      const headerHeight = headerEl.offsetHeight;
+      const mapWidth = mapEl.scrollWidth;
+      const mapHeight = mapEl.scrollHeight;
+      const contentWidth = Math.max(mapWidth, headerEl.offsetWidth);
+      const pad = 32;
+      const totalWidth = contentWidth + pad * 2;
+      const totalHeight = pad + headerHeight + mapHeight + pad;
+
+      const wrap = document.createElement('div');
+      wrap.setAttribute('data-export-wrap', 'true');
+      wrap.className = 'is-exporting';
+      Object.assign(wrap.style, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        width: `${totalWidth}px`,
+        height: `${totalHeight}px`,
+        padding: `${pad}px`,
+        boxSizing: 'border-box',
+        overflow: 'visible',
+        backgroundColor: '#fff',
+        zIndex: '9998',
+        pointerEvents: 'none',
       });
 
-      // 1. Clone Header
-      const headerClone = headerElement.cloneNode(true);
-      Object.assign(headerClone.style, {
-          width: '100%',
-          flexShrink: '0',
-          height: `${headerHeight}px`, // Fix height to match original exactly
-          minHeight: `${headerHeight}px`,
-          position: 'static',
-          overflow: 'visible', // Keep shadows and borders visible
-          zIndex: '10'
+      const headerClone = headerEl.cloneNode(true);
+      headerClone.style.cssText = `position:static;width:100%;height:${headerHeight}px;min-height:${headerHeight}px;overflow:visible;flex-shrink:0;`;
+      const mapClone = mapEl.cloneNode(true);
+      mapClone.style.cssText = `width:${mapWidth}px;height:${mapHeight}px;min-height:${mapHeight}px;transform:none;zoom:1;overflow:visible;position:relative;flex-shrink:0;`;
+
+      wrap.appendChild(headerClone);
+      wrap.appendChild(mapClone);
+      document.body.appendChild(wrap);
+
+      wrap.querySelectorAll('.sticky').forEach((el) => {
+        el.style.position = 'relative';
+        el.style.top = 'auto';
+        el.style.left = 'auto';
+        el.style.transform = 'none';
       });
+      const firstRow = mapClone.firstElementChild;
+      if (firstRow) {
+        firstRow.style.position = 'relative';
+        firstRow.style.top = '0';
+        firstRow.style.transform = 'none';
+        firstRow.style.marginTop = '0';
+        Array.from(firstRow.children).forEach((c) => {
+          c.style.transform = 'none';
+        });
+      }
 
-      // 2. Clone Map
-      const mapClone = mapElement.cloneNode(true);
-      
-      // Force dimensions and reset transforms on clone
-      Object.assign(mapClone.style, {
-          width: `${mapWidth}px`,
-          height: `${mapHeight}px`,
-          transform: 'none',
-          zoom: '1',
-          overflow: 'visible',
-          position: 'relative' // Ensure proper stacking context
-      });
+      await new Promise((r) => setTimeout(r, 180));
 
-      container.appendChild(headerClone);
-      container.appendChild(mapClone);
-      
-      // Add class to trigger hide-on-export styles inside clones
-      container.classList.add('is-exporting');
-
-      document.body.appendChild(container);
-
-      // --- CRITICAL FIX FOR STICKY HEADERS ---
-      // Convert sticky elements to relative in the clone to ensure they are captured 
-      // in their natural position and not clipped or displaced by html2canvas.
-      const stickyElements = container.querySelectorAll('.sticky');
-      stickyElements.forEach(el => {
-          el.style.position = 'relative';
-          el.style.top = 'auto';
-          el.style.left = 'auto';
-          el.style.transform = 'none';
-      });
-
-      // Wait for clone to render layout
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      const canvas = await html2canvas(container, {
-        scale: 2, // Higher quality
+      const canvas = await html2canvas(wrap, {
+        scale: 2,
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -679,26 +667,21 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         scrollY: 0,
       });
 
-      // Cleanup: Remove clone from DOM
-      document.body.removeChild(container);
-      window.scrollTo(originalScrollX, originalScrollY); // Restore scroll position
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      window.scrollTo(savedScrollX, savedScrollY);
+      setZoom(originalZoom);
 
-      const imgData = canvas.toDataURL('image/png');
-      
-      // Create PDF with dimensions matching the canvas (Auto-Landscape/Portrait)
+      const dataUrl = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         orientation: totalWidth > totalHeight ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [totalWidth, totalHeight]
+        format: [totalWidth, totalHeight],
       });
-
-      pdf.addImage(imgData, 'PNG', 0, 0, totalWidth, totalHeight);
+      pdf.addImage(dataUrl, 'PNG', 0, 0, totalWidth, totalHeight);
       pdf.save(`${journeyMeta.title || 'journey-map'}.pdf`);
-
-      // Restore zoom
-      setZoom(originalZoom);
-    } catch (error) {
-      console.error("Export failed:", error);
+      await new Promise((r) => setTimeout(r, 700));
+    } catch (err) {
+      console.error('Export failed:', err);
     } finally {
       setIsExporting(false);
       setIsGeneratingPdf(false);
@@ -886,8 +869,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const stickyLaneTop = `${(64 / zoom) + 48}px`;
 
   return (
-    <div className="flex flex-col min-h-screen bg-white pt-16">
-      {/* PDF Generation Overlay */}
+    <div className="journey-print-root flex flex-col min-h-screen bg-white pt-16">
       {isGeneratingPdf && (
         <div className="fixed inset-0 z-[9999] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-200">
             <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center">
@@ -900,7 +882,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       <style>{PRINT_STYLES}</style>
       <header 
         ref={headerRef}
-        className={`bg-white border-b border-gray-200 shrink-0 z-[70] fixed top-0 left-0 w-full shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
+        className={`journey-editor-header bg-white border-b border-gray-200 shrink-0 z-[70] fixed top-0 left-0 w-full shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
         onMouseDown={() => setSelectedCardId(null)}
       >
         <div className="h-16 flex items-center px-6 justify-between">
@@ -930,7 +912,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                 
                 {isHeaderMenuOpen && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setIsHeaderMenuOpen(false)}></div>
+                    <div className="fixed inset-0 z-40 cursor-pointer" onClick={() => setIsHeaderMenuOpen(false)}></div>
                     <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 z-[100] overflow-hidden py-1">
                         <button onClick={handleExport} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                           <Download size={16} className="text-gray-400" /> Export PDF
@@ -1017,7 +999,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       <div 
         ref={scrollContainerRef}
         id="journey-editor-container"
-        className={`flex-1 bg-white relative ${isHandMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isExporting ? 'is-exporting' : ''}`}
+        className={`flex-1 bg-white relative ${isHandMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} ${isExporting ? 'is-exporting' : ''}`}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
@@ -1120,7 +1102,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                   <div className="relative">
                     {isAddLaneMenuOpen && (
                       <>
-                        <div className="fixed inset-0 z-0" onClick={() => setIsAddLaneMenuOpen(false)}></div>
+                        <div className="fixed inset-0 z-0 cursor-pointer" onClick={() => setIsAddLaneMenuOpen(false)}></div>
                         <div className="absolute bottom-full left-0 w-full mb-2 bg-white rounded-lg shadow-xl border border-gray-100 z-10 overflow-hidden py-1">
                           <button onClick={() => handleAddLane('stage')} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                             <List size={14} className="text-purple-500" /> Steps
