@@ -47,7 +47,7 @@ export default function SupportFeedback() {
   }, [open, fetchUnread, fetchList]);
 
   useEffect(() => {
-    const t = setInterval(fetchUnread, 60000);
+    const t = setInterval(fetchUnread, 300000);
     return () => clearInterval(t);
   }, [fetchUnread]);
 
