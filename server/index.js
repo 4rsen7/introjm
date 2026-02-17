@@ -423,21 +423,32 @@ app.put('/api/journeys/:id', async (req, res) => {
         if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
 
         const updates = {
-            updated_at: new Date()
+            updated_at: new Date().toISOString()
         };
         if (title !== undefined) updates.title = title;
         if (description !== undefined) updates.description = description;
         if (status !== undefined) updates.status = status;
-        if (map_data !== undefined) updates.map_data = map_data;
+        if (map_data !== undefined) {
+            updates.map_data = typeof map_data === 'string' ? map_data : JSON.stringify(map_data);
+        }
 
-        const { data: journey, error } = await supabase
+        const { error: updateError } = await supabase
             .from('journeys')
             .update(updates)
-            .eq('id', id)
-            .select()
+            .eq('id', existing.id);
+
+        if (updateError) throw updateError;
+
+        const { data: journey, error: selectError } = await supabase
+            .from('journeys')
+            .select('*')
+            .eq('id', existing.id)
             .single();
 
-        if (error) throw error;
+        if (selectError || !journey) {
+            console.error('Journey update succeeded but select failed:', selectError);
+            return res.status(500).json({ status: 'error', error: 'Failed to return updated journey' });
+        }
 
         res.json({ status: 'success', data: journey });
     } catch (error) {
