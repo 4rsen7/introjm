@@ -171,14 +171,14 @@ const MainLayout = ({
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden relative">
+      {/* Main Content — vertical scroll for dashboard sections (Editor has its own scroll) */}
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
          {isNavigating && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-white animate-in fade-in duration-200">
                 <div className="w-8 h-8 border-2 border-gray-200 border-t-orange-600 rounded-full animate-spin"></div>
             </div>
          )}
-         <div className="h-full w-full">
+         <div className="min-h-full w-full">
             <Outlet />
          </div>
       </main>
