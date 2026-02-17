@@ -32,6 +32,7 @@ import JourneyLoader from '../components/journey/JourneyLoader'
 import PersonaPicker from '../components/personas/PersonaPicker'
 import MetricPicker from '../components/metrics/MetricPicker'
 import MetricModal from '../components/metrics/MetricModal'
+import JourneyPicker from '../components/journey/JourneyPicker'
 import ConfirmModal from '../ConfirmModal'
 import { supabase } from '../supabaseClient'
 import { getAuthToken } from '../services/auth'
@@ -77,7 +78,8 @@ const fetchJourney = async ({ queryKey }) => {
   if (!id) return null;
   const token = await getAuthToken();
   const response = await fetch(`${API_URL}/journeys/${id}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: { 'Authorization': `Bearer ${token}` },
+    cache: 'no-store'
   });
   if (response.status === 401) throw new Error('Unauthorized');
   if (!response.ok) throw new Error('Failed to fetch');
@@ -107,7 +109,7 @@ function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop })
   );
 }
 
-export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], onSaveGlobalPersona, onSaveGlobalMetric }) {
+export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -158,10 +160,20 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const [isPersonaExpanded, setIsPersonaExpanded] = useState(false)
   const [isPersonaPickerOpen, setIsPersonaPickerOpen] = useState(false)
 
+  // Refs for latest map state so debounced save always sends current data (avoids stale closure)
+  const latestStateRef = useRef({ lanes, cells, gridColumns, journeyMeta, persona, emotionValues })
+  latestStateRef.current = { lanes, cells, gridColumns, journeyMeta, persona, emotionValues }
+
   // --- METRICS ---
   const [isMetricPickerOpen, setIsMetricPickerOpen] = useState(false)
   const [pendingMetricLocation, setPendingMetricLocation] = useState(null)
   const [isMetricModalOpen, setIsMetricModalOpen] = useState(false)
+
+  // --- LINKED JOURNEY ---
+  const [isJourneyPickerOpen, setIsJourneyPickerOpen] = useState(false)
+  const [pendingLinkedJourneyLocation, setPendingLinkedJourneyLocation] = useState(null)
+  const otherJourneys = useMemo(() => (globalJourneys || []).filter(j => String(j.id) !== String(journeyId)), [globalJourneys, journeyId])
+  const [triggerSaveNow, setTriggerSaveNow] = useState(false) // force save right after adding linked_journey
 
   // --- ZOOM & PAN ---
   const [zoom, setZoom] = useState(1)
@@ -210,14 +222,15 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     data: journeyData, 
     error: queryError, 
     isLoading: isQueryLoading,
-    isError: isQueryError 
+    isError: isQueryError,
+    isFetching: isQueryFetching
   } = useQuery({
     queryKey: ['journey', journeyId],
     queryFn: fetchJourney,
     enabled: !!journeyId,
-    initialData: location.state?.preloadedJourney,
     staleTime: 1000 * 60 * 5, // 5 mins
     gcTime: 1000 * 60 * 60 * 24, // 24 hours (persist)
+    refetchOnMount: 'always', // always refetch when opening editor so we load latest from DB, not stale cache
   });
 
   // Helper to load data into state
@@ -246,12 +259,18 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     }
   };
 
+  // When navigating to a different journey, reset so we load the new journey's state
   useEffect(() => {
-    if (journeyData && !isDataLoaded) {
+    setIsDataLoaded(false);
+  }, [journeyId]);
+
+  // Load into state only when refetch has finished (not stale cache), so re-entry gets latest from DB
+  useEffect(() => {
+    if (journeyData && !isDataLoaded && !isQueryFetching && String(journeyData.id) === String(journeyId)) {
       loadJourneyState(journeyData);
       setIsDataLoaded(true);
     }
-  }, [journeyData, isDataLoaded]);
+  }, [journeyData, isDataLoaded, journeyId, isQueryFetching]);
 
   // Force minimum load time for UX (to show tips and smooth transition)
   useEffect(() => {
@@ -277,22 +296,22 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
     const controller = new AbortController();
 
-    const saveData = async () => {
+    const saveData = async (signal = controller.signal) => {
       setIsSaving(true);
       try {
         const token = await getAuthToken();
+        const { lanes: l, cells: c, gridColumns: g, journeyMeta: m, persona: p, emotionValues: e } = latestStateRef.current;
         const map_data = {
-          lanes,
-          cells,
-          gridColumns,
-          persona,
-          emotionValues
+          lanes: l,
+          cells: c,
+          gridColumns: g,
+          persona: p,
+          emotionValues: e
         };
-        
         const payload = {
-          title: journeyMeta.title,
-          description: journeyMeta.description,
-          status: journeyMeta.status,
+          title: m.title,
+          description: m.description,
+          status: m.status,
           map_data
         };
 
@@ -300,19 +319,21 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(payload),
-          signal: controller.signal
+          signal
         });
         
         if (response.ok) {
             setLastSaved(new Date());
-            // Update cache with latest state to ensure persistence is up to date
-            queryClient.setQueryData(['journey', journeyId], (old) => ({
-              ...old,
-              title: payload.title,
-              description: payload.description,
-              status: payload.status,
-              map_data: payload.map_data
-            }));
+            const result = await response.json();
+            const saved = result?.data;
+            // Update cache from server response so cache reflects what is actually in DB
+            if (saved) {
+              queryClient.setQueryData(['journey', journeyId], (old) => ({
+                ...old,
+                ...saved,
+                map_data: saved.map_data ?? payload.map_data
+              }));
+            }
 
             // Оновлюємо загальний список мап, щоб Дашборд побачив нову назву та дату
             queryClient.invalidateQueries({ queryKey: ['journeys'] });
@@ -322,18 +343,25 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
           console.error("Auto-save failed:", error);
         }
       } finally {
-        if (!controller.signal.aborted) {
+        if (!signal.aborted) {
           setIsSaving(false);
         }
       }
     };
 
-    const timer = setTimeout(saveData, 2000); // Debounce 2s
+    // When linked_journey was just added, save immediately after state has committed (don't clear this timer on re-run)
+    if (triggerSaveNow) {
+      setTriggerSaveNow(false);
+      setTimeout(() => saveData(new AbortController().signal), 150);
+      return () => {}; // no cleanup so the 150ms save always runs
+    }
+
+    const timer = setTimeout(() => saveData(controller.signal), 2000); // Debounce 2s
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [journeyId, lanes, cells, gridColumns, journeyMeta, isDataLoaded, loadError, isQueryError, persona, queryClient, emotionValues]);
+  }, [journeyId, lanes, cells, gridColumns, journeyMeta, isDataLoaded, loadError, isQueryError, persona, queryClient, emotionValues, triggerSaveNow]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -430,6 +458,11 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         setIsMetricPickerOpen(true);
         return;
     }
+    if (type === 'linked_journey') {
+        setPendingLinkedJourneyLocation({ laneId, colId });
+        setIsJourneyPickerOpen(true);
+        return;
+    }
 
     const newCard = { id: `c-${Date.now()}`, type, content: '', color: type === 'stage' ? 'bg-purple-100' : undefined };
     setCells(prev => {
@@ -450,6 +483,20 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       });
       setIsMetricPickerOpen(false);
       setPendingMetricLocation(null);
+  }
+
+  const handleSelectLinkedJourney = (journey) => {
+    if (!pendingLinkedJourneyLocation) return;
+    const { laneId, colId } = pendingLinkedJourneyLocation;
+    const newCard = { id: `c-${Date.now()}`, type: 'linked_journey', content: journey.id };
+    setCells(prev => {
+      const laneCells = prev[laneId] || {};
+      const colData = laneCells[colId] || { cards: [] };
+      return { ...prev, [laneId]: { ...laneCells, [colId]: { ...colData, cards: [...colData.cards, newCard] } } };
+    });
+    setIsJourneyPickerOpen(false);
+    setPendingLinkedJourneyLocation(null);
+    setTriggerSaveNow(true); // force save so linked_journey is persisted immediately
   }
 
   const handleCreateMetric = (metricData) => {
@@ -1067,6 +1114,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                         gridColumns={gridColumns}
                         laneData={cells[lane.id] || {}} 
                         globalMetrics={globalMetrics}
+                        globalJourneys={globalJourneys}
                         onAddCard={handleAddCard} 
                         onUpdateCard={handleUpdateCard}
                         onDeleteCard={handleDeleteCard}
@@ -1171,6 +1219,13 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         metrics={globalMetrics}
         onSelect={handleSelectMetric}
         onCreateNew={() => { setIsMetricPickerOpen(false); setIsMetricModalOpen(true); }}
+      />
+
+      <JourneyPicker 
+        isOpen={isJourneyPickerOpen}
+        onClose={() => { setIsJourneyPickerOpen(false); setPendingLinkedJourneyLocation(null); }}
+        journeys={otherJourneys}
+        onSelect={handleSelectLinkedJourney}
       />
 
       <MetricModal 

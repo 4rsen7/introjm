@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, MoreHorizontal, GripVertical, AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, List, Trash2, Copy, Palette, Share2, BarChart2, Pin, PinOff } from 'lucide-react'
+import { Plus, MoreHorizontal, GripVertical, AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, List, Trash2, Copy, Palette, Share2, BarChart2, Map as MapIcon, Pin, PinOff } from 'lucide-react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable' 
 import { useDroppable } from '@dnd-kit/core' 
 import JourneyCard from './JourneyCard'
@@ -13,6 +13,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
     { type: 'solution', label: 'Solution', icon: CheckCircle2, color: 'text-green-500' },
     { type: 'channel', label: 'Channels', icon: Share2, color: 'text-indigo-500' },
     { type: 'metric', label: 'Metric', icon: BarChart2, color: 'text-emerald-500' },
+    { type: 'linked_journey', label: 'Link journey map', icon: MapIcon, color: 'text-amber-500' },
     { type: 'stage', label: 'Stage', icon: List, color: 'text-purple-500' },
   ]
   return (
@@ -36,7 +37,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   )
 }
 
-function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage }) {
+function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage }) {
   const containerId = `${laneId}::${colId}`;
   
   const { setNodeRef } = useDroppable({
@@ -84,6 +85,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard
               key={row.card.id} 
               card={row.card} 
               globalMetrics={globalMetrics}
+              globalJourneys={globalJourneys}
               onUpdate={(updatedCard) => onUpdateCard(laneId, colId, updatedCard)} 
               onDelete={() => onDeleteCard(laneId, colId, row.card.id)}
               onMenuToggle={onPickerToggle}
@@ -108,7 +110,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, onAddCard, onUpdateCard
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const calculateLayout = () => {
@@ -227,6 +229,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, o
               laneId={lane.id}
               cards={laneData[col.id]?.cards || []}
               globalMetrics={globalMetrics}
+              globalJourneys={globalJourneys}
               onAddCard={onAddCard}
               onUpdateCard={onUpdateCard}
               onDeleteCard={onDeleteCard}

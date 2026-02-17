@@ -1,21 +1,52 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Type, Link as LinkIcon, Maximize2, X } from 'lucide-react'
+import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Type, Link as LinkIcon, Maximize2, X, Settings, Map, ChevronRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import RichTextEditor from '../common/RichTextEditor'
 import ChannelCard from './ChannelCard'
+import ChannelCardSettingsModal from './ChannelCardSettingsModal'
 import JourneyMetricCard from './JourneyMetricCard'
 
 const STAGE_COLORS = ['bg-blue-100', 'bg-green-100', 'bg-purple-100', 'bg-orange-100', 'bg-pink-100', 'bg-yellow-100', 'bg-red-100', 'bg-teal-100'];
 const COL_WIDTH = 288; // 18rem
 
-export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage }) {
+function LinkedJourneyBlock({ card, globalJourneys = [] }) {
+  const navigate = useNavigate();
+  const journey = card.content ? globalJourneys.find(j => j.id === card.content) : null;
+  const title = journey?.title || (card.content ? 'Journey' : 'Select journey');
+  const canOpen = Boolean(card.content);
+
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-lg bg-amber-50/50 border border-amber-100">
+      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+        <Map size={20} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium text-gray-900 truncate block">{title}</span>
+      </div>
+      {canOpen && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); navigate(`/journey/${card.content}`); }}
+          className="shrink-0 flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium text-sm py-1.5 px-2 rounded hover:bg-amber-100 transition-colors"
+        >
+          Open
+          <ChevronRight size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage }) {
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
   const [isStageFocused, setIsStageFocused] = useState(false)
   const isActive = selectedCardId === card.id
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
+  const [showChannelSettings, setShowChannelSettings] = useState(false)
   const editorRef = useRef(null)
   const menuRef = useRef(null)
   const buttonRef = useRef(null)
@@ -205,15 +236,17 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
   // --- STANDARD CARDS ---
   const commonClasses = "bg-white p-3 rounded-md shadow-sm border border-gray-200 text-sm text-gray-700 mb-2 relative group mx-3 hover:shadow-md transition-shadow"
   
-  const config = {
+  const configMap = {
     text: { icon: AlignLeft, color: 'text-gray-400', bg: 'bg-transparent', label: 'Text', border: 'border-gray-200' },
     image: { icon: ImageIcon, color: 'text-gray-400', bg: 'bg-transparent', label: 'Image', border: 'border-gray-200' },
     pain_point: { icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50', label: 'Pain Point', border: 'border-red-100' },
     opportunity: { icon: Sparkles, color: 'text-blue-600', bg: 'bg-blue-50', label: 'Opportunity', border: 'border-blue-100' },
     solution: { icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', label: 'Solution', border: 'border-green-100' },
     channel: { icon: Share2, color: 'text-indigo-500', bg: 'bg-indigo-50', label: 'Channels', border: 'border-indigo-100' },
-    metric: { icon: BarChart2, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Metric', border: 'border-emerald-100' }
-  }[card.type] || config.text
+    metric: { icon: BarChart2, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Metric', border: 'border-emerald-100' },
+    linked_journey: { icon: Map, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Link journey map', border: 'border-amber-100' }
+  }
+  const config = configMap[card.type] || configMap.text
 
   if (card.type === 'image' && !card.content) {
     return (
@@ -276,6 +309,11 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
                <div className="w-px h-4 bg-gray-700 mx-1"></div>
              </>
            )}
+           {card.type === 'channel' && (
+             <button onClick={(e) => { e.stopPropagation(); setShowChannelSettings(true); }} className="p-1 hover:bg-gray-700 rounded transition" title="Card settings">
+               <Settings size={14} />
+             </button>
+           )}
            <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title="Delete Card">
               <Trash2 size={14} />
            </button>
@@ -300,6 +338,8 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
              // Find the metric in globalMetrics using the ID stored in card.content
              <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
            )
+         ) : card.type === 'linked_journey' ? (
+           <LinkedJourneyBlock card={card} globalJourneys={globalJourneys} />
          ) : card.type === 'image' ? (
              <div className="relative group/image">
                  <img 
@@ -348,6 +388,17 @@ export default function JourneyCard({ card, globalMetrics, onUpdate, onDelete, o
            />
          )}
       </div>
+      {card.type === 'channel' && showChannelSettings && createPortal(
+        <ChannelCardSettingsModal
+          card={card}
+          onClose={() => setShowChannelSettings(false)}
+          onSave={(updatedCard) => {
+            onUpdate(updatedCard)
+            setShowChannelSettings(false)
+          }}
+        />,
+        document.body
+      )}
     </div>
   )
 }

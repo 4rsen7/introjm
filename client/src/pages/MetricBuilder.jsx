@@ -64,9 +64,17 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
       const newSeriesData = [];
 
       lines.forEach(line => {
-        const [label, value] = line.split(',');
-        if (label && value && !isNaN(parseFloat(value))) {
-          newSeriesData.push({ label: label.trim(), value: parseFloat(value) });
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const delimiter = trimmed.includes(';') ? ';' : ',';
+        const parts = trimmed.split(delimiter);
+        const label = parts[0];
+        const valueRaw = parts[1];
+        if (!label || valueRaw === undefined) return;
+        const normalized = String(valueRaw).trim().replace(',', '.');
+        const num = parseFloat(normalized);
+        if (!isNaN(num)) {
+          newSeriesData.push({ label: label.trim(), value: num });
         }
       });
 
@@ -114,7 +122,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                             className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none"
                         >
                             <option value="manual">Manual Entry</option>
-                            <option value="api" disabled>API Integration (Pro)</option>
+                            <option value="api" disabled>API Integration (Soon)</option>
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>

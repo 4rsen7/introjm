@@ -621,6 +621,7 @@ function App() {
               onBack={() => navigate('/dashboard')} 
               globalPersonas={filteredPersonas}
               globalMetrics={filteredMetrics}
+              globalJourneys={filteredJourneys}
               onSaveGlobalPersona={handleSaveGlobalPersona}
               onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
             />
