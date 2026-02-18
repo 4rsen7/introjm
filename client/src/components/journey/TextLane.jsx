@@ -1,10 +1,62 @@
-import { useState } from 'react'
+import { useState, useRef, useLayoutEffect, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, MoreHorizontal, GripVertical, AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, List, Trash2, Copy, Palette, Share2, BarChart2, Map as MapIcon, Pin, PinOff } from 'lucide-react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable' 
 import { useDroppable } from '@dnd-kit/core' 
 import JourneyCard from './JourneyCard'
 
+const DROPDOWN_APPROX_HEIGHT = 320
+const SPACE_MARGIN = 16
+const PICKER_PORTAL_Z = 100
+
+function getScrollParent(node) {
+  if (!node) return null
+  let p = node.parentElement
+  while (p) {
+    const { overflow, overflowY } = getComputedStyle(p)
+    if (/auto|scroll|overlay/.test(overflow) || /auto|scroll|overlay/.test(overflowY)) return p
+    if (p.scrollHeight > p.clientHeight || p.scrollWidth > p.clientWidth) return p
+    p = p.parentElement
+  }
+  return null
+}
+
 function CardPicker({ onPick, isOpen, onOpenChange }) {
+  const containerRef = useRef(null)
+  const triggerRectRef = useRef(null)
+  const [openUpward, setOpenUpward] = useState(false)
+
+  const openPicker = () => {
+    if (!containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    triggerRectRef.current = { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }
+    const spaceBelow = window.innerHeight - rect.bottom
+    setOpenUpward(spaceBelow < DROPDOWN_APPROX_HEIGHT + SPACE_MARGIN)
+    onOpenChange(true)
+  }
+
+  useLayoutEffect(() => {
+    if (!isOpen || !containerRef.current) return
+    if (!triggerRectRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      triggerRectRef.current = { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }
+      const spaceBelow = window.innerHeight - rect.bottom
+      setOpenUpward(spaceBelow < DROPDOWN_APPROX_HEIGHT + SPACE_MARGIN)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const scrollEl = getScrollParent(containerRef.current)
+    const handleScroll = () => onOpenChange(false)
+    scrollEl?.addEventListener('scroll', handleScroll, { passive: true })
+    window.addEventListener('scroll', handleScroll, { passive: true, capture: true })
+    return () => {
+      scrollEl?.removeEventListener('scroll', handleScroll)
+      window.removeEventListener('scroll', handleScroll, { capture: true })
+    }
+  }, [isOpen, onOpenChange])
+
   const options = [
     { type: 'text', label: 'Text', icon: AlignLeft, color: 'text-gray-500' },
     { type: 'image', label: 'Image', icon: ImageIcon, color: 'text-gray-500' },
@@ -16,23 +68,42 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
     { type: 'linked_journey', label: 'Link journey map', icon: MapIcon, color: 'text-amber-500' },
     { type: 'stage', label: 'Stage', icon: List, color: 'text-purple-500' },
   ]
+
+  const rect = triggerRectRef.current
+  const portalContent = isOpen && rect && typeof document !== 'undefined' && (
+    <>
+      <div className="fixed inset-0 cursor-pointer" style={{ zIndex: PICKER_PORTAL_Z }} onClick={(e) => { e.stopPropagation(); onOpenChange(false); }} aria-hidden="true" />
+      <div
+        className="fixed bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 min-w-[140px]"
+        style={{
+          zIndex: PICKER_PORTAL_Z + 1,
+          left: rect.left,
+          width: rect.width,
+          ...(openUpward ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+        }}
+      >
+        {options.map(opt => (
+          <button key={opt.type} onClick={(e) => { e.stopPropagation(); onPick(opt.type); onOpenChange(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 transition-colors">
+            <opt.icon size={14} className={opt.color} /> <span className="text-gray-700">{opt.label}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  )
+
   return (
-    <div className={`relative mt-auto transition-all hide-on-export ${isOpen ? 'opacity-100' : 'opacity-0 group-hover/cell:opacity-100'}`}>
-      <button onClick={(e) => { e.stopPropagation(); onOpenChange(!isOpen); }} className={`w-full py-2 border border-dashed rounded flex items-center justify-center gap-2 transition-all ${isOpen ? 'border-orange-300 bg-orange-50 text-orange-600' : 'border-gray-300 text-gray-400 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50'}`}>
+    <div ref={containerRef} className={`relative mt-auto transition-all hide-on-export ${isOpen ? 'opacity-100' : 'opacity-0 group-hover/cell:opacity-100'}`}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          if (isOpen) onOpenChange(false)
+          else openPicker()
+        }}
+        className={`w-full py-2 border border-dashed rounded flex items-center justify-center gap-2 transition-all ${isOpen ? 'border-orange-300 bg-orange-50 text-orange-600' : 'border-gray-300 text-gray-400 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50'}`}
+      >
         <Plus size={14} /> Add Content
       </button>
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); onOpenChange(false); }}></div>
-          <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden py-1 min-w-[140px]">
-            {options.map(opt => (
-              <button key={opt.type} onClick={(e) => { e.stopPropagation(); onPick(opt.type); onOpenChange(false); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 transition-colors">
-                <opt.icon size={14} className={opt.color} /> <span className="text-gray-700">{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {portalContent && createPortal(portalContent, document.body)}
     </div>
   )
 }
@@ -102,7 +173,6 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
           onOpenChange={(isOpen) => {
              if (isOpen && onSelectCard) onSelectCard(null);
              onSetActivePicker(isOpen ? containerId : null);
-             onPickerToggle(isOpen);
           }} 
         />
       </div>

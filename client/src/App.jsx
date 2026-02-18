@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useLayoutEffect } from 'react'
+import { useState, useEffect, useMemo, useLayoutEffect, useRef } from 'react'
 import { Routes, Route, useNavigate, useLocation, Navigate, Outlet, useParams } from 'react-router-dom'
 import { LayoutGrid, Map, Users, BarChart3, Settings, Archive as ArchiveIcon, ChevronDown, LogOut } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
@@ -200,6 +200,18 @@ function App() {
     }
   }, [location, navigate]);
 
+  // Ensure logged-in user has Starter subscription (e.g. after email confirmation)
+  const ensureStarterCalledRef = useRef(false);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || ensureStarterCalledRef.current) return;
+    ensureStarterCalledRef.current = true;
+    fetch(`${API_URL}/subscriptions/ensure-starter`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).catch(() => {});
+  }, []);
+
   // Navigation Loading Animation
   useLayoutEffect(() => {
     setIsNavigating(true);
@@ -222,11 +234,21 @@ function App() {
 
   // Global Personas State
   // REPLACED WITH REACT QUERY HOOKS
-  const { data: globalJourneys = [] } = useJourneys();
+  const { data: globalJourneys = [], isFetched: journeysFetched } = useJourneys();
   const { data: globalPersonas = [] } = usePersonas();
   const { data: globalMetrics = [] } = useMetrics();
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
   const workspaces = useWorkspaceList().data ?? [];
+  const workspaceListInvalidatedRef = useRef(false);
+
+  // If journeys loaded but workspace list is still empty (e.g. GET /api/journeys created workspace after list), refetch list once
+  useEffect(() => {
+    if (journeysFetched && workspaces.length === 0 && !workspaceListInvalidatedRef.current) {
+      workspaceListInvalidatedRef.current = true;
+      queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
+    }
+  }, [journeysFetched, workspaces.length, queryClient]);
+
   const currentWorkspace = useMemo(() => {
     if (!workspaces.length) return null;
     const found = workspaces.find((w) => w.id === selectedWorkspaceId);
@@ -591,7 +613,8 @@ function App() {
           });
           const data = await response.json();
           if (data.status === 'success') {
-              queryClient.invalidateQueries(['profile']);
+              // Invalidate only profile — do not touch workspace/limits to avoid 401 side effects
+              queryClient.invalidateQueries({ queryKey: ['profile'] });
           }
       } catch (error) {
           console.error('Error updating profile:', error);

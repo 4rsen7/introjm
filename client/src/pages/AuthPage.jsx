@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
+import InfoModal from '../components/common/InfoModal';
 
 const AuthPage = ({ onLogin }) => {
   const queryClient = useQueryClient();
@@ -16,6 +17,7 @@ const AuthPage = ({ onLogin }) => {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [showConfirmEmailModal, setShowConfirmEmailModal] = useState(false);
 
 
   const validateForm = () => {
@@ -77,13 +79,21 @@ const AuthPage = ({ onLogin }) => {
              
              if (profileError) console.error("Profile update failed:", profileError);
 
+             // Assign Starter subscription to new user
+             try {
+               await fetch(`${apiUrl}/subscriptions/ensure-starter`, {
+                 method: 'POST',
+                 headers: { 'Authorization': `Bearer ${data.session.access_token}` }
+               });
+             } catch (e) { /* non-blocking */ }
+
              localStorage.setItem('token', data.session.access_token);
              localStorage.setItem('user', JSON.stringify(data.user));
              queryClient.removeQueries(); // Clear cache for new user
              if (onLogin) onLogin(data.user);
            } else {
              setIsLogin(true);
-             alert('Account created successfully! Please check your email to confirm.');
+             setShowConfirmEmailModal(true);
            }
            return;
         }
@@ -428,6 +438,14 @@ const AuthPage = ({ onLogin }) => {
            </div>
         </div>
       </div>
+
+      <InfoModal
+        isOpen={showConfirmEmailModal}
+        onClose={() => setShowConfirmEmailModal(false)}
+        title="Account created"
+        message="Please check your email to confirm your account."
+        buttonText="OK"
+      />
     </div>
   );
 };
