@@ -1176,7 +1176,24 @@ app.get('/api/workspace/list', async (req, res) => {
       member = (wsList || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: roleByWs[w.id] || 'member' }));
     }
 
-    const list = [...owned, ...member];
+    let list = [...owned, ...member];
+
+    // If no workspace yet (new user, not invited), create default so UI has one (same as GET /api/journeys)
+    if (list.length === 0) {
+      const { data: newWorkspace, error: createErr } = await supabase
+        .from('workspaces')
+        .insert([{ owner_id: user.id, name: 'My Workspace' }])
+        .select('id, name')
+        .single();
+      if (!createErr && newWorkspace) {
+        list = [{ id: newWorkspace.id, name: newWorkspace.name || 'My Workspace', role: 'owner' }];
+      } else if (createErr?.code === '23505') {
+        // Race: another request (e.g. GET /api/journeys) already created it — re-read
+        const { data: ownedAgain } = await supabase.from('workspaces').select('id, name').eq('owner_id', user.id);
+        list = (ownedAgain || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: 'owner' }));
+      }
+    }
+
     res.json({ status: 'success', data: list });
   } catch (err) {
     logSystemError(err, 'GET /api/workspace/list');
@@ -1562,20 +1579,20 @@ app.get('/api/profile', async (req, res) => {
       .eq('id', user.id)
       .maybeSingle();
     
-    // Auto-create profile if missing (Auto-Fix) — use RPC to bypass RLS
+    // Auto-create profile only when row truly missing — never overwrite existing full_name
     if (!profile) {
-        console.log(`[Auto-Fix] Creating profile for user ${user.id}`);
         const fullName = (user.user_metadata?.full_name || (user.email && user.email.split('@')[0]) || '').trim() || 'User';
-        const { error: rpcError } = await supabase.rpc('insert_profile_for_user', {
-            p_user_id: user.id,
-            p_email: user.email || '',
-            p_full_name: fullName,
-        });
-        if (!rpcError) {
-            const { data: newProfile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-            if (newProfile) profile = newProfile;
-        } else {
-            console.error('Error creating profile:', rpcError);
+        const { data: inserted, error: insertErr } = await supabase
+            .from('profiles')
+            .insert({ id: user.id, email: user.email || '', full_name: fullName })
+            .select()
+            .maybeSingle();
+        if (!insertErr && inserted) {
+            profile = inserted;
+        } else if (insertErr?.code === '23505') {
+            // Row exists (e.g. race) — fetch existing so we never overwrite name
+            const { data: existing } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            if (existing) profile = existing;
         }
     }
 
@@ -1902,6 +1919,49 @@ app.get('/api/plans', async (req, res) => {
         res.json({ status: 'success', data });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Ensure current user has Starter subscription (for new registrations via client signUp)
+app.post('/api/subscriptions/ensure-starter', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ error: 'Invalid token' });
+
+        const { data: existing } = await supabase
+            .from('subscriptions')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .limit(1)
+            .maybeSingle();
+        if (existing) return res.status(200).json({ status: 'ok', message: 'Already has subscription' });
+
+        const { data: starterPlan } = await supabase
+            .from('plans')
+            .select('id')
+            .ilike('name', 'Starter')
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+        if (!starterPlan) return res.status(500).json({ error: 'Starter plan not found' });
+
+        const periodEnd = new Date();
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+        await supabase.from('subscriptions').insert([{
+            user_id: user.id,
+            plan_id: starterPlan.id,
+            status: 'active',
+            current_period_start: new Date(),
+            current_period_end: periodEnd,
+        }]);
+        return res.status(200).json({ status: 'ok', message: 'Starter assigned' });
+    } catch (err) {
+        console.error('ensure-starter error:', err);
+        return res.status(500).json({ error: err.message });
     }
 });
 
