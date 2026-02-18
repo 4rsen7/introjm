@@ -150,6 +150,15 @@ async function getWorkspacePlanAndLimits(workspaceId) {
     };
 }
 
+/** Supabase client with user JWT for RLS-sensitive inserts (e.g. workspaces). Uses anon key + token; falls back to global supabase if no anon key. */
+function createSupabaseClientWithUserToken(token) {
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    if (anonKey && token) {
+        return createClient(process.env.SUPABASE_URL, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+    }
+    return supabase;
+}
+
 /** Apply pending workspace invites for this user (by email). Inserts into workspace_members and marks invites accepted only on success. Returns number applied. */
 async function applyPendingInvitesForUser(userId, email) {
     if (!email || !userId) return 0;
@@ -302,20 +311,24 @@ app.get('/api/journeys', async (req, res) => {
             workspaceIds = (memberAfter || []).map(w => w.workspace_id);
         }
 
-        // If still no workspace, create default one (Auto-Fix for new owners only)
+        // If still no workspace, create default one (Auto-Fix for new owners only). Use client with user JWT so RLS passes.
         if (workspaceIds.length === 0) {
             console.log(`[Auto-Fix] Creating default workspace for user ${user.id}`);
-            const { data: newWorkspace, error: createWsError } = await supabase
+            const wsClient = createSupabaseClientWithUserToken(token);
+            const { data: newWorkspace, error: createWsError } = await wsClient
                 .from('workspaces')
                 .insert([{ owner_id: user.id, name: 'My Workspace' }])
                 .select()
                 .single();
-            
-            if (createWsError) {
-                console.error('Error creating default workspace:', createWsError);
+            if (!createWsError && newWorkspace) {
+                workspaceIds = [newWorkspace.id];
+            } else if (createWsError?.code === '23505') {
+                const { data: ownedAgain } = await supabase.from('workspaces').select('id').eq('owner_id', user.id);
+                workspaceIds = (ownedAgain || []).map(w => w.id);
+            } else {
+                if (createWsError) console.error('Error creating default workspace:', createWsError);
                 return res.json({ status: 'success', data: [] });
             }
-            workspaceIds = [newWorkspace.id];
         }
 
         // 2. Get journeys from ALL accessible workspaces
@@ -651,7 +664,8 @@ app.post('/api/journeys', async (req, res) => {
         }
         if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
         if (!workspace) {
-            const { data: newWorkspace, error: createWsError } = await supabase
+            const wsClient = createSupabaseClientWithUserToken(token);
+            const { data: newWorkspace, error: createWsError } = await wsClient
                 .from('workspaces')
                 .insert([{ owner_id: user.id, name: 'My Workspace' }])
                 .select()
@@ -807,7 +821,8 @@ app.post('/api/personas', async (req, res) => {
     }
     if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
     if (!workspace) {
-      const { data: newWorkspace, error: createWsError } = await supabase
+      const wsClient = createSupabaseClientWithUserToken(token);
+      const { data: newWorkspace, error: createWsError } = await wsClient
           .from('workspaces')
           .insert([{ owner_id: user.id, name: 'My Workspace' }])
           .select()
@@ -1043,7 +1058,8 @@ app.post('/api/metrics', async (req, res) => {
     }
     if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
     if (!workspace) {
-      const { data: newWorkspace, error: createWsError } = await supabase
+      const wsClient = createSupabaseClientWithUserToken(token);
+      const { data: newWorkspace, error: createWsError } = await wsClient
           .from('workspaces')
           .insert([{ owner_id: user.id, name: 'My Workspace' }])
           .select()
@@ -1178,9 +1194,10 @@ app.get('/api/workspace/list', async (req, res) => {
 
     let list = [...owned, ...member];
 
-    // If no workspace yet (new user, not invited), create default so UI has one (same as GET /api/journeys)
+    // If no workspace yet (new user, not invited), create default so UI has one (same as GET /api/journeys). Use client with user JWT so RLS passes.
     if (list.length === 0) {
-      const { data: newWorkspace, error: createErr } = await supabase
+      const wsClient = createSupabaseClientWithUserToken(token);
+      const { data: newWorkspace, error: createErr } = await wsClient
         .from('workspaces')
         .insert([{ owner_id: user.id, name: 'My Workspace' }])
         .select('id, name')
