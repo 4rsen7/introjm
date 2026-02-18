@@ -1,14 +1,20 @@
 import React from 'react';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, AlertCircle } from 'lucide-react';
 
-const InfoModal = ({ isOpen, onClose, title, message, buttonText = 'OK' }) => {
+const InfoModal = ({ isOpen, onClose, title, message, buttonText = 'OK', variant = 'success' }) => {
   if (!isOpen) return null;
+
+  const isError = variant === 'error';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-scaleIn p-6" onClick={e => e.stopPropagation()}>
         <div className="flex justify-center mb-4">
-          <CheckCircle className="w-12 h-12 text-green-500" strokeWidth={1.5} />
+          {isError ? (
+            <AlertCircle className="w-12 h-12 text-red-500" strokeWidth={1.5} />
+          ) : (
+            <CheckCircle className="w-12 h-12 text-green-500" strokeWidth={1.5} />
+          )}
         </div>
         <h2 className="text-lg font-bold text-gray-900 mb-2 text-center">{title}</h2>
         <p className="text-gray-600 mb-6 text-center">{message}</p>

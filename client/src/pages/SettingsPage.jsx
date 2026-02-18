@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
+import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
 import { useWorkspaceLimits } from '../hooks/useQueries';
 
@@ -46,6 +47,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   const [isInviting, setIsInviting] = useState(false);
   const [teamConfirm, setTeamConfirm] = useState(null); // { type: 'cancelInvite', invite } | { type: 'removeMember', member }
   const [teamActionLoading, setTeamActionLoading] = useState(false);
+  const [infoModal, setInfoModal] = useState({ open: false, title: '', message: '', variant: 'success' });
   
   const [profileName, setProfileName] = useState(userProfile?.full_name || '');
   const [profileColor, setProfileColor] = useState('bg-blue-100 text-blue-600');
@@ -53,6 +55,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   useEffect(() => {
     if (userProfile) {
         setProfileName(userProfile.full_name || '');
+        setProfileColor(userProfile.avatar_color || 'bg-blue-100 text-blue-600');
     }
   }, [userProfile]);
 
@@ -112,14 +115,14 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           }
           if (res.ok && (data.status === 'success' || data.message)) {
               setInviteEmail('');
-              alert(data.message || 'Invite sent successfully!');
+              setInfoModal({ open: true, title: 'Запрошення надіслано', message: data.message || 'Invite sent successfully!', variant: 'success' });
               fetchTeam();
           } else {
-              alert(data.error || data.message || 'Failed to invite user');
+              setInfoModal({ open: true, title: 'Помилка', message: data.error || data.message || 'Failed to invite user', variant: 'error' });
           }
       } catch (e) {
           console.error(e);
-          alert('Failed to send invite. Please try again.');
+          setInfoModal({ open: true, title: 'Помилка', message: 'Failed to send invite. Please try again.', variant: 'error' });
       } finally {
           setIsInviting(false);
       }
@@ -159,7 +162,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           setTeamConfirm(null);
           fetchTeam();
         } else {
-          alert(json.error || 'Failed to cancel invite');
+          setInfoModal({ open: true, title: 'Помилка', message: json.error || 'Failed to cancel invite', variant: 'error' });
         }
       } else {
         const res = await fetch(`${API_URL}/workspace/member/${teamConfirm.member.id}`, {
@@ -171,12 +174,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           setTeamConfirm(null);
           fetchTeam();
         } else {
-          alert(json.error || 'Failed to remove member');
+          setInfoModal({ open: true, title: 'Помилка', message: json.error || 'Failed to remove member', variant: 'error' });
         }
       }
     } catch (e) {
       console.error(e);
-      alert('Request failed');
+      setInfoModal({ open: true, title: 'Помилка', message: 'Request failed', variant: 'error' });
     } finally {
       setTeamActionLoading(false);
     }
@@ -452,7 +455,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   </div>
                   <div className="pt-2">
                     <button 
-                        onClick={() => onUpdateProfile && onUpdateProfile(profileName)}
+                        onClick={() => onUpdateProfile && onUpdateProfile(profileName, profileColor)}
                         className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
                     >
                       Update Profile
@@ -493,6 +496,14 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         isDestructive={true}
       />
 
+      <InfoModal
+        isOpen={infoModal.open}
+        onClose={() => setInfoModal((p) => ({ ...p, open: false }))}
+        title={infoModal.title}
+        message={infoModal.message}
+        buttonText="OK"
+        variant={infoModal.variant || 'success'}
+      />
     </div>
   );
 };

@@ -148,7 +148,7 @@ const MainLayout = ({
             className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 cursor-pointer transition"
             onClick={() => { setSettingsTab('profile'); navigate('/settings'); }}
           >
-            <div className="w-8 h-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-blue-600 font-bold text-xs">
+            <div className={`w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center font-bold text-xs ${userProfile?.avatar_color || 'bg-blue-100 text-blue-600'}`}>
                 {getUserInitials()}
             </div>
             <div className="flex flex-col">
@@ -228,6 +228,31 @@ function App() {
       clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
     };
   }, [location.pathname]);
+
+  // Refetch list data when opening Journeys / Personas / Metrics / Archive so members see updates (e.g. new persona created by owner)
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/journeys' || path.startsWith('/journeys/')) {
+      queryClient.invalidateQueries({ queryKey: ['journeys'] });
+    } else if (path === '/personas') {
+      queryClient.invalidateQueries({ queryKey: ['personas'] });
+    } else if (path === '/metrics' || path.startsWith('/metrics')) {
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    } else if (path === '/archive') {
+      queryClient.invalidateQueries({ queryKey: ['journeys'] });
+      queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    }
+  }, [location.pathname, queryClient]);
+
+  // On full page load (F5) invalidate list queries so data refetches instead of using stale persisted cache
+  useEffect(() => {
+    if (localStorage.getItem('token')) {
+      queryClient.invalidateQueries({ queryKey: ['journeys'] });
+      queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    }
+  }, [queryClient]);
 
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(true);
@@ -603,13 +628,13 @@ function App() {
       }
   };
 
-  const handleUpdateProfile = async (fullName) => {
+  const handleUpdateProfile = async (fullName, avatarColor) => {
       const token = await getAuthToken();
       try {
           const response = await fetch(`${API_URL}/profile`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ full_name: fullName })
+              body: JSON.stringify({ full_name: fullName, avatar_color: avatarColor })
           });
           const data = await response.json();
           if (data.status === 'success') {
