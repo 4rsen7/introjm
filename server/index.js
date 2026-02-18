@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const supabase = require('./supabaseClient');
+const supabaseAdmin = supabase.supabaseAdmin || supabase;
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -80,7 +81,7 @@ app.use(express.json());
 // --- SYSTEM LOGGING HELPER ---
 async function logSystemError(error, context = '') {
     try {
-        const { error: insertError } = await supabase.from('system_logs').insert([{
+        const { error: insertError } = await supabaseAdmin.from('system_logs').insert([{
             level: 'error',
             message: error.message || 'Unknown error',
             details: { stack: error.stack, context }
@@ -114,9 +115,10 @@ async function getCurrentWorkspaceForUser(userId) {
  * Returns { planName, planId, maxMembers, maxJourneys, ... usage: { members, journeys, ... } } or null if no plan.
  */
 async function getWorkspacePlanAndLimits(workspaceId) {
-    const { data: ws } = await supabase.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
+    const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
     if (!ws) return null;
-    const { data: sub } = await supabase
+    // Use admin so members can see owner's subscription (RLS on subscriptions typically allows only own rows).
+    const { data: sub } = await supabaseAdmin
         .from('subscriptions')
         .select('plan_id, current_period_end')
         .eq('user_id', ws.owner_id)
@@ -125,13 +127,13 @@ async function getWorkspacePlanAndLimits(workspaceId) {
         .limit(1)
         .maybeSingle();
     if (!sub) return null;
-    const { data: plan } = await supabase.from('plans').select('id, name, max_members, max_journeys, max_personas, max_metrics').eq('id', sub.plan_id).maybeSingle();
+    const { data: plan } = await supabaseAdmin.from('plans').select('id, name, max_members, max_journeys, max_personas, max_metrics').eq('id', sub.plan_id).maybeSingle();
     if (!plan) return null;
     const [membersRes, journeysRes, personasRes, metricsRes] = await Promise.all([
-        supabase.from('workspace_members').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabase.from('journeys').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabase.from('personas').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabase.from('metrics').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
+        supabaseAdmin.from('workspace_members').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
+        supabaseAdmin.from('journeys').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
+        supabaseAdmin.from('personas').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
+        supabaseAdmin.from('metrics').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
     ]);
     return {
         planName: plan.name,
@@ -159,6 +161,26 @@ function createSupabaseClientWithUserToken(token) {
     return supabase;
 }
 
+/** Ensure user has an active Starter subscription (idempotent). Uses admin client so RLS does not block. Call after creating default workspace for new users. */
+async function ensureStarterSubscriptionForUser(userId) {
+    const { data: existing } = await supabaseAdmin.from('subscriptions').select('id').eq('user_id', userId).eq('status', 'active').limit(1).maybeSingle();
+    if (existing) return;
+    const { data: starterPlan } = await supabaseAdmin.from('plans').select('id').ilike('name', 'Starter').eq('is_active', true).limit(1).maybeSingle();
+    if (!starterPlan) return;
+    const periodEnd = new Date();
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+    await supabaseAdmin.from('subscriptions').insert([{ user_id: userId, plan_id: starterPlan.id, status: 'active', current_period_start: new Date(), current_period_end: periodEnd }]);
+}
+
+/** True if user was created recently (e.g. last 48h). Used to auto-create workspace only for new users, not for removed members. */
+function isNewUser(user) {
+    const createdAt = user?.created_at;
+    if (!createdAt) return true;
+    const created = new Date(createdAt).getTime();
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    return created >= cutoff;
+}
+
 /** Apply pending workspace invites for this user (by email). Inserts into workspace_members and marks invites accepted only on success. Returns number applied. */
 async function applyPendingInvitesForUser(userId, email) {
     if (!email || !userId) return 0;
@@ -175,12 +197,12 @@ async function applyPendingInvitesForUser(userId, email) {
         if (limits && limits.maxMembers != null && limits.usage.members >= limits.maxMembers) {
             continue; // workspace at member limit, skip accepting this invite
         }
-        const { error: insertErr } = await supabase
+        const { error: insertErr } = await supabaseAdmin
             .from('workspace_members')
             .insert({ workspace_id: invite.workspace_id, user_id: userId, role: invite.role || 'member' });
         const ok = !insertErr || insertErr.code === '23505'; // 23505 = unique violation (already member)
         if (ok) {
-            await supabase.from('workspace_invites').update({ status: 'accepted' }).eq('id', invite.id);
+            await supabaseAdmin.from('workspace_invites').update({ status: 'accepted' }).eq('id', invite.id);
             applied++;
         } else {
             console.error('[applyPendingInvites] workspace_members insert:', insertErr.message);
@@ -209,7 +231,7 @@ app.post('/api/register', async (req, res) => {
         if (authData.user) {
             const fullName = `${firstName || ''} ${lastName || ''}`.trim();
             
-            const { error: profileError } = await supabase
+            const { error: profileError } = await supabaseAdmin
                 .from('profiles')
                 .insert([
                     { id: authData.user.id, full_name: fullName }
@@ -232,7 +254,7 @@ app.post('/api/register', async (req, res) => {
         if (starterPlan) {
             const periodEnd = new Date();
             periodEnd.setMonth(periodEnd.getMonth() + 1);
-            await supabase.from('subscriptions').insert([{
+            await supabaseAdmin.from('subscriptions').insert([{
                 user_id: authData.user.id,
                 plan_id: starterPlan.id,
                 status: 'active',
@@ -311,22 +333,24 @@ app.get('/api/journeys', async (req, res) => {
             workspaceIds = (memberAfter || []).map(w => w.workspace_id);
         }
 
-        // If still no workspace, create default one (Auto-Fix for new owners only). Use client with user JWT so RLS passes.
-        if (workspaceIds.length === 0) {
+        // If still no workspace, create default one only for new users (not for removed members).
+        if (workspaceIds.length === 0 && isNewUser(user)) {
             console.log(`[Auto-Fix] Creating default workspace for user ${user.id}`);
-            const wsClient = createSupabaseClientWithUserToken(token);
-            const { data: newWorkspace, error: createWsError } = await wsClient
+            const { data: newWorkspace, error: createWsError } = await supabaseAdmin
                 .from('workspaces')
                 .insert([{ owner_id: user.id, name: 'My Workspace' }])
                 .select()
                 .single();
             if (!createWsError && newWorkspace) {
                 workspaceIds = [newWorkspace.id];
+                await ensureStarterSubscriptionForUser(user.id);
             } else if (createWsError?.code === '23505') {
-                const { data: ownedAgain } = await supabase.from('workspaces').select('id').eq('owner_id', user.id);
+                const { data: ownedAgain } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', user.id);
                 workspaceIds = (ownedAgain || []).map(w => w.id);
+                await ensureStarterSubscriptionForUser(user.id);
             } else {
                 if (createWsError) console.error('Error creating default workspace:', createWsError);
+                if (createWsError?.code === '42501') console.error('Tip: set SUPABASE_SERVICE_ROLE_KEY in .env to your project’s service_role key (Supabase Dashboard → Settings → API).');
                 return res.json({ status: 'success', data: [] });
             }
         }
@@ -340,12 +364,12 @@ app.get('/api/journeys', async (req, res) => {
 
         if (journeyError) throw journeyError;
 
-        // Fetch profiles to map owner names
+        // Fetch profiles to map owner names (admin so members can see workspace owner's name)
         const userIds = [...new Set(journeys.map(j => j.user_id).filter(Boolean))];
         let profilesMap = {};
         
         if (userIds.length > 0) {
-            const { data: profiles } = await supabase
+            const { data: profiles } = await supabaseAdmin
                 .from('profiles')
                 .select('id, full_name, email')
                 .in('id', userIds);
@@ -397,10 +421,10 @@ app.get('/api/journeys/:id', async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Journey not found' });
         }
 
-        // Fetch owner name
+        // Fetch owner name (admin so member can see creator name)
         let ownerName = '';
         if (journey.user_id) {
-             const { data: profile } = await supabase
+             const { data: profile } = await supabaseAdmin
                 .from('profiles')
                 .select('full_name, email')
                 .eq('id', journey.user_id)
@@ -445,14 +469,14 @@ app.put('/api/journeys/:id', async (req, res) => {
             updates.map_data = typeof map_data === 'string' ? map_data : JSON.stringify(map_data);
         }
 
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseAdmin
             .from('journeys')
             .update(updates)
             .eq('id', existing.id);
 
         if (updateError) throw updateError;
 
-        const { data: journey, error: selectError } = await supabase
+        const { data: journey, error: selectError } = await supabaseAdmin
             .from('journeys')
             .select('*')
             .eq('id', existing.id)
@@ -491,7 +515,7 @@ app.delete('/api/journeys/:id', async (req, res) => {
         const isOwner = ws && ws.owner_id === user.id;
         if (!isCreator && !isOwner) return res.status(403).json({ status: 'error', message: 'Only the creator or workspace owner can delete this journey' });
 
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
             .from('journeys')
             .delete()
             .eq('id', id);
@@ -537,7 +561,7 @@ app.post('/api/journeys/:id/duplicate', async (req, res) => {
             user_id: user.id
         };
 
-        const { data: duplicated, error: insertError } = await supabase
+        const { data: duplicated, error: insertError } = await supabaseAdmin
             .from('journeys')
             .insert([newJourney])
             .select()
@@ -569,7 +593,7 @@ app.put('/api/journeys/:id/archive', async (req, res) => {
         const workspaceIds = await getAccessibleWorkspaceIds(user.id);
         if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
 
-        const { data: journey, error } = await supabase
+        const { data: journey, error } = await supabaseAdmin
             .from('journeys')
             .update({ status: 'archived', updated_at: new Date() })
             .eq('id', id)
@@ -616,7 +640,7 @@ app.put('/api/journeys/:id/restore', async (req, res) => {
         // Perform Update (Restore to 'draft')
         console.log(`[RESTORE] Executing UPDATE for ID: ${id}`);
         
-        const { data, error: updateError } = await supabase
+        const { data, error: updateError } = await supabaseAdmin
             .from('journeys')
             .update({ status: 'draft', updated_at: new Date().toISOString() })
             .eq('id', id)
@@ -663,28 +687,32 @@ app.post('/api/journeys', async (req, res) => {
             workspace = { id: bodyWorkspaceId, role: 'member' };
         }
         if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
-        if (!workspace) {
-            const wsClient = createSupabaseClientWithUserToken(token);
-            const { data: newWorkspace, error: createWsError } = await wsClient
+        if (!workspace && isNewUser(user)) {
+            const { data: newWorkspace, error: createWsError } = await supabaseAdmin
                 .from('workspaces')
                 .insert([{ owner_id: user.id, name: 'My Workspace' }])
                 .select()
                 .single();
-            if (createWsError) {
-                if (createWsError.code === '42501' || createWsError.message?.includes('row-level security')) {
-                    throw new Error('RLS Policy Violation: Check if SUPABASE_SERVICE_KEY in .env is the Service Role key (starts with eyJ...).');
-                }
-                throw createWsError;
+            if (!createWsError && newWorkspace) {
+                workspace = { id: newWorkspace.id, role: 'owner' };
+                await ensureStarterSubscriptionForUser(user.id);
+            } else if (createWsError?.code === '23505') {
+                const { data: owned } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', user.id).limit(1).maybeSingle();
+                if (owned) workspace = { id: owned.id, role: 'owner' };
             }
-            workspace = { id: newWorkspace.id, role: 'owner' };
+            if (!workspace) {
+                if (createWsError?.code === '42501') throw new Error('RLS: set SUPABASE_SERVICE_ROLE_KEY in .env to your service_role key.');
+                throw createWsError || new Error('Could not create workspace');
+            }
         }
+        if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
         const planLimits = await getWorkspacePlanAndLimits(workspace.id);
         if (planLimits && planLimits.maxJourneys != null && (planLimits.usage.journeys >= planLimits.maxJourneys)) {
             return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'journeys' });
         }
 
-        const { data: journey, error: insertError } = await supabase
+        const { data: journey, error: insertError } = await supabaseAdmin
             .from('journeys')
             .insert([{
                 title,
@@ -705,7 +733,7 @@ app.post('/api/journeys', async (req, res) => {
         console.log('Journey created successfully:', journey.id);
         
         // Get owner name for response
-        const { data: profile } = await supabase
+        const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('full_name, email')
             .eq('id', user.id)
@@ -781,12 +809,12 @@ app.get('/api/personas', async (req, res) => {
 
     if (error) throw error;
 
-    // Fetch profiles to map owner names
+    // Fetch profiles to map owner names (admin so members can see workspace owner's name)
     const userIds = [...new Set(data.map(p => p.user_id).filter(Boolean))];
     let profilesMap = {};
     
     if (userIds.length > 0) {
-        const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', userIds);
+        const { data: profiles } = await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', userIds);
         if (profiles) profiles.forEach(p => { profilesMap[p.id] = p.full_name || p.email; });
     }
 
@@ -820,23 +848,29 @@ app.post('/api/personas', async (req, res) => {
       if (allowed.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId, role: 'member' };
     }
     if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
-    if (!workspace) {
-      const wsClient = createSupabaseClientWithUserToken(token);
-      const { data: newWorkspace, error: createWsError } = await wsClient
+    if (!workspace && isNewUser(user)) {
+      const { data: newWorkspace, error: createWsError } = await supabaseAdmin
           .from('workspaces')
           .insert([{ owner_id: user.id, name: 'My Workspace' }])
           .select()
           .single();
-      if (createWsError) throw createWsError;
-      workspace = { id: newWorkspace.id, role: 'owner' };
+      if (!createWsError && newWorkspace) {
+        workspace = { id: newWorkspace.id, role: 'owner' };
+        await ensureStarterSubscriptionForUser(user.id);
+      } else if (createWsError?.code === '23505') {
+        const { data: owned } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', user.id).limit(1).maybeSingle();
+        if (owned) workspace = { id: owned.id, role: 'owner' };
+      }
+      if (!workspace) throw createWsError || new Error('Could not create workspace');
     }
+    if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
     const planLimits = await getWorkspacePlanAndLimits(workspace.id);
     if (planLimits && planLimits.maxPersonas != null && (planLimits.usage.personas >= planLimits.maxPersonas)) {
       return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'personas' });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('personas')
       .insert([{ 
         name, 
@@ -861,7 +895,7 @@ app.post('/api/personas', async (req, res) => {
     if (error) throw error;
 
     // Get owner name for response
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
         .from('profiles')
         .select('full_name, email')
         .eq('id', user.id)
@@ -886,7 +920,7 @@ app.delete('/api/personas/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('personas')
       .delete()
       .eq('id', id)
@@ -916,7 +950,7 @@ app.put('/api/personas/:id/archive', async (req, res) => {
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ error: 'Access denied' });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('personas')
       .update({ status: 'archived', updated_at: new Date() })
       .eq('id', id)
@@ -947,7 +981,7 @@ app.put('/api/personas/:id/restore', async (req, res) => {
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ error: 'Access denied' });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('personas')
       .update({ status: 'active', updated_at: new Date() })
       .eq('id', id)
@@ -993,7 +1027,7 @@ app.put('/api/personas/:id', async (req, res) => {
     if (age !== undefined) updates.age = age;
     if (location !== undefined) updates.location = location;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('personas')
       .update(updates)
       .eq('id', id)
@@ -1057,23 +1091,29 @@ app.post('/api/metrics', async (req, res) => {
       if (allowed.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId, role: 'member' };
     }
     if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
-    if (!workspace) {
-      const wsClient = createSupabaseClientWithUserToken(token);
-      const { data: newWorkspace, error: createWsError } = await wsClient
+    if (!workspace && isNewUser(user)) {
+      const { data: newWorkspace, error: createWsError } = await supabaseAdmin
           .from('workspaces')
           .insert([{ owner_id: user.id, name: 'My Workspace' }])
           .select()
           .single();
-      if (createWsError) throw createWsError;
-      workspace = { id: newWorkspace.id, role: 'owner' };
+      if (!createWsError && newWorkspace) {
+        workspace = { id: newWorkspace.id, role: 'owner' };
+        await ensureStarterSubscriptionForUser(user.id);
+      } else if (createWsError?.code === '23505') {
+        const { data: owned } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', user.id).limit(1).maybeSingle();
+        if (owned) workspace = { id: owned.id, role: 'owner' };
+      }
+      if (!workspace) throw createWsError || new Error('Could not create workspace');
     }
+    if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
     const planLimits = await getWorkspacePlanAndLimits(workspace.id);
     if (planLimits && planLimits.maxMetrics != null && (planLimits.usage.metrics >= planLimits.maxMetrics)) {
       return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'metrics' });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('metrics')
       .insert([{
         name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors,
@@ -1114,7 +1154,7 @@ app.put('/api/metrics/:id', async (req, res) => {
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('metrics')
       .update(updates)
       .eq('id', id)
@@ -1146,7 +1186,7 @@ app.delete('/api/metrics/:id', async (req, res) => {
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
     if (metric.user_id !== user.id) return res.status(403).json({ error: 'Only the creator can delete this metric' });
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('metrics')
       .delete()
       .eq('id', id);
@@ -1194,20 +1234,22 @@ app.get('/api/workspace/list', async (req, res) => {
 
     let list = [...owned, ...member];
 
-    // If no workspace yet (new user, not invited), create default so UI has one (same as GET /api/journeys). Use client with user JWT so RLS passes.
-    if (list.length === 0) {
-      const wsClient = createSupabaseClientWithUserToken(token);
-      const { data: newWorkspace, error: createErr } = await wsClient
+    // If no workspace yet, create default only for new users (not for removed members).
+    if (list.length === 0 && isNewUser(user)) {
+      const { data: newWorkspace, error: createErr } = await supabaseAdmin
         .from('workspaces')
         .insert([{ owner_id: user.id, name: 'My Workspace' }])
         .select('id, name')
         .single();
       if (!createErr && newWorkspace) {
         list = [{ id: newWorkspace.id, name: newWorkspace.name || 'My Workspace', role: 'owner' }];
+        await ensureStarterSubscriptionForUser(user.id);
       } else if (createErr?.code === '23505') {
-        // Race: another request (e.g. GET /api/journeys) already created it — re-read
-        const { data: ownedAgain } = await supabase.from('workspaces').select('id, name').eq('owner_id', user.id);
+        const { data: ownedAgain } = await supabaseAdmin.from('workspaces').select('id, name').eq('owner_id', user.id);
         list = (ownedAgain || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: 'owner' }));
+        await ensureStarterSubscriptionForUser(user.id);
+      } else if (createErr?.code === '42501') {
+        console.error('Tip: set SUPABASE_SERVICE_ROLE_KEY in .env to your project’s service_role key (Supabase Dashboard → Settings → API).');
       }
     }
 
@@ -1325,7 +1367,7 @@ app.put('/api/workspace', async (req, res) => {
     const { data: wsRow } = await supabase.from('workspaces').select('id').eq('id', bodyWorkspaceId).eq('owner_id', user.id).maybeSingle();
     if (!wsRow) return res.status(403).json({ status: 'error', message: 'Only workspace owner can update name' });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('workspaces')
       .update({ name })
       .eq('id', bodyWorkspaceId)
@@ -1355,12 +1397,12 @@ app.delete('/api/workspace', async (req, res) => {
     const { data: ws } = await supabase.from('workspaces').select('id').eq('id', workspaceId).eq('owner_id', user.id).maybeSingle();
     if (!ws) return res.status(403).json({ status: 'error', message: 'Only workspace owner can delete it' });
 
-    await supabase.from('workspace_invites').delete().eq('workspace_id', workspaceId);
-    await supabase.from('workspace_members').delete().eq('workspace_id', workspaceId);
-    await supabase.from('journeys').delete().eq('workspace_id', workspaceId);
-    await supabase.from('personas').delete().eq('workspace_id', workspaceId);
-    await supabase.from('metrics').delete().eq('workspace_id', workspaceId);
-    const { error: delErr } = await supabase.from('workspaces').delete().eq('id', workspaceId);
+    await supabaseAdmin.from('workspace_invites').delete().eq('workspace_id', workspaceId);
+    await supabaseAdmin.from('workspace_members').delete().eq('workspace_id', workspaceId);
+    await supabaseAdmin.from('journeys').delete().eq('workspace_id', workspaceId);
+    await supabaseAdmin.from('personas').delete().eq('workspace_id', workspaceId);
+    await supabaseAdmin.from('metrics').delete().eq('workspace_id', workspaceId);
+    const { error: delErr } = await supabaseAdmin.from('workspaces').delete().eq('id', workspaceId);
 
     if (delErr) throw delErr;
     res.json({ status: 'success', message: 'Workspace deleted' });
@@ -1487,20 +1529,33 @@ app.post('/api/workspace/invite', async (req, res) => {
             return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'members' });
         }
 
+        const normalizedEmail = String(email).trim().toLowerCase();
         const { data: existingInvite } = await supabase
             .from('workspace_invites')
-            .select('id')
+            .select('id, status')
             .eq('workspace_id', workspace.id)
-            .eq('email', email)
-            .eq('status', 'pending')
+            .ilike('email', normalizedEmail)
             .maybeSingle();
+
         if (existingInvite) {
-            return res.json({ status: 'success', message: 'Invite already sent to this email.', data: { id: existingInvite.id } });
+            if (existingInvite.status === 'pending') {
+                return res.json({ status: 'success', message: 'Invite already sent to this email.', data: { id: existingInvite.id } });
+            }
+            // Re-invite: update existing row (e.g. was accepted/rejected) to pending so we don't hit unique constraint
+            const { data: updated, error: updateErr } = await supabaseAdmin
+                .from('workspace_invites')
+                .update({ status: 'pending', role })
+                .eq('id', existingInvite.id)
+                .select()
+                .single();
+            if (updateErr) throw updateErr;
+            console.log(`📧 [MOCK EMAIL] Re-sending invite to ${email} for workspace ${workspace.id}`);
+            return res.json({ status: 'success', message: 'Invite sent successfully.', data: updated });
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('workspace_invites')
-            .insert([{ workspace_id: workspace.id, email, role }])
+            .insert([{ workspace_id: workspace.id, email: normalizedEmail, role }])
             .select()
             .single();
 
@@ -1535,7 +1590,7 @@ app.delete('/api/workspace/invite/:id', async (req, res) => {
             .single();
         if (!workspace) return res.status(403).json({ error: 'Only workspace owner can cancel invites' });
 
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
             .from('workspace_invites')
             .delete()
             .eq('id', inviteId);
@@ -1567,7 +1622,7 @@ app.delete('/api/workspace/member/:id', async (req, res) => {
             .single();
         if (!workspace) return res.status(403).json({ error: 'Only workspace owner can remove members' });
 
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
             .from('workspace_members')
             .delete()
             .eq('id', memberRowId);
@@ -1589,8 +1644,8 @@ app.get('/api/profile', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    // Отримуємо додаткові дані з таблиці profiles
-    let { data: profile, error: profileError } = await supabase
+    // Отримуємо додаткові дані з таблиці profiles (admin — сервер без JWT контексту)
+    let { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -1599,7 +1654,7 @@ app.get('/api/profile', async (req, res) => {
     // Auto-create profile only when row truly missing — never overwrite existing full_name
     if (!profile) {
         const fullName = (user.user_metadata?.full_name || (user.email && user.email.split('@')[0]) || '').trim() || 'User';
-        const { data: inserted, error: insertErr } = await supabase
+        const { data: inserted, error: insertErr } = await supabaseAdmin
             .from('profiles')
             .insert({ id: user.id, email: user.email || '', full_name: fullName })
             .select()
@@ -1608,7 +1663,7 @@ app.get('/api/profile', async (req, res) => {
             profile = inserted;
         } else if (insertErr?.code === '23505') {
             // Row exists (e.g. race) — fetch existing so we never overwrite name
-            const { data: existing } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            const { data: existing } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).maybeSingle();
             if (existing) profile = existing;
         }
     }
@@ -1621,6 +1676,7 @@ app.get('/api/profile', async (req, res) => {
         email: user.email,
         role: profile?.role || 'user',
         full_name: displayName,
+        avatar_color: profile?.avatar_color || 'bg-blue-100 text-blue-600',
     };
 
     res.json({ status: 'success', data });
@@ -1631,20 +1687,23 @@ app.get('/api/profile', async (req, res) => {
   }
 });
 
-// Оновити профіль (ім'я)
+// Оновити профіль (ім'я, колір аватара)
 app.put('/api/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
-  const { full_name } = req.body;
+  const { full_name, avatar_color } = req.body;
 
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data, error } = await supabase
+    const payload = { id: user.id, full_name };
+    if (avatar_color !== undefined) payload.avatar_color = avatar_color;
+
+    const { data, error } = await supabaseAdmin
       .from('profiles')
-      .upsert({ id: user.id, full_name })
+      .upsert(payload)
       .select()
       .single();
 
@@ -1702,7 +1761,7 @@ app.get('/api/feedback', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: list, error } = await supabase
+    const { data: list, error } = await supabaseAdmin
       .from('feedback')
       .select('id, type, subject, status, created_at, updated_at')
       .eq('user_id', user.id)
@@ -1710,7 +1769,7 @@ app.get('/api/feedback', async (req, res) => {
     if (error) throw error;
     const ids = (list || []).map((f) => f.id);
     if (ids.length === 0) return res.json({ status: 'success', data: list || [] });
-    const { data: replyCounts } = await supabase
+    const { data: replyCounts } = await supabaseAdmin
       .from('feedback_replies')
       .select('feedback_id')
       .eq('author_type', 'admin')
@@ -1733,10 +1792,10 @@ app.get('/api/feedback/unread-count', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: myFeedback } = await supabase.from('feedback').select('id').eq('user_id', user.id);
+    const { data: myFeedback } = await supabaseAdmin.from('feedback').select('id').eq('user_id', user.id);
     const ids = (myFeedback || []).map((f) => f.id);
     if (ids.length === 0) return res.json({ status: 'success', data: 0 });
-    const { count, error } = await supabase
+    const { count, error } = await supabaseAdmin
       .from('feedback_replies')
       .select('*', { count: 'exact', head: true })
       .in('feedback_id', ids)
@@ -1759,14 +1818,14 @@ app.get('/api/feedback/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { id } = req.params;
-    const { data: feedback, error: feedError } = await supabase
+    const { data: feedback, error: feedError } = await supabaseAdmin
       .from('feedback')
       .select('*')
       .eq('id', id)
       .eq('user_id', user.id)
       .single();
     if (feedError || !feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
-    const { data: replies, error: repError } = await supabase
+    const { data: replies, error: repError } = await supabaseAdmin
       .from('feedback_replies')
       .select('id, author_type, body, read_at, created_at')
       .eq('feedback_id', id)
@@ -1788,9 +1847,9 @@ app.patch('/api/feedback/:id/read', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { id } = req.params;
-    const { data: feedback } = await supabase.from('feedback').select('id').eq('id', id).eq('user_id', user.id).single();
+    const { data: feedback } = await supabaseAdmin.from('feedback').select('id').eq('id', id).eq('user_id', user.id).single();
     if (!feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
-    const { error: updateErr } = await supabase
+    const { error: updateErr } = await supabaseAdmin
       .from('feedback_replies')
       .update({ read_at: new Date().toISOString() })
       .eq('feedback_id', id)
@@ -1813,9 +1872,9 @@ app.delete('/api/feedback/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { id } = req.params;
-    const { data: feedback } = await supabase.from('feedback').select('id').eq('id', id).eq('user_id', user.id).single();
+    const { data: feedback } = await supabaseAdmin.from('feedback').select('id').eq('id', id).eq('user_id', user.id).single();
     if (!feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
-    const { error: delError } = await supabase.from('feedback').delete().eq('id', id);
+    const { error: delError } = await supabaseAdmin.from('feedback').delete().eq('id', id);
     if (delError) throw delError;
     res.json({ status: 'success' });
   } catch (err) {
@@ -1906,13 +1965,13 @@ app.post('/api/admin/feedback/:id/reply', async (req, res) => {
     if (!body || !String(body).trim()) return res.status(400).json({ status: 'error', message: 'body required' });
     const { data: feedback } = await supabase.from('feedback').select('id').eq('id', id).single();
     if (!feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
-    const { data: reply, error } = await supabase
+    const { data: reply, error } = await supabaseAdmin
       .from('feedback_replies')
       .insert([{ feedback_id: id, author_type: 'admin', author_id: user.id, body: String(body).trim() }])
       .select()
       .single();
     if (error) throw error;
-    await supabase.from('feedback').update({ status: 'replied', updated_at: new Date().toISOString() }).eq('id', id);
+    await supabaseAdmin.from('feedback').update({ status: 'replied', updated_at: new Date().toISOString() }).eq('id', id);
     res.status(201).json({ status: 'success', data: reply });
   } catch (err) {
     logSystemError(err, 'POST /api/admin/feedback/:id/reply');
@@ -1939,7 +1998,7 @@ app.get('/api/plans', async (req, res) => {
     }
 });
 
-// Ensure current user has Starter subscription (for new registrations via client signUp)
+// Ensure current user has Starter subscription (for new registrations via client signUp). Use admin client so RLS does not block.
 app.post('/api/subscriptions/ensure-starter', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -1948,7 +2007,7 @@ app.post('/api/subscriptions/ensure-starter', async (req, res) => {
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) return res.status(401).json({ error: 'Invalid token' });
 
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseAdmin
             .from('subscriptions')
             .select('id')
             .eq('user_id', user.id)
@@ -1957,7 +2016,7 @@ app.post('/api/subscriptions/ensure-starter', async (req, res) => {
             .maybeSingle();
         if (existing) return res.status(200).json({ status: 'ok', message: 'Already has subscription' });
 
-        const { data: starterPlan } = await supabase
+        const { data: starterPlan } = await supabaseAdmin
             .from('plans')
             .select('id')
             .ilike('name', 'Starter')
@@ -1968,13 +2027,14 @@ app.post('/api/subscriptions/ensure-starter', async (req, res) => {
 
         const periodEnd = new Date();
         periodEnd.setMonth(periodEnd.getMonth() + 1);
-        await supabase.from('subscriptions').insert([{
+        const { error: subInsertErr } = await supabaseAdmin.from('subscriptions').insert([{
             user_id: user.id,
             plan_id: starterPlan.id,
             status: 'active',
             current_period_start: new Date(),
             current_period_end: periodEnd,
         }]);
+        if (subInsertErr) throw subInsertErr;
         return res.status(200).json({ status: 'ok', message: 'Starter assigned' });
     } catch (err) {
         console.error('ensure-starter error:', err);
@@ -1999,14 +2059,14 @@ app.post('/api/subscriptions/assign', async (req, res) => {
         }
 
         // Деактивуємо старі підписки
-        await supabase
+        await supabaseAdmin
             .from('subscriptions')
             .update({ status: 'canceled', current_period_end: new Date() })
             .eq('user_id', userId)
             .neq('status', 'canceled');
 
         // Створюємо нову
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('subscriptions')
             .insert([{
                 user_id: userId,
@@ -2132,9 +2192,9 @@ app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], asyn
 
         // Call existing logic or reuse code. For simplicity, we reuse the logic but with custom date.
         // Deactivate old active subs
-        await supabase.from('subscriptions').update({ status: 'canceled' }).eq('user_id', userId).eq('status', 'active');
+        await supabaseAdmin.from('subscriptions').update({ status: 'canceled' }).eq('user_id', userId).eq('status', 'active');
 
-        const { data, error } = await supabase.from('subscriptions').insert([{ user_id: userId, plan_id: planId, status: 'active', current_period_start: new Date(), current_period_end: endDate }]).select().single();
+        const { data, error } = await supabaseAdmin.from('subscriptions').insert([{ user_id: userId, plan_id: planId, status: 'active', current_period_start: new Date(), current_period_end: endDate }]).select().single();
         if (error) throw error;
         res.json({ status: 'success', data });
     } catch (err) { res.status(500).json({ error: err.message }); }
