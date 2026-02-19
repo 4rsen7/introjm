@@ -2,7 +2,7 @@ import React from 'react';
 import { X } from 'lucide-react';
 import MetricBuilder from '../../pages/MetricBuilder';
 
-export default function MetricModal({ isOpen, onClose, onSave }) {
+export default function MetricModal({ isOpen, onClose, onSave, initialMetric }) {
   if (!isOpen) return null;
 
   return (
@@ -17,6 +17,7 @@ export default function MetricModal({ isOpen, onClose, onSave }) {
          <MetricBuilder
             onBack={onClose}
             onSave={onSave}
+            initialData={initialMetric ?? undefined}
          />
       </div>
     </div>

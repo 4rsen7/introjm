@@ -108,7 +108,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   )
 }
 
-function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage }) {
+function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage, onEditMetric }) {
   const containerId = `${laneId}::${colId}`;
   
   const { setNodeRef } = useDroppable({
@@ -163,6 +163,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
               selectedCardId={selectedCardId}
               onSelectCard={onSelectCard}
               onUploadImage={onUploadImage}
+              onEditMetric={onEditMetric}
             /> 
           )
         })}
@@ -180,7 +181,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const calculateLayout = () => {
@@ -311,6 +312,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
               activePickerId={activePickerId}
               onSetActivePicker={onSetActivePicker}
               onUploadImage={onUploadImage}
+              onEditMetric={onEditMetric}
             />
           )
         })}

@@ -40,7 +40,7 @@ function LinkedJourneyBlock({ card, globalJourneys = [] }) {
   );
 }
 
-export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage }) {
+export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric }) {
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
   const [isStageFocused, setIsStageFocused] = useState(false)
@@ -311,6 +311,11 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
            )}
            {card.type === 'channel' && (
              <button onClick={(e) => { e.stopPropagation(); setShowChannelSettings(true); }} className="p-1 hover:bg-gray-700 rounded transition" title="Card settings">
+               <Settings size={14} />
+             </button>
+           )}
+           {card.type === 'metric' && onEditMetric && (
+             <button onClick={(e) => { e.stopPropagation(); const m = globalMetrics?.find(x => x.id === card.content); if (m) onEditMetric(m); }} className="p-1 hover:bg-gray-700 rounded transition" title="Metric settings">
                <Settings size={14} />
              </button>
            )}

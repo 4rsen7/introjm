@@ -4,6 +4,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -17,12 +18,12 @@ app.use((req, res, next) => {
 // Initialize Storage Bucket
 (async () => {
     try {
-        const { data: buckets, error } = await supabase.storage.listBuckets();
+        const { data: buckets, error } = await supabaseAdmin.storage.listBuckets();
         if (error) console.error('Error listing buckets:', error);
         
         if (buckets && !buckets.find(b => b.name === 'journey_images')) {
             console.log('Creating "journey_images" bucket...');
-            await supabase.storage.createBucket('journey_images', {
+            await supabaseAdmin.storage.createBucket('journey_images', {
                 public: true,
                 fileSizeLimit: 2097152, // 2MB limit enforced by Supabase
                 allowedMimeTypes: ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
@@ -78,6 +79,17 @@ app.use(cors({
 app.options('*', cors()); 
 app.use(express.json());
 
+// Rate limit for auth: 10 requests per minute per IP
+const authLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    message: { status: 'error', error: 'Too many requests, try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
+
 // --- SYSTEM LOGGING HELPER ---
 async function logSystemError(error, context = '') {
     try {
@@ -93,9 +105,11 @@ async function logSystemError(error, context = '') {
 }
 
 // --- WORKSPACE ACCESS HELPERS (owner + member) ---
+// Use supabaseAdmin so RLS never blocks reads (server has validated user via token).
+// Prevents false "no workspace" when anon key + RLS would return empty on local.
 async function getAccessibleWorkspaceIds(userId) {
-    const { data: owned } = await supabase.from('workspaces').select('id').eq('owner_id', userId);
-    const { data: member } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', userId);
+    const { data: owned } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', userId);
+    const { data: member } = await supabaseAdmin.from('workspace_members').select('workspace_id').eq('user_id', userId);
     return [
         ...(owned || []).map(w => w.id),
         ...(member || []).map(w => w.workspace_id)
@@ -103,9 +117,9 @@ async function getAccessibleWorkspaceIds(userId) {
 }
 
 async function getCurrentWorkspaceForUser(userId) {
-    const { data: owned } = await supabase.from('workspaces').select('id').eq('owner_id', userId).limit(1).maybeSingle();
+    const { data: owned } = await supabaseAdmin.from('workspaces').select('id').eq('owner_id', userId).limit(1).maybeSingle();
     if (owned) return { id: owned.id, role: 'owner' };
-    const { data: member } = await supabase.from('workspace_members').select('workspace_id, role').eq('user_id', userId).limit(1).maybeSingle();
+    const { data: member } = await supabaseAdmin.from('workspace_members').select('workspace_id, role').eq('user_id', userId).limit(1).maybeSingle();
     if (member) return { id: member.workspace_id, role: member.role || 'member' };
     return null;
 }
@@ -185,7 +199,8 @@ function isNewUser(user) {
 async function applyPendingInvitesForUser(userId, email) {
     if (!email || !userId) return 0;
     const normalizedEmail = String(email).trim().toLowerCase();
-    const { data } = await supabase
+    // Use admin so invited user can "see" their invites (RLS typically allows only workspace owners to read invites)
+    const { data } = await supabaseAdmin
         .from('workspace_invites')
         .select('id, workspace_id, role')
         .eq('status', 'pending')
@@ -211,11 +226,25 @@ async function applyPendingInvitesForUser(userId, email) {
     return applied;
 }
 
+/** Validate auth body (email + password). Returns { ok: true } or { ok: false, error: string }. */
+function validateAuthBody(body, isRegister = false) {
+    const email = body.email != null ? String(body.email).trim() : '';
+    const password = body.password != null ? String(body.password) : '';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) return { ok: false, error: 'Email is required' };
+    if (!emailRegex.test(email)) return { ok: false, error: 'Invalid email' };
+    if (!password) return { ok: false, error: 'Password is required' };
+    if (password.length < 8) return { ok: false, error: 'Password must be at least 8 characters' };
+    return { ok: true };
+}
+
 // Auth Routes
 
 // Register Route
 app.post('/api/register', async (req, res) => {
     const { email, password, firstName, lastName } = req.body;
+    const validation = validateAuthBody(req.body, true);
+    if (!validation.ok) return res.status(400).json({ status: 'error', error: validation.error });
     console.log('Registering user:', email);
 
     try {
@@ -244,7 +273,7 @@ app.post('/api/register', async (req, res) => {
         await applyPendingInvitesForUser(authData.user.id, email);
 
         // 4. Assign Starter plan to new user (subscription per user)
-        const { data: starterPlan } = await supabase
+        const { data: starterPlan } = await supabaseAdmin
             .from('plans')
             .select('id')
             .ilike('name', 'Starter')
@@ -274,6 +303,8 @@ app.post('/api/register', async (req, res) => {
 // Login Route
 app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
+    const validation = validateAuthBody(req.body);
+    if (!validation.ok) return res.status(400).json({ status: 'error', error: validation.error });
     console.log('Logging in user:', email);
 
     try {
@@ -310,31 +341,20 @@ app.get('/api/journeys', async (req, res) => {
 
         await applyPendingInvitesForUser(user.id, user.email);
 
-        // 1. Get user's workspaces (Owned + Member)
-        const { data: ownedWorkspaces } = await supabase
-            .from('workspaces')
-            .select('id')
-            .eq('owner_id', user.id);
-
-        const { data: memberWorkspaces } = await supabase
-            .from('workspace_members')
-            .select('workspace_id')
-            .eq('user_id', user.id);
-
-        let workspaceIds = [
-            ...(ownedWorkspaces || []).map(w => w.id),
-            ...(memberWorkspaces || []).map(w => w.workspace_id)
-        ];
+        // 1. Get user's workspaces (Owned + Member) — use admin for reliable reads (avoids RLS blocking on local)
+        let workspaceIds = await getAccessibleWorkspaceIds(user.id);
 
         // If no workspace yet, try applying pending invites (e.g. invited user first request after login)
         if (workspaceIds.length === 0 && user.email) {
             await applyPendingInvitesForUser(user.id, user.email);
-            const { data: memberAfter } = await supabase.from('workspace_members').select('workspace_id').eq('user_id', user.id);
-            workspaceIds = (memberAfter || []).map(w => w.workspace_id);
+            workspaceIds = await getAccessibleWorkspaceIds(user.id);
         }
 
         // If still no workspace, create default one only for new users (not for removed members).
         if (workspaceIds.length === 0 && isNewUser(user)) {
+            // Re-check with admin before create (avoids race when multiple requests run in parallel)
+            workspaceIds = await getAccessibleWorkspaceIds(user.id);
+            if (workspaceIds.length > 0) { /* another request created it */ } else {
             console.log(`[Auto-Fix] Creating default workspace for user ${user.id}`);
             const { data: newWorkspace, error: createWsError } = await supabaseAdmin
                 .from('workspaces')
@@ -353,10 +373,11 @@ app.get('/api/journeys', async (req, res) => {
                 if (createWsError?.code === '42501') console.error('Tip: set SUPABASE_SERVICE_ROLE_KEY in .env to your project’s service_role key (Supabase Dashboard → Settings → API).');
                 return res.json({ status: 'success', data: [] });
             }
+            }
         }
 
-        // 2. Get journeys from ALL accessible workspaces
-        const { data: journeys, error: journeyError } = await supabase
+        // 2. Get journeys from ALL accessible workspaces — admin for reliable read (RLS)
+        const { data: journeys, error: journeyError } = await supabaseAdmin
             .from('journeys')
             .select('*')
             .in('workspace_id', workspaceIds)
@@ -444,7 +465,7 @@ app.get('/api/journeys/:id', async (req, res) => {
 app.put('/api/journeys/:id', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     const { id } = req.params;
-    const { title, description, status, map_data } = req.body;
+    const { title, description, status, map_data, user_id: newOwnerId } = req.body;
 
     if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
@@ -454,7 +475,7 @@ app.put('/api/journeys/:id', async (req, res) => {
             return res.status(401).json({ status: 'error', message: 'Invalid token' });
         }
 
-        const { data: existing, error: fetchErr } = await supabase.from('journeys').select('id, workspace_id').eq('id', id).single();
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('journeys').select('id, workspace_id, user_id').eq('id', id).single();
         if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Journey not found' });
         const workspaceIds = await getAccessibleWorkspaceIds(user.id);
         if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
@@ -467,6 +488,26 @@ app.put('/api/journeys/:id', async (req, res) => {
         if (status !== undefined) updates.status = status;
         if (map_data !== undefined) {
             updates.map_data = typeof map_data === 'string' ? map_data : JSON.stringify(map_data);
+        }
+
+        // Only validate and apply owner change when the owner is actually being changed
+        const ownerActuallyChanging = newOwnerId !== undefined && newOwnerId !== null && newOwnerId !== '' && String(newOwnerId) !== String(existing.user_id);
+        if (ownerActuallyChanging) {
+            const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', existing.workspace_id).maybeSingle();
+            const isWorkspaceOwner = ws && ws.owner_id === user.id;
+            const isCurrentJourneyOwner = existing.user_id === user.id;
+            if (!isWorkspaceOwner && !isCurrentJourneyOwner) {
+                return res.status(403).json({ status: 'error', message: 'Only workspace owner or journey owner can change owner' });
+            }
+            const isNewOwnerInWorkspace = ws && ws.owner_id === newOwnerId ||
+                await (async () => {
+                    const { data: m } = await supabaseAdmin.from('workspace_members').select('user_id').eq('workspace_id', existing.workspace_id).eq('user_id', newOwnerId).limit(1).maybeSingle();
+                    return !!m;
+                })();
+            if (!isNewOwnerInWorkspace) {
+                return res.status(400).json({ status: 'error', message: 'New owner must be a member of the workspace' });
+            }
+            updates.user_id = newOwnerId;
         }
 
         const { error: updateError } = await supabaseAdmin
@@ -506,12 +547,12 @@ app.delete('/api/journeys/:id', async (req, res) => {
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) throw new Error('Invalid token');
 
-        const { data: journey } = await supabase.from('journeys').select('id, user_id, workspace_id').eq('id', id).single();
+        const { data: journey } = await supabaseAdmin.from('journeys').select('id, user_id, workspace_id').eq('id', id).single();
         if (!journey) return res.status(404).json({ status: 'error', message: 'Journey not found' });
         const workspaceIds = await getAccessibleWorkspaceIds(user.id);
         if (!workspaceIds.includes(journey.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
         const isCreator = journey.user_id === user.id;
-        const { data: ws } = await supabase.from('workspaces').select('owner_id').eq('id', journey.workspace_id).maybeSingle();
+        const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', journey.workspace_id).maybeSingle();
         const isOwner = ws && ws.owner_id === user.id;
         if (!isCreator && !isOwner) return res.status(403).json({ status: 'error', message: 'Only the creator or workspace owner can delete this journey' });
 
@@ -588,7 +629,7 @@ app.put('/api/journeys/:id/archive', async (req, res) => {
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) throw new Error('Invalid token');
 
-        const { data: existing } = await supabase.from('journeys').select('id, workspace_id').eq('id', id).single();
+        const { data: existing } = await supabaseAdmin.from('journeys').select('id, workspace_id').eq('id', id).single();
         if (!existing) return res.status(404).json({ status: 'error', message: 'Journey not found' });
         const workspaceIds = await getAccessibleWorkspaceIds(user.id);
         if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
@@ -654,7 +695,7 @@ app.put('/api/journeys/:id/restore', async (req, res) => {
         if (!data || data.length === 0) {
             console.error('❌ [RESTORE] Update returned 0 rows! This usually means RLS blocked the update or ID is wrong.');
             // Check if row exists at all
-            const { data: check } = await supabase.from('journeys').select('id, status').eq('id', id);
+            const { data: check } = await supabaseAdmin.from('journeys').select('id, status').eq('id', id);
             console.log('[RESTORE] Debug - Does row exist?', check);
             
             throw new Error('Update failed - no rows affected (RLS or missing ID)');
@@ -749,24 +790,6 @@ app.post('/api/journeys', async (req, res) => {
     }
 });
 
-// Test Route
-app.get('/api/test-db', async (req, res) => {
-    try {
-        // Робимо простий запит до таблиці journeys (рахуємо кількість записів)
-        const { count, error } = await supabase
-            .from('journeys')
-            .select('*', { count: 'exact', head: true });
-
-        if (error) throw error;
-
-        res.json({ status: 'success', message: 'Connected to Supabase successfully!', journeysCount: count });
-    } catch (error) {
-        console.error('Supabase connection error:', error);
-        logSystemError(error, 'GET /api/test-db');
-        res.status(500).json({ status: 'error', error: error.message });
-    }
-});
-
 // --- РОУТИ ДЛЯ ПЕРСОН (PERSONAS) ---
 
 // 1. Отримати всі персони
@@ -780,23 +803,10 @@ app.get('/api/personas', async (req, res) => {
 
     await applyPendingInvitesForUser(user.id, user.email);
 
-    // 1. Get accessible workspaces
-    const { data: ownedWorkspaces } = await supabase
-        .from('workspaces')
-        .select('id')
-        .eq('owner_id', user.id);
+    // 1. Get accessible workspaces — use admin for reliable reads
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
 
-    const { data: memberWorkspaces } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', user.id);
-
-    const workspaceIds = [
-        ...(ownedWorkspaces || []).map(w => w.id),
-        ...(memberWorkspaces || []).map(w => w.workspace_id)
-    ];
-
-    let query = supabase.from('personas').select('*');
+    let query = supabaseAdmin.from('personas').select('*');
 
     // Filter by workspace IDs
     if (workspaceIds.length > 0) {
@@ -945,7 +955,7 @@ app.put('/api/personas/:id/archive', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: persona } = await supabase.from('personas').select('id, workspace_id').eq('id', id).single();
+    const { data: persona } = await supabaseAdmin.from('personas').select('id, workspace_id').eq('id', id).single();
     if (!persona) return res.status(404).json({ error: 'Persona not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -976,7 +986,7 @@ app.put('/api/personas/:id/restore', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: persona } = await supabase.from('personas').select('id, workspace_id').eq('id', id).single();
+    const { data: persona } = await supabaseAdmin.from('personas').select('id, workspace_id').eq('id', id).single();
     if (!persona) return res.status(404).json({ error: 'Persona not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -1009,7 +1019,7 @@ app.put('/api/personas/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: persona } = await supabase.from('personas').select('id, workspace_id').eq('id', id).single();
+    const { data: persona } = await supabaseAdmin.from('personas').select('id, workspace_id').eq('id', id).single();
     if (!persona) return res.status(404).json({ error: 'Persona not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -1149,7 +1159,7 @@ app.put('/api/metrics/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: metric } = await supabase.from('metrics').select('id, workspace_id').eq('id', id).single();
+    const { data: metric } = await supabaseAdmin.from('metrics').select('id, workspace_id').eq('id', id).single();
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -1180,7 +1190,7 @@ app.delete('/api/metrics/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: metric } = await supabase.from('metrics').select('id, user_id, workspace_id').eq('id', id).single();
+    const { data: metric } = await supabaseAdmin.from('metrics').select('id, user_id, workspace_id').eq('id', id).single();
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -1213,13 +1223,14 @@ app.get('/api/workspace/list', async (req, res) => {
 
     await applyPendingInvitesForUser(user.id, user.email);
 
-    const { data: ownedList } = await supabase
+    // Use admin for reliable reads (avoids RLS blocking on local, prevents duplicate workspace creation)
+    const { data: ownedList } = await supabaseAdmin
       .from('workspaces')
       .select('id, name')
       .eq('owner_id', user.id);
     const owned = (ownedList || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: 'owner' }));
 
-    const { data: memberRows } = await supabase
+    const { data: memberRows } = await supabaseAdmin
       .from('workspace_members')
       .select('workspace_id, role')
       .eq('user_id', user.id);
@@ -1227,7 +1238,7 @@ app.get('/api/workspace/list', async (req, res) => {
     const memberIds = (memberRows || []).map(m => m.workspace_id).filter(id => id && !ownedIds.has(id));
     let member = [];
     if (memberIds.length > 0) {
-      const { data: wsList } = await supabase.from('workspaces').select('id, name').in('id', memberIds);
+      const { data: wsList } = await supabaseAdmin.from('workspaces').select('id, name').in('id', memberIds);
       const roleByWs = Object.fromEntries((memberRows || []).map(m => [m.workspace_id, m.role || 'member']));
       member = (wsList || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: roleByWs[w.id] || 'member' }));
     }
@@ -1236,6 +1247,20 @@ app.get('/api/workspace/list', async (req, res) => {
 
     // If no workspace yet, create default only for new users (not for removed members).
     if (list.length === 0 && isNewUser(user)) {
+      // Re-check before create (avoids race when multiple requests run in parallel)
+      const recheck = await getAccessibleWorkspaceIds(user.id);
+      if (recheck.length > 0) {
+        const { data: ow } = await supabaseAdmin.from('workspaces').select('id, name').eq('owner_id', user.id);
+        list = (ow || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: 'owner' }));
+        const { data: mb } = await supabaseAdmin.from('workspace_members').select('workspace_id, role').eq('user_id', user.id);
+        const ownedIds = new Set(list.map(w => w.id));
+        const memberIds = (mb || []).map(m => m.workspace_id).filter(id => id && !ownedIds.has(id));
+        if (memberIds.length > 0) {
+          const { data: wl } = await supabaseAdmin.from('workspaces').select('id, name').in('id', memberIds);
+          const roleByWs = Object.fromEntries((mb || []).map(m => [m.workspace_id, m.role || 'member']));
+          list = [...list, ...(wl || []).map(w => ({ id: w.id, name: w.name || 'Workspace', role: roleByWs[w.id] || 'member' }))];
+        }
+      } else {
       const { data: newWorkspace, error: createErr } = await supabaseAdmin
         .from('workspaces')
         .insert([{ owner_id: user.id, name: 'My Workspace' }])
@@ -1250,6 +1275,7 @@ app.get('/api/workspace/list', async (req, res) => {
         await ensureStarterSubscriptionForUser(user.id);
       } else if (createErr?.code === '42501') {
         console.error('Tip: set SUPABASE_SERVICE_ROLE_KEY in .env to your project’s service_role key (Supabase Dashboard → Settings → API).');
+      }
       }
     }
 
@@ -1270,8 +1296,8 @@ app.get('/api/workspace', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    // 1. Try to find owned workspace
-    let { data: workspace, error } = await supabase
+    // 1. Try to find owned workspace — use admin for reliable reads
+    let { data: workspace, error } = await supabaseAdmin
       .from('workspaces')
       .select('*')
       .eq('owner_id', user.id)
@@ -1283,7 +1309,7 @@ app.get('/api/workspace', async (req, res) => {
     // 2. If not owner, try to apply any pending invites then check membership
     if (!workspace) {
         await applyPendingInvitesForUser(user.id, user.email);
-        const { data: memberRecord } = await supabase
+        const { data: memberRecord } = await supabaseAdmin
             .from('workspace_members')
             .select('workspace_id, role')
             .eq('user_id', user.id)
@@ -1291,7 +1317,7 @@ app.get('/api/workspace', async (req, res) => {
             .maybeSingle();
 
         if (memberRecord) {
-            const { data: ws } = await supabase
+            const { data: ws } = await supabaseAdmin
                 .from('workspaces')
                 .select('*')
                 .eq('id', memberRecord.workspace_id)
@@ -1327,7 +1353,7 @@ app.get('/api/workspace/limits', async (req, res) => {
       const allowed = await getAccessibleWorkspaceIds(user.id);
       const allowedSet = new Set((allowed || []).map(id => String(id)));
       if (allowedSet.has(String(workspaceIdParam))) {
-        const { data: ws } = await supabase.from('workspaces').select('id, owner_id').eq('id', workspaceIdParam).maybeSingle();
+        const { data: ws } = await supabaseAdmin.from('workspaces').select('id, owner_id').eq('id', workspaceIdParam).maybeSingle();
         if (ws) workspace = { id: ws.id, role: ws.owner_id === user.id ? 'owner' : 'member' };
       }
     }
@@ -1364,7 +1390,7 @@ app.put('/api/workspace', async (req, res) => {
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
     if (!bodyWorkspaceId) return res.status(400).json({ status: 'error', message: 'workspace_id is required' });
-    const { data: wsRow } = await supabase.from('workspaces').select('id').eq('id', bodyWorkspaceId).eq('owner_id', user.id).maybeSingle();
+    const { data: wsRow } = await supabaseAdmin.from('workspaces').select('id').eq('id', bodyWorkspaceId).eq('owner_id', user.id).maybeSingle();
     if (!wsRow) return res.status(403).json({ status: 'error', message: 'Only workspace owner can update name' });
 
     const { data, error } = await supabaseAdmin
@@ -1394,7 +1420,7 @@ app.delete('/api/workspace', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: ws } = await supabase.from('workspaces').select('id').eq('id', workspaceId).eq('owner_id', user.id).maybeSingle();
+    const { data: ws } = await supabaseAdmin.from('workspaces').select('id').eq('id', workspaceId).eq('owner_id', user.id).maybeSingle();
     if (!ws) return res.status(403).json({ status: 'error', message: 'Only workspace owner can delete it' });
 
     await supabaseAdmin.from('workspace_invites').delete().eq('workspace_id', workspaceId);
@@ -1413,6 +1439,64 @@ app.delete('/api/workspace', async (req, res) => {
   }
 });
 
+// --- WORKSPACE MEMBERS (for journey owner dropdown, any workspace member can call) ---
+app.get('/api/workspace/members', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { workspaceId } = req.query;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    if (!workspaceId) return res.status(400).json({ status: 'error', message: 'workspaceId required' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(workspaceId)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const { data: workspace, error: wsErr } = await supabaseAdmin.from('workspaces').select('id, owner_id').eq('id', workspaceId).maybeSingle();
+        if (wsErr || !workspace) return res.status(404).json({ status: 'error', message: 'Workspace not found' });
+
+        const { data: members, error: membersError } = await supabaseAdmin
+            .from('workspace_members')
+            .select('user_id')
+            .eq('workspace_id', workspace.id);
+        if (membersError) throw membersError;
+
+        const userIds = [...new Set([
+            workspace.owner_id,
+            ...(members || []).map(m => m.user_id).filter(Boolean)
+        ])].filter(Boolean);
+
+        let profilesMap = {};
+        if (userIds.length > 0) {
+            const { data: profiles } = await supabaseAdmin.from('profiles').select('id, email, full_name').in('id', userIds);
+            if (profiles) profiles.forEach(p => { profilesMap[p.id] = p; });
+        }
+        const missing = userIds.filter(id => !profilesMap[id]?.full_name && !profilesMap[id]?.email);
+        let authMap = {};
+        if (missing.length > 0) {
+            const authResults = await Promise.all(missing.map(id => supabase.auth.admin.getUserById(id)));
+            authResults.forEach((r, i) => {
+                const uid = missing[i];
+                const u = r.data?.user;
+                if (u) authMap[uid] = { email: u.email || null, full_name: u.user_metadata?.full_name || null };
+            });
+        }
+
+        const list = userIds.map(uid => {
+            const p = profilesMap[uid] || {};
+            const a = authMap[uid] || {};
+            return { id: uid, full_name: p.full_name ?? a.full_name ?? null, email: p.email ?? a.email ?? null };
+        });
+
+        res.json({ status: 'success', data: list });
+    } catch (err) {
+        console.error('Error fetching workspace members:', err);
+        logSystemError(err, 'GET /api/workspace/members');
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
 // --- TEAM ROUTES ---
 
 // Get Team Members & Invites
@@ -1425,8 +1509,8 @@ app.get('/api/workspace/team', async (req, res) => {
         const { data: { user } } = await supabase.auth.getUser(token);
         if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-        // Get workspace ID specifically
-        const { data: workspace } = await supabase.from('workspaces')
+        // Get workspace ID specifically — use admin for reliable read
+        const { data: workspace } = await supabaseAdmin.from('workspaces')
             .select('id')
             .eq('owner_id', user.id)
             .eq('id', workspaceId)
@@ -1434,8 +1518,8 @@ app.get('/api/workspace/team', async (req, res) => {
         
         if (!workspace) return res.status(403).json({ error: 'Only workspace owners can view team settings' });
 
-        // Get Members (без join на profiles — FK може відсутній)
-        const { data: members, error: membersError } = await supabase
+        // Get Members (без join на profiles — FK може відсутній) — admin for reliable read
+        const { data: members, error: membersError } = await supabaseAdmin
             .from('workspace_members')
             .select('id, role, joined_at, user_id')
             .eq('workspace_id', workspace.id);
@@ -1446,7 +1530,7 @@ app.get('/api/workspace/team', async (req, res) => {
         const userIds = [...new Set((members || []).map(m => m.user_id).filter(Boolean))];
         let profilesMap = {};
         if (userIds.length > 0) {
-            const { data: profiles } = await supabase
+            const { data: profiles } = await supabaseAdmin
                 .from('profiles')
                 .select('id, email, full_name')
                 .in('id', userIds);
@@ -1482,7 +1566,7 @@ app.get('/api/workspace/team', async (req, res) => {
         });
 
         // Get Pending Invites
-        const { data: invites, error: invitesError } = await supabase
+        const { data: invites, error: invitesError } = await supabaseAdmin
             .from('workspace_invites')
             .select('*')
             .eq('workspace_id', workspace.id)
@@ -1516,7 +1600,8 @@ app.post('/api/workspace/invite', async (req, res) => {
     try {
         const { data: { user } } = await supabase.auth.getUser(token);
         
-        const { data: workspace } = await supabase.from('workspaces')
+        // Use admin for reliable read (avoids RLS blocking on local)
+        const { data: workspace } = await supabaseAdmin.from('workspaces')
             .select('id')
             .eq('owner_id', user.id)
             .eq('id', targetWorkspaceId)
@@ -1530,7 +1615,8 @@ app.post('/api/workspace/invite', async (req, res) => {
         }
 
         const normalizedEmail = String(email).trim().toLowerCase();
-        const { data: existingInvite } = await supabase
+        // Use admin so we always find existing row (e.g. re-invite after member was removed; RLS could hide accepted invites)
+        const { data: existingInvite } = await supabaseAdmin
             .from('workspace_invites')
             .select('id, status')
             .eq('workspace_id', workspace.id)
@@ -1541,7 +1627,7 @@ app.post('/api/workspace/invite', async (req, res) => {
             if (existingInvite.status === 'pending') {
                 return res.json({ status: 'success', message: 'Invite already sent to this email.', data: { id: existingInvite.id } });
             }
-            // Re-invite: update existing row (e.g. was accepted/rejected) to pending so we don't hit unique constraint
+            // Re-invite: update existing row (e.g. was accepted/rejected, or member was removed) to pending so we don't hit unique constraint
             const { data: updated, error: updateErr } = await supabaseAdmin
                 .from('workspace_invites')
                 .update({ status: 'pending', role })
@@ -1577,13 +1663,13 @@ app.delete('/api/workspace/invite/:id', async (req, res) => {
 
     try {
         const { data: { user } } = await supabase.auth.getUser(token);
-        const { data: invite } = await supabase.from('workspace_invites')
+        const { data: invite } = await supabaseAdmin.from('workspace_invites')
             .select('id, workspace_id')
             .eq('id', inviteId)
             .single();
         if (!invite) return res.status(404).json({ error: 'Invite not found' });
 
-        const { data: workspace } = await supabase.from('workspaces')
+        const { data: workspace } = await supabaseAdmin.from('workspaces')
             .select('id')
             .eq('id', invite.workspace_id)
             .eq('owner_id', user.id)
@@ -1609,13 +1695,13 @@ app.delete('/api/workspace/member/:id', async (req, res) => {
 
     try {
         const { data: { user } } = await supabase.auth.getUser(token);
-        const { data: member } = await supabase.from('workspace_members')
+        const { data: member } = await supabaseAdmin.from('workspace_members')
             .select('id, workspace_id')
             .eq('id', memberRowId)
             .single();
         if (!member) return res.status(404).json({ error: 'Member not found' });
 
-        const { data: workspace } = await supabase.from('workspaces')
+        const { data: workspace } = await supabaseAdmin.from('workspaces')
             .select('id')
             .eq('id', member.workspace_id)
             .eq('owner_id', user.id)
@@ -1891,7 +1977,7 @@ app.get('/api/admin/feedback', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
     if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
     const { data, error } = await supabase
       .from('feedback')
@@ -1913,11 +1999,11 @@ app.get('/api/admin/feedback/count', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
     if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
-    const { count: total, error: totalErr } = await supabase.from('feedback').select('*', { count: 'exact', head: true });
+    const { count: total, error: totalErr } = await supabaseAdmin.from('feedback').select('*', { count: 'exact', head: true });
     if (totalErr) throw totalErr;
-    const { count: open, error: openErr } = await supabase.from('feedback').select('*', { count: 'exact', head: true }).eq('status', 'open');
+    const { count: open, error: openErr } = await supabaseAdmin.from('feedback').select('*', { count: 'exact', head: true }).eq('status', 'open');
     if (openErr) throw openErr;
     res.json({ status: 'success', data: { total: total ?? 0, open: open ?? 0 } });
   } catch (err) {
@@ -1934,10 +2020,10 @@ app.get('/api/admin/feedback/:id', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
     if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
     const { id } = req.params;
-    const { data: feedback, error: feedError } = await supabase.from('feedback').select('*').eq('id', id).single();
+    const { data: feedback, error: feedError } = await supabaseAdmin.from('feedback').select('*').eq('id', id).single();
     if (feedError || !feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
     const { data: replies } = await supabase
       .from('feedback_replies')
@@ -1958,12 +2044,12 @@ app.post('/api/admin/feedback/:id/reply', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
     if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
     const { id } = req.params;
     const { body } = req.body;
     if (!body || !String(body).trim()) return res.status(400).json({ status: 'error', message: 'body required' });
-    const { data: feedback } = await supabase.from('feedback').select('id').eq('id', id).single();
+    const { data: feedback } = await supabaseAdmin.from('feedback').select('id').eq('id', id).single();
     if (!feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
     const { data: reply, error } = await supabaseAdmin
       .from('feedback_replies')
@@ -2052,7 +2138,7 @@ app.post('/api/subscriptions/assign', async (req, res) => {
     try {
         // Перевірка прав адміна (спрощена, краще через middleware)
         const { data: { user } } = await supabase.auth.getUser(token);
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
         
         if (profile?.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied' });
@@ -2108,7 +2194,7 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
              return res.status(401).json({ error: 'Invalid token' });
         }
 
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
         if (profile?.role !== 'admin') {
             console.log(`❌ Access denied for user ${user.id} (role: ${profile?.role})`);
             return res.status(403).json({
@@ -2118,7 +2204,7 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
         }
 
         // 1. Profile
-        const { data: userProfile, error: profileError } = await supabase
+        const { data: userProfile, error: profileError } = await supabaseAdmin
             .from('profiles')
             .select('*')
             .eq('id', id)
@@ -2133,18 +2219,18 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
         }
 
         // 2. Workspaces (Owned & Joined)
-        const { data: ownedWorkspaces } = await supabase
+        const { data: ownedWorkspaces } = await supabaseAdmin
             .from('workspaces')
             .select('*, workspace_members(count)')
             .eq('owner_id', id);
         
-        const { data: joinedWorkspaces } = await supabase
+        const { data: joinedWorkspaces } = await supabaseAdmin
             .from('workspace_members')
             .select('role, joined_at, workspaces(*)')
             .eq('user_id', id);
 
         // 3. Subscriptions (History)
-        const { data: subscriptions } = await supabase
+        const { data: subscriptions } = await supabaseAdmin
             .from('subscriptions')
             .select('*, plans(name, price_monthly)')
             .eq('user_id', id)
@@ -2178,7 +2264,7 @@ app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], asyn
 
     try {
         const { data: { user } } = await supabase.auth.getUser(token);
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
         if (profile?.role !== 'admin') return res.status(403).json({ error: 'Access denied' });
 
         let endDate = new Date();

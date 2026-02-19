@@ -149,8 +149,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     title: 'Untitled Journey',
     description: '',
     status: 'draft',
-    owner: ''
+    owner: '',
+    ownerId: ''
   })
+  const [workspaceMembers, setWorkspaceMembers] = useState([])
   const [showDetails, setShowDetails] = useState(false)
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false)
 
@@ -168,6 +170,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const [isMetricPickerOpen, setIsMetricPickerOpen] = useState(false)
   const [pendingMetricLocation, setPendingMetricLocation] = useState(null)
   const [isMetricModalOpen, setIsMetricModalOpen] = useState(false)
+  const [editingMetric, setEditingMetric] = useState(null)
 
   // --- LINKED JOURNEY ---
   const [isJourneyPickerOpen, setIsJourneyPickerOpen] = useState(false)
@@ -239,7 +242,8 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       title: j.title,
       description: j.description || '',
       status: j.status || 'draft',
-      owner: j.owner || ''
+      owner: j.owner || '',
+      ownerId: j.user_id ?? ''
     });
 
     if (j.map_data) {
@@ -271,6 +275,26 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       setIsDataLoaded(true);
     }
   }, [journeyData, isDataLoaded, journeyId, isQueryFetching]);
+
+  // Fetch workspace members for owner dropdown (when journey has workspace_id)
+  useEffect(() => {
+    const wid = journeyData?.workspace_id;
+    if (!wid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) return;
+        const res = await fetch(`${API_URL}/workspace/members?workspaceId=${encodeURIComponent(wid)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (json.status === 'success' && json.data && !cancelled) setWorkspaceMembers(json.data);
+      } catch (_) { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [journeyData?.workspace_id]);
 
   // Force minimum load time for UX (to show tips and smooth transition)
   useEffect(() => {
@@ -314,6 +338,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
           status: m.status,
           map_data
         };
+        if (m.ownerId !== undefined && m.ownerId !== null) payload.user_id = m.ownerId || null;
 
         const response = await fetch(`${API_URL}/journeys/${journeyId}`, {
           method: 'PUT',
@@ -1031,12 +1056,21 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                 </div>
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Owner</label>
-                  <input 
-                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white"
-                    placeholder="Add owner..."
-                    value={journeyMeta.owner}
-                    onChange={(e) => setJourneyMeta({ ...journeyMeta, owner: e.target.value })}
-                  />
+                  <div className="relative">
+                    <select
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 pr-9 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white appearance-none"
+                      value={journeyMeta.ownerId ?? ''}
+                      onChange={(e) => setJourneyMeta({ ...journeyMeta, ownerId: e.target.value })}
+                    >
+                      <option value="">Select owner…</option>
+                      {workspaceMembers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name || m.email || m.id}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
                 </div>
              </div>
           </div>
@@ -1129,6 +1163,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                         activePickerId={activePickerId}
                         onSetActivePicker={setActivePickerId}
                         onUploadImage={handleTriggerImageUpload}
+                        onEditMetric={(metric) => { if (metric) { setEditingMetric(metric); setIsMetricModalOpen(true); } }}
                       />
                     )}
                   </SortableLaneItem>
@@ -1218,7 +1253,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         onClose={() => setIsMetricPickerOpen(false)}
         metrics={globalMetrics}
         onSelect={handleSelectMetric}
-        onCreateNew={() => { setIsMetricPickerOpen(false); setIsMetricModalOpen(true); }}
+        onCreateNew={() => { setEditingMetric(null); setIsMetricPickerOpen(false); setIsMetricModalOpen(true); }}
       />
 
       <JourneyPicker 
@@ -1230,8 +1265,17 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
       <MetricModal 
         isOpen={isMetricModalOpen}
-        onClose={() => setIsMetricModalOpen(false)}
-        onSave={handleCreateMetric}
+        onClose={() => { setIsMetricModalOpen(false); setEditingMetric(null); }}
+        onSave={(data) => {
+          if (editingMetric) {
+            onSaveGlobalMetric(data);
+            setIsMetricModalOpen(false);
+            setEditingMetric(null);
+          } else {
+            handleCreateMetric(data);
+          }
+        }}
+        initialMetric={editingMetric}
       />
 
       <ConfirmModal 
