@@ -1,4 +1,5 @@
 import { useState, useRef, useLayoutEffect, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { Plus, MoreHorizontal, GripVertical, AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, List, Trash2, Copy, Palette, Share2, BarChart2, Map as MapIcon, Pin, PinOff } from 'lucide-react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable' 
@@ -22,6 +23,7 @@ function getScrollParent(node) {
 }
 
 function CardPicker({ onPick, isOpen, onOpenChange }) {
+  const { t } = useTranslation()
   const containerRef = useRef(null)
   const triggerRectRef = useRef(null)
   const [openUpward, setOpenUpward] = useState(false)
@@ -58,15 +60,15 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   }, [isOpen, onOpenChange])
 
   const options = [
-    { type: 'text', label: 'Text', icon: AlignLeft, color: 'text-gray-500' },
-    { type: 'image', label: 'Image', icon: ImageIcon, color: 'text-gray-500' },
-    { type: 'pain_point', label: 'Pain Point', icon: AlertCircle, color: 'text-red-500' },
-    { type: 'opportunity', label: 'Opportunity', icon: Sparkles, color: 'text-blue-500' },
-    { type: 'solution', label: 'Solution', icon: CheckCircle2, color: 'text-green-500' },
-    { type: 'channel', label: 'Channels', icon: Share2, color: 'text-indigo-500' },
-    { type: 'metric', label: 'Metric', icon: BarChart2, color: 'text-emerald-500' },
-    { type: 'linked_journey', label: 'Link journey map', icon: MapIcon, color: 'text-amber-500' },
-    { type: 'stage', label: 'Stage', icon: List, color: 'text-purple-500' },
+    { type: 'text', label: t('editor.cardText'), icon: AlignLeft, color: 'text-gray-500' },
+    { type: 'image', label: t('editor.cardImage'), icon: ImageIcon, color: 'text-gray-500' },
+    { type: 'pain_point', label: t('editor.cardPainPoint'), icon: AlertCircle, color: 'text-red-500' },
+    { type: 'opportunity', label: t('editor.cardOpportunity'), icon: Sparkles, color: 'text-blue-500' },
+    { type: 'solution', label: t('editor.cardSolution'), icon: CheckCircle2, color: 'text-green-500' },
+    { type: 'channel', label: t('editor.cardChannels'), icon: Share2, color: 'text-indigo-500' },
+    { type: 'metric', label: t('editor.cardMetric'), icon: BarChart2, color: 'text-emerald-500' },
+    { type: 'linked_journey', label: t('editor.cardLinkJourneyMap'), icon: MapIcon, color: 'text-amber-500' },
+    { type: 'stage', label: t('editor.cardStage'), icon: List, color: 'text-purple-500' },
   ]
 
   const rect = triggerRectRef.current
@@ -101,7 +103,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
         }}
         className={`w-full py-2 border border-dashed rounded flex items-center justify-center gap-2 transition-all ${isOpen ? 'border-orange-300 bg-orange-50 text-orange-600' : 'border-gray-300 text-gray-400 hover:text-orange-600 hover:border-orange-300 hover:bg-orange-50'}`}
       >
-        <Plus size={14} /> Add Content
+        <Plus size={14} /> {t('editor.addContent')}
       </button>
       {portalContent && createPortal(portalContent, document.body)}
     </div>
@@ -182,6 +184,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
 }
 
 export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric }) {
+  const { t } = useTranslation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const calculateLayout = () => {
@@ -234,7 +237,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
 
   return (
     <div className={`flex min-h-[112px] ${bgColor} border-b border-gray-200 transition-colors`}>
-      <div className={`w-64 shrink-0 sticky left-0 z-30 ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
+      <div className={`w-64 shrink-0 sticky left-0 z-[100] ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
             {!lane.isPinned && (
               <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 p-1 -ml-1 rounded hover:bg-gray-200/50 transition-colors touch-none shrink-0 hide-on-export">
@@ -263,13 +266,13 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
               <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-40 overflow-hidden py-1">
                  <button onClick={() => { onTogglePin(); toggleDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                    {lane.isPinned ? <PinOff size={14} /> : <Pin size={14} />} 
-                   {lane.isPinned ? 'Unpin lane' : 'Pin lane'}
+                   {lane.isPinned ? t('editor.unpinLane') : t('editor.pinLane')}
                  </button>
                  <button onClick={() => { onDuplicate(); toggleDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                   <Copy size={14} /> Duplicate lane
+                   <Copy size={14} /> {t('editor.duplicateLane')}
                  </button>
                  <div className="px-4 py-2">
-                   <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex items-center gap-2"><Palette size={10} /> Color</div>
+                   <div className="text-xs text-gray-400 font-bold mb-2 flex items-center gap-2"><Palette size={10} /> {t('common.color')}</div>
                    <div className="flex gap-2">
                       {['bg-white', 'bg-gray-50', 'bg-blue-50', 'bg-red-50', 'bg-yellow-50'].map(c => (
                         <button 
@@ -282,7 +285,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
                  </div>
                  <div className="h-px bg-gray-100 my-1"></div>
                  <button onClick={() => { onDelete(); toggleDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                   <Trash2 size={14} /> Delete lane
+                   <Trash2 size={14} /> {t('editor.deleteLaneMenu')}
                  </button>
               </div>
             </>

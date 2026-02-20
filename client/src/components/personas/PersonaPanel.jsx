@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, MapPin, Calendar, Plus, Target, AlertCircle, Edit2, User, Briefcase, GraduationCap, Smile, Bot, Baby, Trash2, Quote } from 'lucide-react'
 
 const getAvatarIcon = (id) => {
@@ -13,6 +14,7 @@ const getAvatarIcon = (id) => {
 }
 
 export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, onDisconnect, isExporting }) {
+  const { t } = useTranslation()
   if (!persona) {
     return (
       <button 
@@ -20,7 +22,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
         className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-dashed border-gray-300 text-gray-400 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 transition-colors text-sm font-medium whitespace-nowrap"
       >
         <Plus size={16} />
-        <span>Add Persona</span>
+        <span>{t('personas.addPersona')}</span>
       </button>
     )
   }
@@ -51,13 +53,13 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
         </div>
         <div className="grid grid-cols-2 gap-8 mt-6 pt-6 border-t border-gray-200">
            <div>
-              <h4 className="font-bold text-gray-900 mb-2 uppercase text-xs tracking-wider">Goals</h4>
+              <h4 className="font-bold text-gray-900 mb-2 text-xs">Goals</h4>
               <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
                 {persona.goals.map((g, i) => <li key={i}>{g}</li>)}
               </ul>
            </div>
            <div>
-              <h4 className="font-bold text-gray-900 mb-2 uppercase text-xs tracking-wider">Frustrations</h4>
+              <h4 className="font-bold text-gray-900 mb-2 text-xs">Frustrations</h4>
               <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
                 {persona.frustrations.map((f, i) => <li key={i}>{f}</li>)}
               </ul>
@@ -103,7 +105,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
                   onClick={(e) => { e.stopPropagation(); onEdit(); }}
                   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition cursor-pointer"
-                  title="Edit Persona"
+                  title={t('personas.editPersona')}
                 >
                   <Edit2 size={16} />
                 </button>
@@ -112,7 +114,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
                   onClick={(e) => { e.stopPropagation(); onDisconnect && onDisconnect(); }}
                   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition cursor-pointer"
-                  title="Remove from Map"
+                  title={t('personas.removeFromMap')}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -126,7 +128,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
                       "{persona.bio}"
                     </div>
                   )}
-                  <div className="flex items-center gap-4 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  <div className="flex items-center gap-4 text-xs font-medium text-gray-500">
                     <div className="flex items-center gap-1.5">
                       <Calendar size={14} /> {persona.age} years
                     </div>
@@ -139,7 +141,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
                 <div className="grid grid-cols-2 gap-6">
                   {/* Goals */}
                   <div>
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Target size={14} /> Goals</h4>
+                    <h4 className="text-xs font-bold text-gray-400 mb-3 flex items-center gap-2"><Target size={14} /> Goals</h4>
                     <div className="flex flex-wrap gap-2">
                       {persona.goals.map((goal, i) => (
                         <span key={i} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-50 text-green-700 border border-green-100">{goal}</span>
@@ -148,7 +150,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
                   </div>
                   {/* Frustrations */}
                   <div>
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><AlertCircle size={14} /> Frustrations</h4>
+                    <h4 className="text-xs font-bold text-gray-400 mb-3 flex items-center gap-2"><AlertCircle size={14} /> Frustrations</h4>
                     <div className="flex flex-wrap gap-2">
                       {persona.frustrations.map((frust, i) => (
                         <span key={i} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-100">{frust}</span>

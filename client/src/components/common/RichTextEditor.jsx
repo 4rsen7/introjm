@@ -1,20 +1,24 @@
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useState, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useTranslation } from 'react-i18next'
 
-const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardType, onFocusChange }, ref) => {
-  // Ми не використовуємо content як state для рендеру, щоб не було конфліктів.
-  // State потрібен тільки для порівняння при blur.
+const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardType, onFocusChange, onFontSizeChange, compact = false }, ref) => {
+  const { t } = useTranslation()
   const contentRef = useRef(initialContent)
   const editorRef = useRef(null)
+  const hasInitializedRef = useRef(false)
   const [isFocused, setIsFocused] = useState(false)
 
-  // Оновлюємо вміст ТІЛЬКИ якщо він прийшов новий ззовні (наприклад, з бази даних),
-  // і він відрізняється від того, що ми зараз бачимо.
-  useEffect(() => {
-    if (
-      editorRef.current && 
-      initialContent !== editorRef.current.innerHTML && 
-      !isFocused // Не чіпаємо, якщо користувач саме зараз працює з цим полем
-    ) {
+  // Вміст задаємо тільки через ref/effect, щоб React не перезаписував DOM при ре-рендері (dangerouslySetInnerHTML).
+  // Один раз при монті — ініціалізація; далі — синхронізація з initialContent лише коли !isFocused.
+  useLayoutEffect(() => {
+    if (!editorRef.current) return
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true
+      editorRef.current.innerHTML = initialContent ?? ''
+      contentRef.current = initialContent ?? ''
+      return
+    }
+    if (!isFocused && initialContent !== editorRef.current.innerHTML) {
       editorRef.current.innerHTML = initialContent
       contentRef.current = initialContent
     }
@@ -45,18 +49,22 @@ const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardTyp
     }
   }
 
-  const handleFontSize = () => {
-    // Cycle sizes: 3 (default) -> 5 (large) -> 7 (xl) -> 3
-    const current = document.queryCommandValue('fontSize');
-    let next = '3';
-    if (current === '3' || !current) next = '5';
-    else if (current === '5') next = '7';
-    else next = '3';
-    executeCommand('fontSize', next);
+  const getFontSize = () => {
+    if (!editorRef.current) return '3';
+    editorRef.current.focus();
+    const v = document.queryCommandValue('fontSize');
+    return (v === '5' || v === '7') ? v : '3';
+  }
+
+  const setFontSize = (size) => {
+    const s = String(size);
+    if (s !== '3' && s !== '5' && s !== '7') return;
+    executeCommand('fontSize', s);
+    if (onFontSizeChange) onFontSizeChange(s);
   }
 
   const handleLink = () => {
-    const url = prompt('Enter link URL:');
+    const url = prompt(t('common.enterLinkUrl'));
     if (url) executeCommand('createLink', url);
   }
 
@@ -65,7 +73,8 @@ const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardTyp
     toggleBold: () => executeCommand('bold'),
     toggleItalic: () => executeCommand('italic'),
     insertList: () => executeCommand('insertUnorderedList'),
-    cycleFontSize: handleFontSize,
+    setFontSize,
+    getFontSize,
     addLink: handleLink
   }))
 
@@ -79,18 +88,20 @@ const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardTyp
         onFocus={() => {
           setIsFocused(true)
           if (onFocusChange) onFocusChange(true)
+          if (onFontSizeChange) onFontSizeChange(getFontSize())
         }}
         onBlur={handleBlur}
         className={`
-          w-full min-h-[48px] outline-none text-sm text-gray-800 leading-relaxed cursor-text
+          w-full outline-none text-sm text-gray-800 leading-relaxed cursor-text
+          ${compact ? 'min-h-[32px]' : 'min-h-[48px]'}
           empty:before:content-[attr(placeholder)] empty:before:text-gray-400
           [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5
           [&>b]:font-bold [&>i]:italic
+          [&_font[size="3"]]:!text-[12px] [&_font[size="5"]]:!text-[14px] [&_font[size="7"]]:!text-[18px]
         `}
-        placeholder="Describe details..."
+        placeholder={t('editor.placeholderDescribeDetails')}
         // Використовуємо suppressContentEditableWarning, щоб React не сварився
         suppressContentEditableWarning={true}
-        dangerouslySetInnerHTML={{ __html: initialContent }}
       ></div>
       
       {isFocused && (

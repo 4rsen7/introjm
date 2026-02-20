@@ -31,7 +31,7 @@ export default function MetricCard({ card, onUpdate }) {
         {metric.type === 'data' ? (
           <>
             <div>
-              <label className="block text-xs text-gray-500 font-bold uppercase mb-1">Metric Name</label>
+              <label className="block text-xs text-gray-500 font-bold mb-1">Metric Name</label>
               <input 
                 className="w-full text-sm border border-gray-200 rounded px-2 py-1 outline-none focus:border-orange-500"
                 value={metric.title}
@@ -41,7 +41,7 @@ export default function MetricCard({ card, onUpdate }) {
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="block text-xs text-gray-500 font-bold uppercase mb-1">Value</label>
+                <label className="block text-xs text-gray-500 font-bold mb-1">Value</label>
                 <input 
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1 outline-none focus:border-orange-500"
                   value={metric.value}
@@ -50,7 +50,7 @@ export default function MetricCard({ card, onUpdate }) {
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-xs text-gray-500 font-bold uppercase mb-1">Trend</label>
+                <label className="block text-xs text-gray-500 font-bold mb-1">Trend</label>
                 <select 
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1 outline-none focus:border-orange-500 bg-white"
                   value={metric.trend}
@@ -65,7 +65,7 @@ export default function MetricCard({ card, onUpdate }) {
           </>
         ) : (
           <div>
-            <label className="block text-xs text-gray-500 font-bold uppercase mb-1">Image URL</label>
+            <label className="block text-xs text-gray-500 font-bold mb-1">Image URL</label>
             <input 
               className="w-full text-sm border border-gray-200 rounded px-2 py-1 outline-none focus:border-orange-500"
               value={metric.imageUrl || ''}
@@ -118,7 +118,7 @@ export default function MetricCard({ card, onUpdate }) {
   return (
     <div className="p-4 flex flex-col items-center justify-center relative group/metric min-h-[80px]">
       <div className="text-3xl font-bold text-gray-800 mb-1">{metric.value}</div>
-      <div className="flex items-center gap-1 text-xs font-medium text-gray-500 uppercase tracking-wide">
+      <div className="flex items-center gap-1 text-xs font-medium text-gray-500">
         {metric.title}
         {getTrendIcon()}
       </div>

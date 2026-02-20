@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
-import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Type, Link as LinkIcon, Maximize2, X, Settings, Map, ChevronRight } from 'lucide-react'
+import { AlignLeft, Image as ImageIcon, AlertCircle, Sparkles, CheckCircle2, Palette, Trash2, Share2, BarChart2, Bold, Italic, List, Link as LinkIcon, Maximize2, X, Settings, Map, ChevronRight, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -12,11 +13,19 @@ import JourneyMetricCard from './JourneyMetricCard'
 const STAGE_COLORS = ['bg-blue-100', 'bg-green-100', 'bg-purple-100', 'bg-orange-100', 'bg-pink-100', 'bg-yellow-100', 'bg-red-100', 'bg-teal-100'];
 const COL_WIDTH = 288; // 18rem
 
+// За замовчуванням 12px (text-xs); опції 12 / 14 / 18 відповідають HTML font size 3 / 5 / 7
+const FONT_SIZE_OPTIONS = [
+  { value: '3', label: '12' },
+  { value: '5', label: '14' },
+  { value: '7', label: '18' }
+];
+
 function LinkedJourneyBlock({ card, globalJourneys = [] }) {
-  const navigate = useNavigate();
-  const journey = card.content ? globalJourneys.find(j => j.id === card.content) : null;
-  const title = journey?.title || (card.content ? 'Journey' : 'Select journey');
-  const canOpen = Boolean(card.content);
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const journey = card.content ? globalJourneys.find(j => j.id === card.content) : null
+  const title = journey?.title || (card.content ? t('editor.untitled') : t('editor.selectJourney'))
+  const canOpen = Boolean(card.content)
 
   return (
     <div className="flex items-center gap-3 p-2 rounded-lg bg-amber-50/50 border border-amber-100">
@@ -32,24 +41,28 @@ function LinkedJourneyBlock({ card, globalJourneys = [] }) {
           onClick={(e) => { e.stopPropagation(); navigate(`/journey/${card.content}`); }}
           className="shrink-0 flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium text-sm py-1.5 px-2 rounded hover:bg-amber-100 transition-colors"
         >
-          Open
+          {t('editor.open')}
           <ChevronRight size={16} />
         </button>
       )}
     </div>
-  );
+  )
 }
 
 export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric }) {
+  const { t } = useTranslation()
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
   const [isStageFocused, setIsStageFocused] = useState(false)
   const isActive = selectedCardId === card.id
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
   const [showChannelSettings, setShowChannelSettings] = useState(false)
+  const [toolbarFontSize, setToolbarFontSize] = useState('3')
+  const [showFontSizeMenu, setShowFontSizeMenu] = useState(false)
   const editorRef = useRef(null)
   const menuRef = useRef(null)
   const buttonRef = useRef(null)
+  const fontSizeMenuRef = useRef(null)
   const isResizing = useRef(false)
 
   // --- DND KIT ---
@@ -74,6 +87,25 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   }
 
   useEffect(() => { setLocalContent(card.content || '') }, [card.content])
+
+  // Синхронізуємо цифру розміру шрифту в тулбарі при активації картки
+  useEffect(() => {
+    if (isActive && editorRef.current?.getFontSize) {
+      setToolbarFontSize(editorRef.current.getFontSize() || '3')
+    }
+  }, [isActive])
+
+  // Закрити меню розміру шрифту при кліку зовні
+  useEffect(() => {
+    if (!showFontSizeMenu) return
+    const close = (e) => {
+      if (fontSizeMenuRef.current && !fontSizeMenuRef.current.contains(e.target)) {
+        setShowFontSizeMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [showFontSizeMenu])
 
   const handleBlur = () => {
     if (localContent !== card.content) {
@@ -178,12 +210,12 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                ref={buttonRef}
                onClick={toggleMenu}
                className="p-1 hover:bg-gray-700 rounded transition" 
-               title="Color"
+               title={t('common.color')}
              >
                <Palette size={14} />
              </button>
              <div className="w-px h-4 bg-gray-700 mx-1"></div>
-             <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title="Delete Stage">
+             <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteStage')}>
                 <Trash2 size={14} />
              </button>
           </div>
@@ -198,7 +230,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
             onChange={(e) => setLocalContent(e.target.value)}
             onBlur={() => { handleBlur(); setIsStageFocused(false); if (onMenuToggle) onMenuToggle(false); }}
             onFocus={() => { setIsStageFocused(true); if (onMenuToggle) onMenuToggle(true); }}
-            placeholder="Stage name"
+            placeholder={t('editor.placeholderStageName')}
             onPointerDown={(e) => e.stopPropagation()}
           />
           
@@ -207,7 +239,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
             onMouseDown={handleResizeMouseDown}
             onPointerDown={(e) => e.stopPropagation()} 
             onClick={(e) => e.stopPropagation()}
-            title="Drag to resize"
+            title={t('common.dragToResize')}
           >
              <div className="w-1 h-4 bg-black/20 rounded-full"></div>
           </div>
@@ -220,7 +252,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
               onPointerDown={(e) => e.stopPropagation()}
             >
                 <div>
-                  <div className="text-[10px] uppercase text-gray-400 font-bold mb-1.5">Color</div>
+                  <div className="text-[10px] text-gray-400 font-bold mb-1.5">{t('common.color')}</div>
                   <div className="flex gap-1.5 flex-wrap">
                     {STAGE_COLORS.map(c => (
                       <div key={c} className={`w-5 h-5 rounded-full cursor-pointer border border-gray-100 hover:scale-110 transition ${c} ${card.color === c ? 'ring-2 ring-gray-400' : ''}`} onClick={() => onUpdate({ ...card, color: c })}></div>
@@ -237,14 +269,14 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   const commonClasses = "bg-white p-3 rounded-md shadow-sm border border-gray-200 text-sm text-gray-700 mb-2 relative group mx-3 hover:shadow-md transition-shadow"
   
   const configMap = {
-    text: { icon: AlignLeft, color: 'text-gray-400', bg: 'bg-transparent', label: 'Text', border: 'border-gray-200' },
-    image: { icon: ImageIcon, color: 'text-gray-400', bg: 'bg-transparent', label: 'Image', border: 'border-gray-200' },
-    pain_point: { icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50', label: 'Pain Point', border: 'border-red-100' },
-    opportunity: { icon: Sparkles, color: 'text-blue-600', bg: 'bg-blue-50', label: 'Opportunity', border: 'border-blue-100' },
-    solution: { icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', label: 'Solution', border: 'border-green-100' },
-    channel: { icon: Share2, color: 'text-indigo-500', bg: 'bg-indigo-50', label: 'Channels', border: 'border-indigo-100' },
-    metric: { icon: BarChart2, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Metric', border: 'border-emerald-100' },
-    linked_journey: { icon: Map, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Link journey map', border: 'border-amber-100' }
+    text: { icon: AlignLeft, color: 'text-gray-400', bg: 'bg-gray-50', label: t('editor.cardText'), border: 'border-gray-200', bar: 'bg-gray-300' },
+    image: { icon: ImageIcon, color: 'text-gray-400', bg: 'bg-transparent', label: t('editor.cardImage'), border: 'border-gray-200', bar: null },
+    pain_point: { icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50', label: t('editor.cardPainPoint'), border: 'border-red-100', bar: 'bg-red-500' },
+    opportunity: { icon: Sparkles, color: 'text-blue-600', bg: 'bg-blue-50', label: t('editor.cardOpportunity'), border: 'border-blue-100', bar: 'bg-blue-500' },
+    solution: { icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', label: t('editor.cardSolution'), border: 'border-green-100', bar: 'bg-green-500' },
+    channel: { icon: Share2, color: 'text-indigo-500', bg: 'bg-indigo-50', label: t('editor.cardChannels'), border: 'border-indigo-100', bar: null },
+    metric: { icon: BarChart2, color: 'text-emerald-500', bg: 'bg-emerald-50', label: t('editor.cardMetric'), border: 'border-emerald-100', bar: null },
+    linked_journey: { icon: Map, color: 'text-amber-600', bg: 'bg-amber-50', label: t('editor.cardLinkJourneyMap'), border: 'border-amber-100', bar: null }
   }
   const config = configMap[card.type] || configMap.text
 
@@ -257,23 +289,108 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
        >
         {isActive && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
-             <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title="Delete Image">
+             <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteImage')}>
                 <Trash2 size={14} />
              </button>
           </div>
         )}
-        <div className="flex items-center gap-2 mb-2 text-gray-400 text-xs uppercase font-bold select-none"><ImageIcon size={12} /> Image</div>
+        <div className="flex items-center gap-2 mb-2 text-gray-400 text-xs font-bold select-none"><ImageIcon size={12} /> {t('editor.cardImage')}</div>
         <div 
             onClick={(e) => { e.stopPropagation(); onUploadImage && onUploadImage(card.id); }}
             className="h-24 bg-gray-50 border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition cursor-pointer"
         >
-           <ImageIcon size={20} className="mb-1" /> <span className="text-xs">Upload</span>
+           <ImageIcon size={20} className="mb-1" /> <span className="text-xs">{t('editor.upload')}</span>
         </div>
       </div>
     )
   }
 
   const Icon = config.icon
+  const isCompact = ['text', 'pain_point', 'opportunity', 'solution'].includes(card.type)
+
+  if (isCompact) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`flex rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${isActive ? 'ring-2 ring-blue-500/20' : ''} ${config.bg}`}
+        onClick={handleCardClick}
+      >
+        {isActive && (
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+          >
+            <button onClick={() => editorRef.current?.toggleBold()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.bold')}>
+              <Bold size={14} strokeWidth={2.5} />
+            </button>
+            <button onClick={() => editorRef.current?.toggleItalic()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.italic')}>
+              <Italic size={14} />
+            </button>
+            <div className="w-px h-4 bg-gray-700 mx-1"></div>
+            <div ref={fontSizeMenuRef} className="relative">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setShowFontSizeMenu((v) => !v); }}
+                className="p-1 hover:bg-gray-700 rounded transition min-w-[28px] flex items-center justify-center gap-0.5"
+                title={t('common.fontSize')}
+              >
+                <span className="text-[11px] font-semibold text-white tabular-nums leading-none">
+                  {FONT_SIZE_OPTIONS.find((o) => o.value === toolbarFontSize)?.label ?? '12'}
+                </span>
+                <ChevronDown size={12} className="text-gray-400 shrink-0" />
+              </button>
+              {showFontSizeMenu && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[90]">
+                  {FONT_SIZE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        editorRef.current?.setFontSize?.(opt.value);
+                        setToolbarFontSize(opt.value);
+                        setShowFontSizeMenu(false);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-700 transition ${toolbarFontSize === opt.value ? 'bg-gray-700 text-white' : 'text-gray-200'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => editorRef.current?.insertList()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.list')}>
+              <List size={14} />
+            </button>
+            <button onClick={() => editorRef.current?.addLink()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.link')}>
+              <LinkIcon size={14} />
+            </button>
+            <div className="w-px h-4 bg-gray-700 mx-1"></div>
+            <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteCard')}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
+        <div
+          {...attributes}
+          {...listeners}
+          className={`w-2 shrink-0 rounded-l-md ${config.bar} select-none cursor-grab active:cursor-grabbing`}
+          title={config.label}
+        />
+        <div className="flex-1 min-w-0 py-2 px-3 cursor-text" onPointerDown={(e) => e.stopPropagation()}>
+          <RichTextEditor
+            ref={editorRef}
+            initialContent={card.content}
+            onUpdate={(newContent) => onUpdate({ ...card, content: newContent })}
+            onDelete={() => onDelete && onDelete(card.id)}
+            cardType={card.type}
+            onFocusChange={(focused) => { if (focused && onSelectCard) onSelectCard(card.id); if (onMenuToggle) onMenuToggle(focused); }}
+            onFontSizeChange={setToolbarFontSize}
+            compact={true}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div 
@@ -290,36 +407,63 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
         >
            {['text', 'pain_point', 'opportunity', 'solution'].includes(card.type) && (
              <>
-               <button onClick={() => editorRef.current?.toggleBold()} className="p-1 hover:bg-gray-700 rounded transition" title="Bold">
+               <button onClick={() => editorRef.current?.toggleBold()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.bold')}>
                  <Bold size={14} strokeWidth={2.5} />
                </button>
-               <button onClick={() => editorRef.current?.toggleItalic()} className="p-1 hover:bg-gray-700 rounded transition" title="Italic">
+               <button onClick={() => editorRef.current?.toggleItalic()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.italic')}>
                  <Italic size={14} />
                </button>
                <div className="w-px h-4 bg-gray-700 mx-1"></div>
-               <button onClick={() => editorRef.current?.cycleFontSize()} className="p-1 hover:bg-gray-700 rounded transition" title="Font Size">
-                  <Type size={14} />
-               </button>
-               <button onClick={() => editorRef.current?.insertList()} className="p-1 hover:bg-gray-700 rounded transition" title="List">
+               <div ref={fontSizeMenuRef} className="relative">
+                 <button
+                   onMouseDown={(e) => { e.preventDefault(); setShowFontSizeMenu((v) => !v); }}
+                   className="p-1 hover:bg-gray-700 rounded transition min-w-[28px] flex items-center justify-center gap-0.5"
+                   title={t('common.fontSize')}
+                 >
+                   <span className="text-[11px] font-semibold text-white tabular-nums leading-none">
+                     {FONT_SIZE_OPTIONS.find((o) => o.value === toolbarFontSize)?.label ?? '12'}
+                   </span>
+                   <ChevronDown size={12} className="text-gray-400 shrink-0" />
+                 </button>
+                 {showFontSizeMenu && (
+                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[90]">
+                     {FONT_SIZE_OPTIONS.map((opt) => (
+                       <button
+                         key={opt.value}
+                         onMouseDown={(e) => {
+                           e.preventDefault();
+                           editorRef.current?.setFontSize?.(opt.value);
+                           setToolbarFontSize(opt.value);
+                           setShowFontSizeMenu(false);
+                         }}
+                         className={`w-full px-3 py-1.5 text-left text-sm hover:bg-gray-700 transition ${toolbarFontSize === opt.value ? 'bg-gray-700 text-white' : 'text-gray-200'}`}
+                       >
+                         {opt.label}
+                       </button>
+                     ))}
+                   </div>
+                 )}
+               </div>
+               <button onClick={() => editorRef.current?.insertList()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.list')}>
                  <List size={14} />
                </button>
-               <button onClick={() => editorRef.current?.addLink()} className="p-1 hover:bg-gray-700 rounded transition" title="Link">
+               <button onClick={() => editorRef.current?.addLink()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.link')}>
                  <LinkIcon size={14} />
                </button>
                <div className="w-px h-4 bg-gray-700 mx-1"></div>
              </>
            )}
            {card.type === 'channel' && (
-             <button onClick={(e) => { e.stopPropagation(); setShowChannelSettings(true); }} className="p-1 hover:bg-gray-700 rounded transition" title="Card settings">
+             <button onClick={(e) => { e.stopPropagation(); setShowChannelSettings(true); }} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.cardSettings')}>
                <Settings size={14} />
              </button>
            )}
            {card.type === 'metric' && onEditMetric && (
-             <button onClick={(e) => { e.stopPropagation(); const m = globalMetrics?.find(x => x.id === card.content); if (m) onEditMetric(m); }} className="p-1 hover:bg-gray-700 rounded transition" title="Metric settings">
+             <button onClick={(e) => { e.stopPropagation(); const m = globalMetrics?.find(x => x.id === card.content); if (m) onEditMetric(m); }} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.metricSettingsTitle')}>
                <Settings size={14} />
              </button>
            )}
-           <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title="Delete Card">
+           <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteCard')}>
               <Trash2 size={14} />
            </button>
         </div>
@@ -332,7 +476,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       >
         <div className="flex items-center gap-2">
            <Icon size={14} className={config.color} /> 
-           <span className={`text-xs font-bold ${config.color} uppercase`}>{config.label}</span>
+           <span className={`text-xs font-bold ${config.color}`}>{config.label}</span>
         </div>
       </div>
 
@@ -356,7 +500,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                  <button 
                     onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
                     className="absolute bottom-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full opacity-0 group-hover/image:opacity-100 transition-opacity backdrop-blur-sm"
-                    title="Expand image"
+                    title={t('common.expandImage')}
                  >
                     <Maximize2 size={14} />
                  </button>
@@ -390,6 +534,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
               onDelete={() => onDelete && onDelete(card.id)}
               cardType={card.type}
               onFocusChange={(focused) => { if(focused && onSelectCard) onSelectCard(card.id); if(onMenuToggle) onMenuToggle(focused); }}
+              onFontSizeChange={setToolbarFontSize}
            />
          )}
       </div>

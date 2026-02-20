@@ -2068,9 +2068,10 @@ app.post('/api/admin/feedback/:id/reply', async (req, res) => {
 
 // --- РОУТИ ДЛЯ ПІДПИСОК (SUBSCRIPTIONS) ---
 
-// 1. Отримати активні плани (публічний)
+// 1. Отримати активні плани (публічний). ?locale=en|uk — features from features_by_locale
 app.get('/api/plans', async (req, res) => {
     try {
+        const locale = (req.query.locale || 'en').toLowerCase();
         const { data, error } = await supabase
             .from('plans')
             .select('*')
@@ -2078,7 +2079,14 @@ app.get('/api/plans', async (req, res) => {
             .order('tier', { ascending: true });
 
         if (error) throw error;
-        res.json({ status: 'success', data });
+        const plans = (data || []).map((plan) => {
+            const byLocale = plan.features_by_locale || {};
+            const features = (byLocale[locale] != null ? byLocale[locale] : byLocale.en) ?? plan.features ?? [];
+            const byDesc = plan.description_by_locale || {};
+            const description = (byDesc[locale] != null ? byDesc[locale] : byDesc.en) ?? plan.description ?? '';
+            return { ...plan, features, description };
+        });
+        res.json({ status: 'success', data: plans });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { GripVertical, MoreHorizontal, Trash2, Copy, Palette, Pin, PinOff } from 'lucide-react'
 
 export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, onTogglePin }) {
+  const { t } = useTranslation()
   const svgRef = useRef(null)
   const [draggingId, setDraggingId] = useState(null)
 
@@ -53,7 +55,7 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
       onMouseUp={() => setDraggingId(null)}
       onMouseLeave={() => setDraggingId(null)}
     >
-      <div className={`w-64 shrink-0 sticky left-0 z-20 ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
+      <div className={`w-64 shrink-0 sticky left-0 z-[100] ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
           {!lane.isPinned && (
             <div {...dragHandleProps} className="cursor-grab hover:bg-gray-200/50 p-1 rounded text-gray-300 hover:text-gray-600 shrink-0 hide-on-export"><GripVertical size={16} /></div>
@@ -80,13 +82,13 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
               <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-100 z-40 overflow-hidden py-1">
                  <button onClick={() => { onTogglePin(); onToggleMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                    {lane.isPinned ? <PinOff size={14} /> : <Pin size={14} />} 
-                   {lane.isPinned ? 'Unpin lane' : 'Pin lane'}
+                   {lane.isPinned ? t('editor.unpinLane') : t('editor.pinLane')}
                  </button>
                  <button onClick={() => { onDuplicate(); onToggleMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                   <Copy size={14} /> Duplicate lane
+                   <Copy size={14} /> {t('editor.duplicateLane')}
                  </button>
                  <div className="px-4 py-2">
-                   <div className="text-xs text-gray-400 font-bold uppercase mb-2 flex items-center gap-2"><Palette size={10} /> Color</div>
+                   <div className="text-xs text-gray-400 font-bold mb-2 flex items-center gap-2"><Palette size={10} /> {t('common.color')}</div>
                    <div className="flex gap-2">
                       {['bg-white', 'bg-gray-50', 'bg-blue-50', 'bg-red-50', 'bg-yellow-50'].map(c => (
                         <button 
@@ -99,7 +101,7 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
                  </div>
                  <div className="h-px bg-gray-100 my-1"></div>
                  <button onClick={() => { onDelete(); onToggleMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
-                   <Trash2 size={14} /> Delete lane
+                   <Trash2 size={14} /> {t('editor.deleteLaneMenu')}
                  </button>
               </div>
             </>

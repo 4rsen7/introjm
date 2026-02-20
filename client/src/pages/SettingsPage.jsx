@@ -1,22 +1,25 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
 import { useWorkspaceLimits } from '../hooks/useQueries';
+import i18n, { setLocale } from '../i18n';
 
 // Fallback API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
+  const { t } = useTranslation();
   // 1. Real Role Check
   const isOwner = workspace?.role === 'owner';
 
   // 2. Логіка Вкладок (Tabs Logic)
   const TABS = [
-    { id: 'workspace', label: 'Workspace', restricted: true },
-    { id: 'team', label: 'Team', restricted: true },
-    { id: 'profile', label: 'Profile', restricted: false },
+    { id: 'workspace', labelKey: 'settings.workspace', restricted: true },
+    { id: 'team', labelKey: 'settings.team', restricted: true },
+    { id: 'profile', labelKey: 'settings.profile', restricted: false },
   ];
 
   const allowedTabs = TABS.filter(tab => !tab.restricted || isOwner);
@@ -51,6 +54,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   
   const [profileName, setProfileName] = useState(userProfile?.full_name || '');
   const [profileColor, setProfileColor] = useState('bg-blue-100 text-blue-600');
+  const [profileLocale, setProfileLocale] = useState(i18n.language || 'en');
 
   useEffect(() => {
     if (userProfile) {
@@ -58,6 +62,10 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         setProfileColor(userProfile.avatar_color || 'bg-blue-100 text-blue-600');
     }
   }, [userProfile]);
+
+  useEffect(() => {
+    setProfileLocale(i18n.language || 'en');
+  }, [activeTab]);
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
@@ -115,14 +123,14 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           }
           if (res.ok && (data.status === 'success' || data.message)) {
               setInviteEmail('');
-              setInfoModal({ open: true, title: 'Запрошення надіслано', message: data.message || 'Invite sent successfully!', variant: 'success' });
+              setInfoModal({ open: true, title: t('settings.inviteSent'), message: data.message || t('settings.inviteSentMessage'), variant: 'success' });
               fetchTeam();
           } else {
-              setInfoModal({ open: true, title: 'Помилка', message: data.error || data.message || 'Failed to invite user', variant: 'error' });
+              setInfoModal({ open: true, title: t('settings.errorTitle'), message: data.error || data.message || t('settings.failedInviteUser'), variant: 'error' });
           }
       } catch (e) {
           console.error(e);
-          setInfoModal({ open: true, title: 'Помилка', message: 'Failed to send invite. Please try again.', variant: 'error' });
+          setInfoModal({ open: true, title: t('settings.errorTitle'), message: t('settings.failedSendInvite'), variant: 'error' });
       } finally {
           setIsInviting(false);
       }
@@ -162,7 +170,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           setTeamConfirm(null);
           fetchTeam();
         } else {
-          setInfoModal({ open: true, title: 'Помилка', message: json.error || 'Failed to cancel invite', variant: 'error' });
+          setInfoModal({ open: true, title: t('settings.errorTitle'), message: json.error || t('settings.failedCancelInvite'), variant: 'error' });
         }
       } else {
         const res = await fetch(`${API_URL}/workspace/member/${teamConfirm.member.id}`, {
@@ -174,12 +182,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           setTeamConfirm(null);
           fetchTeam();
         } else {
-          setInfoModal({ open: true, title: 'Помилка', message: json.error || 'Failed to remove member', variant: 'error' });
+          setInfoModal({ open: true, title: t('settings.errorTitle'), message: json.error || t('settings.failedRemoveMember'), variant: 'error' });
         }
       }
     } catch (e) {
       console.error(e);
-      setInfoModal({ open: true, title: 'Помилка', message: 'Request failed', variant: 'error' });
+      setInfoModal({ open: true, title: t('settings.errorTitle'), message: t('settings.requestFailed'), variant: 'error' });
     } finally {
       setTeamActionLoading(false);
     }
@@ -188,7 +196,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t('settings.settings')}</h1>
       </header>
 
       {/* Tabs Navigation */}
@@ -203,7 +211,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab.label}
+            {t(tab.labelKey)}
             {activeTab === tab.id && (
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>
             )}
@@ -216,8 +224,8 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         {!allowedTabs.find(t => t.id === activeTab) && (
            <div className="p-8 flex flex-col items-center justify-center text-center text-gray-500 bg-gray-50 rounded-xl border border-gray-200 border-dashed">
               <ShieldAlert size={48} className="mb-4 text-gray-300" />
-              <h2 className="text-xl font-bold text-gray-900">Access Denied</h2>
-              <p>You don't have permission to view this tab.</p>
+              <h2 className="text-xl font-bold text-gray-900">{t('settings.accessDenied')}</h2>
+              <p>{t('settings.noPermission')}</p>
            </div>
         )}
 
@@ -226,11 +234,11 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Building size={20} className="text-gray-400" /> Workspace General
+                <Building size={20} className="text-gray-400" /> {t('settings.workspaceGeneral')}
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Workspace Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.workspaceName')}</label>
                   <input 
                     value={workspaceName}
                     onChange={(e) => setWorkspaceName(e.target.value)}
@@ -241,43 +249,43 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   onClick={() => onUpdateWorkspace && onUpdateWorkspace(workspaceName)}
                   className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
                 >
-                  Save Changes
+                  {t('settings.saveChanges')}
                 </button>
               </div>
             </section>
 
             <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                    <CreditCard size={20} className="text-gray-400" /> Subscription & Billing
+                    <CreditCard size={20} className="text-gray-400" /> {t('settings.subscriptionBilling')}
                 </h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
-                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Current Plan</div>
+                        <div className="text-xs font-bold text-gray-500 mb-1">{t('settings.currentPlan')}</div>
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-lg font-bold text-gray-900">{limits?.planName ?? '—'}</span>
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full uppercase">Active</span>
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">{t('settings.active')}</span>
                         </div>
                         {limits?.currentPeriodEnd && (
                             <div className="text-sm text-gray-500">
-                                Renews {new Date(limits.currentPeriodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {t('settings.renews')} {new Date(limits.currentPeriodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                             </div>
                         )}
                         {!limits?.planName && (
-                            <div className="text-sm text-gray-500">No plan assigned</div>
+                            <div className="text-sm text-gray-500">{t('settings.noPlanAssigned')}</div>
                         )}
                     </div>
                     <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
-                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Usage (this workspace)</div>
+                        <div className="text-xs font-bold text-gray-500 mb-2">{t('settings.usage')}</div>
                         {[
-                            { label: 'Members', used: usage.members, max: maxMembers },
-                            { label: 'Journeys', used: usage.journeys, max: maxJ },
-                            { label: 'Personas', used: usage.personas, max: maxP },
-                            { label: 'Metrics', used: usage.metrics, max: maxM },
-                        ].map(({ label, used, max }) => (
-                            <div key={label}>
+                            { labelKey: 'settings.members', used: usage.members, max: maxMembers },
+                            { labelKey: 'settings.journeys', used: usage.journeys, max: maxJ },
+                            { labelKey: 'settings.personas', used: usage.personas, max: maxP },
+                            { labelKey: 'settings.metrics', used: usage.metrics, max: maxM },
+                        ].map(({ labelKey, used, max }) => (
+                            <div key={labelKey}>
                                 <div className="flex justify-between text-xs text-gray-600 mb-1">
-                                    <span>{label}</span>
+                                    <span>{t(labelKey)}</span>
                                     <span>{max != null ? `${used} of ${max}` : `${used} used`}</span>
                                 </div>
                                 <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -294,17 +302,17 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 <div className="flex items-center justify-between pt-2">
                     {isOwner ? (
                         <>
-                            <div className="text-sm text-gray-500">Want to unlock more features?</div>
+                            <div className="text-sm text-gray-500">{t('settings.wantToUnlockMore')}</div>
                             <button 
                                 onClick={() => onOpenPricing?.()}
                                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium shadow-md hover:shadow-lg hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:-translate-y-0.5"
                             >
-                                <Zap size={16} fill="currentColor" /> Upgrade Plan
+                                <Zap size={16} fill="currentColor" /> {t('settings.upgradePlan')}
                             </button>
                         </>
                     ) : (
                         <div className="text-sm text-gray-500">
-                            Plan is managed by the workspace owner. Contact the owner to change the plan.
+                            {t('settings.planManagedByOwner')}
                         </div>
                     )}
                 </div>
@@ -316,7 +324,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 onClick={() => setIsDeleteModalOpen(true)}
                 className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition"
               >
-                Delete Workspace
+                {t('settings.deleteWorkspaceButton')}
               </button>
             </section>
           </div>
@@ -327,14 +335,14 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Users size={20} className="text-gray-400" /> Team Members
+                <Users size={20} className="text-gray-400" /> {t('settings.teamMembers')}
               </h2>
               
               <div className="flex gap-2 mb-6">
                 <div className="relative flex-1">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <input 
-                    placeholder="Enter email to invite..."
+                    placeholder={t('settings.inviteEmailPlaceholder', 'Enter email to invite...')}
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
@@ -345,7 +353,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   disabled={isInviting}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-70"
                 >
-                  {isInviting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Invite
+                  {isInviting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} {t('settings.inviteButton')}
                 </button>
               </div>
 
@@ -358,13 +366,13 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                         {(member.full_name || member.email || 'M')[0].toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{member.full_name || member.email || 'Member'}</div>
-                        <div className="text-xs text-gray-500">{member.role}</div>
+                        <div className="text-sm font-medium text-gray-900">{member.full_name || member.email || t('nav.member')}</div>
+                        <div className="text-xs text-gray-500">{member.role === 'owner' ? t('nav.owner') : t('nav.member')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs px-2 py-1 rounded-full font-medium bg-green-50 text-green-700">
-                        Active
+                        {t('settings.active')}
                       </span>
                       <button
                         type="button"
@@ -387,12 +395,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900">{invite.email}</div>
-                        <div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={10} /> Pending Invite</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-1"><Clock size={10} /> {t('settings.pendingInvite')}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs px-2 py-1 rounded-full font-medium bg-yellow-50 text-yellow-700">
-                        Pending
+                        {t('settings.pending')}
                       </span>
                       <button
                         type="button"
@@ -415,12 +423,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                <User size={20} className="text-gray-400" /> Personal Profile
+                <User size={20} className="text-gray-400" /> {t('settings.personalProfile')}
               </h2>
 
               <div className="flex items-start gap-8">
                 <div className="space-y-3">
-                  <label className="block text-sm font-medium text-gray-700">Avatar</label>
+                  <label className="block text-sm font-medium text-gray-700">{t('settings.avatar')}</label>
                   <div className={`w-24 h-24 rounded-full flex items-center justify-center text-3xl font-bold border-4 border-white shadow-sm ${profileColor}`}>
                     {getInitials(profileName || userProfile?.email)}
                   </div>
@@ -437,28 +445,42 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
 
                 <div className="flex-1 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.displayName')}</label>
                     <input 
                       value={profileName}
                       onChange={(e) => setProfileName(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                      placeholder="Your Name"
+                      placeholder={t('settings.yourName')}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.emailAddress')}</label>
                     <input 
                       value={userProfile?.email || ''}
                       disabled
                       className="w-full px-3 py-2 border border-gray-200 bg-gray-50 text-gray-500 rounded-lg outline-none cursor-not-allowed"
                     />
                   </div>
-                  <div className="pt-2">
+                  <div className="pt-4 mt-4 border-t border-gray-100">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('settings.interfaceLanguage')}</label>
+                    <select
+                      value={profileLocale}
+                      onChange={(e) => setProfileLocale(e.target.value)}
+                      className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
+                    >
+                      <option value="en">{t('settings.english')}</option>
+                      <option value="uk">{t('settings.ukrainian')}</option>
+                    </select>
+                  </div>
+                  <div className="pt-4">
                     <button 
-                        onClick={() => onUpdateProfile && onUpdateProfile(profileName, profileColor)}
+                        onClick={async () => {
+                          if (onUpdateProfile) await onUpdateProfile(profileName, profileColor);
+                          setLocale(profileLocale, true);
+                        }}
                         className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
                     >
-                      Update Profile
+                      {t('settings.updateProfile')}
                     </button>
                   </div>
                 </div>
@@ -477,8 +499,8 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
             if (ok) setIsDeleteModalOpen(false);
           }
         }}
-        title="Delete Workspace?"
-        message="Are you sure you want to delete this workspace? All data will be permanently lost."
+        title={t('settings.deleteWorkspace')}
+        message={t('settings.deleteWorkspaceMessage')}
         isDestructive={true}
       />
 
@@ -486,13 +508,13 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         isOpen={!!teamConfirm}
         onClose={() => !teamActionLoading && setTeamConfirm(null)}
         onConfirm={handleTeamConfirmAction}
-        title={teamConfirm?.type === 'cancelInvite' ? 'Cancel invite?' : 'Remove from workspace?'}
+        title={teamConfirm?.type === 'cancelInvite' ? t('settings.cancelInvite') : t('settings.removeMember')}
         message={
           teamConfirm?.type === 'cancelInvite'
-            ? `Cancel the invite for ${teamConfirm.invite?.email}? They will no longer be able to join via this link.`
-            : `Remove ${teamConfirm?.member?.full_name || teamConfirm?.member?.email || 'this member'} from the workspace? They will lose access immediately.`
+            ? t('settings.cancelInviteMessage', { email: teamConfirm.invite?.email })
+            : t('settings.removeMemberMessage', { name: teamConfirm?.member?.full_name || teamConfirm?.member?.email || 'this member' })
         }
-        confirmText={teamActionLoading ? '...' : (teamConfirm?.type === 'cancelInvite' ? 'Cancel invite' : 'Remove')}
+        confirmText={teamActionLoading ? '...' : (teamConfirm?.type === 'cancelInvite' ? t('settings.cancelInviteButton') : t('settings.removeButton'))}
         isDestructive={true}
       />
 
@@ -501,7 +523,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         onClose={() => setInfoModal((p) => ({ ...p, open: false }))}
         title={infoModal.title}
         message={infoModal.message}
-        buttonText="OK"
+        buttonText={t('settings.ok')}
         variant={infoModal.variant || 'success'}
       />
     </div>

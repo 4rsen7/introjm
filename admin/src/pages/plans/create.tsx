@@ -7,24 +7,32 @@ export const PlanCreate: React.FC = () => {
 
   return (
     <Create saveButtonProps={saveButtonProps}>
-      <Form {...formProps} layout="vertical">
+      <Form {...formProps} layout="vertical" initialValues={{ ...formProps.initialValues, features_by_locale: { en: [], uk: [] }, description_by_locale: { en: '', uk: '' }, currency: 'USD' }}>
         <Form.Item label="Plan Name" name="name" rules={[{ required: true }]}>
           <Input />
         </Form.Item>
-        <Form.Item label="Description" name="description">
+        <Form.Item label="Description (English)" name={["description_by_locale", "en"]}>
+          <Input.TextArea />
+        </Form.Item>
+        <Form.Item label="Description (Ukrainian)" name={["description_by_locale", "uk"]}>
           <Input.TextArea />
         </Form.Item>
         <div style={{ display: 'flex', gap: 16 }}>
             <Form.Item label="Monthly Price" name="price_monthly" rules={[{ required: true }]}>
-            <InputNumber prefix="$" style={{ width: '100%' }} />
+            <InputNumber style={{ width: '100%' }} placeholder="Amount" />
             </Form.Item>
             <Form.Item label="Yearly Price" name="price_yearly" rules={[{ required: true }]}>
-            <InputNumber prefix="$" style={{ width: '100%' }} />
+            <InputNumber style={{ width: '100%' }} placeholder="Amount" />
+            </Form.Item>
+            <Form.Item label="Currency" name="currency" initialValue="USD">
+            <Select options={[{ value: 'USD', label: 'USD ($)' }, { value: 'EUR', label: 'EUR (€)' }, { value: 'UAH', label: 'UAH (₴)' }]} style={{ minWidth: 120 }} />
             </Form.Item>
         </div>
-        <Form.Item label="Features (Comma separated)" name="features" help="Example: Unlimited Maps, Priority Support">
-           {/* Simple text input for array handling, Refine/Supabase might need transformation if strict array */}
-           <Select mode="tags" tokenSeparators={[',']} placeholder="Type feature and press enter" />
+        <Form.Item label="Features (English)" name={["features_by_locale", "en"]}>
+          <Select mode="tags" tokenSeparators={[","]} placeholder="Type feature and press enter" />
+        </Form.Item>
+        <Form.Item label="Features (Ukrainian)" name={["features_by_locale", "uk"]}>
+          <Select mode="tags" tokenSeparators={[","]} placeholder="Введіть фічу та натисніть Enter" />
         </Form.Item>
         <Form.Item label="Tier Level (1=Low, 3=High)" name="tier">
           <InputNumber />

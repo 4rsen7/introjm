@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Filter, Copy, Trash2, Plus, Map, ArrowRight, X, Archive, RotateCcw } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import { getAuthToken } from '../services/auth';
@@ -8,6 +9,7 @@ import Tooltip from '../components/common/Tooltip';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState('');
@@ -92,20 +94,20 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
           if (onArchive) onArchive(id); // Trigger refresh in parent
       } catch (error) {
           console.error("Failed to restore journey:", error);
-          alert("Failed to restore journey. Please try again.");
+          alert(t('common.failedRestoreJourney'));
       }
   };
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Journey Maps</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('journeys.title')}</h1>
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
         >
           <Plus size={18} />
-          Create map
+          {t('journeys.createMap')}
         </button>
       </header>
 
@@ -115,7 +117,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
                 type="text" 
-                placeholder="Search maps..." 
+                placeholder={t('journeys.searchMaps')} 
                 className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -126,7 +128,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
             <Filter size={16} />
-            <span>Filters</span>
+            <span>{t('dashboard.filters')}</span>
         </button>
       </div>
 
@@ -135,29 +137,29 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
           <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
             <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Status</label>
+                <label className="text-xs font-bold text-gray-500">{t('journeys.status')}</label>
                 <select 
                     className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
                 >
-                    <option value="">All Statuses</option>
+                    <option value="">{t('journeys.allStatuses')}</option>
                     {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Owner</label>
+                <label className="text-xs font-bold text-gray-500">{t('journeys.owner')}</label>
                 <select 
                     className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
                     value={selectedOwner}
                     onChange={(e) => setSelectedOwner(e.target.value)}
                 >
-                    <option value="">All Owners</option>
+                    <option value="">{t('journeys.allOwners')}</option>
                     {owners.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
             </div>
             {(selectedStatus || selectedOwner) && (
-                <button onClick={() => { setSelectedStatus(''); setSelectedOwner(''); }} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="Clear filters">
+                <button onClick={() => { setSelectedStatus(''); setSelectedOwner(''); }} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title={t('common.clearFilters')}>
                     <X size={16} />
                 </button>
             )}
@@ -171,11 +173,11 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Modified</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Owner</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.name')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.status')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.lastModified')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.owner')}</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('journeys.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -184,7 +186,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                     <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                         <div className="flex flex-col items-center justify-center">
                             <Map size={48} className="text-gray-200 mb-4" />
-                            <p className="text-lg font-medium text-gray-900">No journey maps found</p>
+                            <p className="text-lg font-medium text-gray-900">{t('journeys.noMapsFound')}</p>
                         </div>
                     </td>
                 </tr>
@@ -202,7 +204,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                     </div>
                     <div>
                       <div className="font-bold text-gray-900">{journey.title}</div>
-                      <div className="text-sm text-gray-500">{journey.description || 'No description'}</div>
+                      <div className="text-sm text-gray-500">{journey.description || t('common.noDescription')}</div>
                     </div>
                   </div>
                 </td>
@@ -212,11 +214,11 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                        journey.status === 'archived' ? 'bg-gray-100 text-gray-600 border border-gray-200' : 
                        'bg-yellow-50 text-yellow-700 border border-yellow-100'
                    }`}>
-                     {journey.status || 'Draft'}
+                     {journey.status || t('common.draft')}
                    </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {journey.updatedAt || 'Just now'}
+                    {journey.updatedAt || t('common.justNow')}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
@@ -227,7 +229,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                     </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
-                    <Tooltip content="Duplicate">
+                    <Tooltip content={t('common.duplicate')}>
                         <button 
                             onClick={(e) => { e.stopPropagation(); openConfirm('duplicate', journey); }}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -237,7 +239,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                     </Tooltip>
                     
                     {journey.status === 'archived' ? (
-                        <Tooltip content="Restore">
+                        <Tooltip content={t('common.restore')}>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleRestore(journey.id); }}
                                 className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -246,7 +248,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                             </button>
                         </Tooltip>
                     ) : (
-                        <Tooltip content="Archive">
+                        <Tooltip content={t('common.archive')}>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); handleArchive(journey.id); }}
                                 className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
@@ -257,7 +259,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                     )}
 
                     {currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner) && (
-                        <Tooltip content="Delete">
+                        <Tooltip content={t('common.delete')}>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); openConfirm('delete', journey); }}
                                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -277,12 +279,12 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
         onConfirm={handleConfirmAction}
-        title={confirmConfig.action === 'delete' ? "Delete this map?" : "Duplicate map?"}
+        title={confirmConfig.action === 'delete' ? t('journeys.deleteThisMap') : t('journeys.duplicateMap')}
         message={confirmConfig.action === 'delete' 
-            ? "Are you sure you want to delete this journey map? This action cannot be undone." 
-            : `Create a copy of "${confirmConfig.item?.title}"?`}
+            ? t('journeys.deleteMapMessage') 
+            : t('journeys.createCopyOf', { title: confirmConfig.item?.title })}
         isDestructive={confirmConfig.action === 'delete'}
-        confirmText={confirmConfig.action === 'delete' ? "Delete" : "Duplicate"}
+        confirmText={confirmConfig.action === 'delete' ? t('common.delete') : t('common.duplicate')}
       />
     </div>
   );

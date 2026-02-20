@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Filter, Copy, Trash2, Plus, User, X, Archive } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
@@ -38,13 +40,13 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Personas</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('personas.title')}</h1>
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
         >
           <Plus size={18} />
-          Create persona
+          {t('personas.createPersona')}
         </button>
       </header>
 
@@ -54,7 +56,7 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
                 type="text" 
-                placeholder="Search personas..." 
+                placeholder={t('personas.searchPersonas')} 
                 className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -65,7 +67,7 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
             <Filter size={16} />
-            <span>Filters</span>
+            <span>{t('personas.filters')}</span>
         </button>
       </div>
 
@@ -74,29 +76,29 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
           <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
             <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Role</label>
+                <label className="text-xs font-bold text-gray-500">{t('personas.role')}</label>
                 <select 
                     className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
                     value={selectedRole}
                     onChange={(e) => setSelectedRole(e.target.value)}
                 >
-                    <option value="">All Roles</option>
+                    <option value="">{t('personas.allRoles')}</option>
                     {roles.map(role => <option key={role} value={role}>{role}</option>)}
                 </select>
             </div>
             <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-gray-500 uppercase">Location</label>
+                <label className="text-xs font-bold text-gray-500">{t('personas.location')}</label>
                 <select 
                     className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
                     value={selectedLocation}
                     onChange={(e) => setSelectedLocation(e.target.value)}
                 >
-                    <option value="">All Locations</option>
+                    <option value="">{t('personas.allLocations')}</option>
                     {locations.map(loc => <option key={loc} value={loc}>{loc}</option>)}
                 </select>
             </div>
             {(selectedRole || selectedLocation) && (
-                <button onClick={() => { setSelectedRole(''); setSelectedLocation(''); }} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="Clear filters">
+                <button onClick={() => { setSelectedRole(''); setSelectedLocation(''); }} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title={t('common.clearFilters')}>
                     <X size={16} />
                 </button>
             )}
@@ -110,11 +112,11 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Used In</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created By</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Name</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Used In</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Updated</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Created By</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -169,18 +171,18 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {persona.updatedAt || 'Just now'}
+                    {persona.updatedAt || t('common.justNow')}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600 border border-white shadow-sm">
                             {(persona.owner || 'U').charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-sm text-gray-600">{persona.owner || 'Unknown'}</span>
+                        <span className="text-sm text-gray-600">{persona.owner || t('common.unknown')}</span>
                     </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
-                    <Tooltip content="Duplicate">
+                    <Tooltip content={t('common.duplicate')}>
                         <button 
                             onClick={(e) => { e.stopPropagation(); openConfirm('duplicate', persona); }}
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -188,7 +190,7 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
                             <Copy size={18} />
                         </button>
                     </Tooltip>
-                    <Tooltip content="Archive">
+                    <Tooltip content={t('common.archive')}>
                         <button 
                             onClick={(e) => { e.stopPropagation(); onArchive && onArchive(persona.id); }}
                             className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
@@ -197,7 +199,7 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
                         </button>
                     </Tooltip>
                     {currentUserId != null && persona.user_id === currentUserId && (
-                        <Tooltip content="Delete">
+                        <Tooltip content={t('common.delete')}>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); openConfirm('delete', persona); }}
                                 className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -217,11 +219,11 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
         onConfirm={handleConfirmAction}
-        title={confirmConfig.action === 'delete' ? "Delete Persona?" : "Duplicate Persona?"}
+        title={confirmConfig.action === 'delete' ? t('personas.deletePersona') : t('personas.duplicatePersona')}
         message={confirmConfig.action === 'delete' 
-            ? "Are you sure you want to delete this persona? This action cannot be undone." 
-            : `Create a copy of "${confirmConfig.item?.name}"?`}
-        confirmText={confirmConfig.action === 'delete' ? "Delete" : "Duplicate"}
+            ? t('personas.deleteConfirm') 
+            : t('personas.duplicateCopyOf', { name: confirmConfig.item?.name })}
+        confirmText={confirmConfig.action === 'delete' ? t('common.delete') : t('common.duplicate')}
         isDestructive={confirmConfig.action === 'delete'}
       />
 

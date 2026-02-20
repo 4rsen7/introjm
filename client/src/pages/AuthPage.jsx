@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
 import InfoModal from '../components/common/InfoModal';
 
 const AuthPage = ({ onLogin }) => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -25,20 +27,20 @@ const AuthPage = ({ onLogin }) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = t('auth.emailRequired');
     } else if (!emailRegex.test(formData.email)) {
-      newErrors.email = 'Invalid email format';
+      newErrors.email = t('auth.invalidEmail');
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = t('auth.passwordRequired');
     } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
+      newErrors.password = t('auth.passwordMinLength');
     }
 
     if (!isLogin) {
-      if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-      if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
+      if (!formData.firstName.trim()) newErrors.firstName = t('auth.firstNameRequired');
+      if (!formData.lastName.trim()) newErrors.lastName = t('auth.lastNameRequired');
     }
 
     setErrors(newErrors);
@@ -167,15 +169,15 @@ const AuthPage = ({ onLogin }) => {
 
         <div className="max-w-sm w-full mx-auto mt-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">
-            {isLogin ? 'Welcome back' : 'Create your account'}
+            {isLogin ? t('auth.welcomeBack') : t('auth.createAccount')}
           </h1>
           <p className="text-gray-500 mb-8">
-            {isLogin ? 'Enter your details to access your workspace.' : 'Start your 14-day free trial. No credit card required.'}
+            {isLogin ? t('auth.enterDetails') : t('auth.startTrial')}
           </p>
 
           {serverError && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg flex items-center gap-2">
-              <span className="font-medium">Error:</span> {serverError}
+              <span className="font-medium">{t('auth.errorLabel')}</span> {serverError}
             </div>
           )}
 
@@ -183,26 +185,26 @@ const AuthPage = ({ onLogin }) => {
             {!isLogin && (
               <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.firstName')}</label>
                   <input 
                     type="text" 
                     name="firstName"
                     value={formData.firstName}
                     onChange={handleChange}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white ${errors.firstName ? 'border-red-500' : 'border-gray-300'}`} 
-                    placeholder="John" 
+                    placeholder={t('auth.placeholderJohn')} 
                   />
                   {errors.firstName && <p className="text-red-500 text-xs mt-1">{errors.firstName}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.lastName')}</label>
                   <input 
                     type="text" 
                     name="lastName"
                     value={formData.lastName}
                     onChange={handleChange}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white ${errors.lastName ? 'border-red-500' : 'border-gray-300'}`} 
-                    placeholder="Doe" 
+                    placeholder={t('auth.placeholderDoe')} 
                   />
                   {errors.lastName && <p className="text-red-500 text-xs mt-1">{errors.lastName}</p>}
                 </div>
@@ -210,20 +212,20 @@ const AuthPage = ({ onLogin }) => {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
               <input 
                 type="email" 
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white ${errors.email ? 'border-red-500' : 'border-gray-300'}`} 
-                placeholder="name@company.com" 
+                placeholder={t('auth.emailPlaceholder')} 
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.password')}</label>
               <div className="relative">
                 <input 
                   type={showPassword ? "text" : "password"} 
@@ -231,7 +233,7 @@ const AuthPage = ({ onLogin }) => {
                   value={formData.password}
                   onChange={handleChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10 bg-gray-50 focus:bg-white ${errors.password ? 'border-red-500' : 'border-gray-300'}`} 
-                  placeholder="••••••••" 
+                  placeholder={t('auth.passwordPlaceholder')} 
                 />
                 <button 
                   type="button"
@@ -248,9 +250,9 @@ const AuthPage = ({ onLogin }) => {
               <div className="flex items-center justify-between text-sm">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
-                  <span className="text-gray-600 group-hover:text-gray-900 transition-colors">Remember me</span>
+                  <span className="text-gray-600 group-hover:text-gray-900 transition-colors">{t('auth.rememberMe')}</span>
                 </label>
-                <a href="#" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">Forgot password?</a>
+                <a href="#" className="text-blue-600 hover:text-blue-700 font-medium hover:underline">{t('auth.forgotPassword')}</a>
               </div>
             )}
 
@@ -259,7 +261,7 @@ const AuthPage = ({ onLogin }) => {
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all transform active:scale-[0.98] shadow-md hover:shadow-lg mt-2 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center"
             >
-              {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : (isLogin ? 'Sign In' : 'Create Account')}
+              {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : (isLogin ? t('auth.signIn') : t('auth.createAccountButton'))}
             </button>
           </form>
 
@@ -268,7 +270,7 @@ const AuthPage = ({ onLogin }) => {
               <div className="w-full border-t border-gray-200"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-white text-gray-500 font-medium">or continue with</span>
+              <span className="px-4 bg-white text-gray-500 font-medium">{t('auth.orContinueWith')}</span>
             </div>
           </div>
 
@@ -280,7 +282,7 @@ const AuthPage = ({ onLogin }) => {
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
               </svg>
-              Google
+              {t('auth.google')}
             </button>
             <button className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-medium text-gray-700 text-sm shadow-sm">
               <svg className="w-5 h-5" viewBox="0 0 23 23">
@@ -290,19 +292,19 @@ const AuthPage = ({ onLogin }) => {
                 <path fill="#05a6f0" d="M1 12h10v10H1z"/>
                 <path fill="#ffba08" d="M12 12h10v10H12z"/>
               </svg>
-              Microsoft
+              {t('auth.microsoft')}
             </button>
           </div>
 
           <div className="mt-8 text-center text-sm">
             <span className="text-gray-500">
-              {isLogin ? "Don't have an account? " : "Already have an account? "}
+              {isLogin ? t('auth.dontHaveAccount') : t('auth.alreadyHaveAccount')}
             </span>
             <button 
               onClick={() => { setIsLogin(!isLogin); setErrors({}); setServerError(''); }}
               className="text-blue-600 hover:text-blue-700 font-bold hover:underline transition-colors"
             >
-              {isLogin ? 'Sign up' : 'Sign in'}
+              {isLogin ? t('auth.signUp') : t('auth.signInLink')}
             </button>
           </div>
         </div>
@@ -316,15 +318,10 @@ const AuthPage = ({ onLogin }) => {
         {/* Content */}
         <div className="relative z-10 max-w-lg mt-12">
           <h2 className="text-4xl lg:text-5xl font-bold leading-tight mb-6 tracking-tight">
-            Understand your customers like never before.
+            {t('auth.promoTitle')}
           </h2>
           <ul className="space-y-5 mb-12">
-            {[
-              "Visualize complex customer journeys",
-              "Identify pain points & opportunities",
-              "Track real-time CX metrics",
-              "Collaborate with your team instantly"
-            ].map((item, i) => (
+            {[t('auth.promoItem1'), t('auth.promoItem2'), t('auth.promoItem3'), t('auth.promoItem4')].map((item, i) => (
               <li key={i} className="flex items-center gap-3 text-lg text-gray-300">
                 <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 shrink-0 border border-blue-500/30">
                   <Check size={14} strokeWidth={3} />
@@ -442,9 +439,9 @@ const AuthPage = ({ onLogin }) => {
       <InfoModal
         isOpen={showConfirmEmailModal}
         onClose={() => setShowConfirmEmailModal(false)}
-        title="Account created"
-        message="Please check your email to confirm your account."
-        buttonText="OK"
+        title={t('auth.accountCreatedTitle')}
+        message={t('auth.accountCreatedMessage')}
+        buttonText={t('common.ok')}
       />
     </div>
   );

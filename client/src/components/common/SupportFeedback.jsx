@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MessageCircle, X, Send, AlertCircle, Lightbulb, ChevronRight, Loader2, Trash2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 export default function SupportFeedback() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [list, setList] = useState([]);
@@ -75,11 +77,11 @@ export default function SupportFeedback() {
         fetchList();
         fetchUnread();
       } else {
-        alert(json.message || json.error || 'Failed to send');
+        alert(json.message || json.error || t('support.failedToSend'));
       }
     } catch (e) {
       console.error(e);
-      alert('Failed to send');
+      alert(t('support.failedToSend'));
     } finally {
       setSubmitting(false);
     }
@@ -107,11 +109,11 @@ export default function SupportFeedback() {
         setView('menu');
         fetchList();
       } else {
-        alert(json.message || json.error || 'Failed to send');
+        alert(json.message || json.error || t('support.failedToSend'));
       }
     } catch (e) {
       console.error(e);
-      alert('Failed to send');
+      alert(t('support.failedToSend'));
     } finally {
       setSubmitting(false);
     }
@@ -140,7 +142,7 @@ export default function SupportFeedback() {
 
   const deleteTicket = async (id, e) => {
     if (e) e.stopPropagation();
-    if (!window.confirm('Delete this ticket? This cannot be undone.')) return;
+    if (!window.confirm(t('support.deleteTicketConfirm'))) return;
     const token = await getAuthToken();
     if (!token) return;
     setDeletingId(id);
@@ -156,11 +158,11 @@ export default function SupportFeedback() {
         setThread(null);
         fetchUnread();
       } else {
-        alert(json.message || json.error || 'Failed to delete');
+        alert(json.message || json.error || t('support.failedToDelete'));
       }
     } catch (e) {
       console.error(e);
-      alert('Failed to delete');
+      alert(t('support.failedToDelete'));
     } finally {
       setDeletingId(null);
     }
@@ -176,7 +178,7 @@ export default function SupportFeedback() {
         className="fixed bottom-4 right-4 z-40 flex items-center gap-1.5 px-2 py-1.5 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 transition-all text-xs font-medium"
       >
         <MessageCircle size={14} />
-        <span>Support & Feedback</span>
+        <span>{t('support.button')}</span>
         {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -189,10 +191,10 @@ export default function SupportFeedback() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
               <h2 className="text-lg font-bold text-gray-900">
-                {view === 'menu' && 'How can we help you?'}
-                {view === 'issue' && 'Report an issue'}
-                {view === 'idea' && 'Send an idea'}
-                {view === 'thread' && (thread?.subject || 'Conversation')}
+                {view === 'menu' && t('support.howCanWeHelp')}
+                {view === 'issue' && t('support.reportIssue')}
+                {view === 'idea' && t('support.sendIdea')}
+                {view === 'thread' && (thread?.subject || t('support.conversation'))}
               </h2>
               <button type="button" onClick={() => { if (view === 'menu') setOpen(false); else { setView('menu'); setThread(null); } }} className="p-2 hover:bg-gray-200 rounded-lg">
                 {view !== 'menu' ? <ChevronRight className="rotate-180" size={20} /> : <X size={22} />}
@@ -211,8 +213,8 @@ export default function SupportFeedback() {
                       <AlertCircle className="text-blue-600" size={24} />
                     </div>
                     <div>
-                      <div className="font-semibold text-gray-900">Report an issue</div>
-                      <div className="text-sm text-gray-500">Something broken? Let us know</div>
+                      <div className="font-semibold text-gray-900">{t('support.reportIssue')}</div>
+                      <div className="text-sm text-gray-500">{t('support.somethingBroken')}</div>
                     </div>
                   </button>
                   <button
@@ -224,16 +226,16 @@ export default function SupportFeedback() {
                       <Lightbulb className="text-blue-600" size={24} />
                     </div>
                     <div>
-                      <div className="font-semibold text-gray-900">Send an idea</div>
-                      <div className="text-sm text-gray-500">Let us know what we can improve</div>
+                      <div className="font-semibold text-gray-900">{t('support.sendIdea')}</div>
+                      <div className="text-sm text-gray-500">{t('support.whatWeCanImprove')}</div>
                     </div>
                   </button>
                   <div className="pt-4 border-t border-gray-200">
-                    <div className="text-sm font-semibold text-gray-700 mb-2">My submissions</div>
+                    <div className="text-sm font-semibold text-gray-700 mb-2">{t('support.mySubmissions')}</div>
                     {loading ? (
                       <div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-400" size={24} /></div>
                     ) : list.length === 0 ? (
-                      <p className="text-sm text-gray-500">No submissions yet.</p>
+                      <p className="text-sm text-gray-500">{t('support.noSubmissionsYet')}</p>
                     ) : (
                       <ul className="space-y-2">
                         {list.map((f) => (
@@ -256,7 +258,7 @@ export default function SupportFeedback() {
                               onClick={(e) => deleteTicket(f.id, e)}
                               disabled={deletingId === f.id}
                               className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0 disabled:opacity-50"
-                              title="Delete ticket"
+                              title={t('common.deleteTicket')}
                             >
                               {deletingId === f.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                             </button>
@@ -271,24 +273,24 @@ export default function SupportFeedback() {
               {view === 'issue' && (
                 <form onSubmit={submitIssue} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                    <input required value={issueForm.subject} onChange={e => setIssueForm(prev => ({ ...prev, subject: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Brief description" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.subject')}</label>
+                    <input required value={issueForm.subject} onChange={e => setIssueForm(prev => ({ ...prev, subject: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.briefDescription')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                    <textarea required rows={4} value={issueForm.body} onChange={e => setIssueForm(prev => ({ ...prev, body: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="What went wrong?" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.description')}</label>
+                    <textarea required rows={4} value={issueForm.body} onChange={e => setIssueForm(prev => ({ ...prev, body: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.whatWentWrong')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Steps to reproduce (optional)</label>
-                    <textarea rows={3} value={issueForm.steps_to_reproduce} onChange={e => setIssueForm(prev => ({ ...prev, steps_to_reproduce: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="1. Go to... 2. Click..." />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.stepsToReproduce')}</label>
+                    <textarea rows={3} value={issueForm.steps_to_reproduce} onChange={e => setIssueForm(prev => ({ ...prev, steps_to_reproduce: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.stepsPlaceholder')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Screenshot link (optional)</label>
-                    <input value={issueForm.attachment_url} onChange={e => setIssueForm(prev => ({ ...prev, attachment_url: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="https://..." />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.screenshotLink')}</label>
+                    <input value={issueForm.attachment_url} onChange={e => setIssueForm(prev => ({ ...prev, attachment_url: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.screenshotPlaceholder')} />
                   </div>
                   <button type="submit" disabled={submitting} className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
                     {submitting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-                    Send
+                    {t('support.send')}
                   </button>
                 </form>
               )}
@@ -296,20 +298,20 @@ export default function SupportFeedback() {
               {view === 'idea' && (
                 <form onSubmit={submitIdea} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                    <input required value={ideaForm.subject} onChange={e => setIdeaForm(prev => ({ ...prev, subject: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Short title" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.subject')}</label>
+                    <input required value={ideaForm.subject} onChange={e => setIdeaForm(prev => ({ ...prev, subject: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.shortTitle')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Your idea</label>
-                    <textarea required rows={4} value={ideaForm.body} onChange={e => setIdeaForm(prev => ({ ...prev, body: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Describe your suggestion..." />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.yourIdea')}</label>
+                    <textarea required rows={4} value={ideaForm.body} onChange={e => setIdeaForm(prev => ({ ...prev, body: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.describeSuggestion')} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Category (optional)</label>
-                    <input value={ideaForm.category} onChange={e => setIdeaForm(prev => ({ ...prev, category: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. UX, Features" />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('support.categoryOptional')}</label>
+                    <input value={ideaForm.category} onChange={e => setIdeaForm(prev => ({ ...prev, category: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={t('support.categoryPlaceholder')} />
                   </div>
                   <button type="submit" disabled={submitting} className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
                     {submitting ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
-                    Send
+                    {t('support.send')}
                   </button>
                 </form>
               )}
@@ -319,13 +321,13 @@ export default function SupportFeedback() {
                   <div className="p-3 bg-gray-50 rounded-lg text-sm">
                     <div className="font-medium text-gray-900">{thread.subject}</div>
                     <div className="text-gray-600 mt-1">{thread.body}</div>
-                    {thread.steps_to_reproduce && <div className="mt-2 text-gray-500"><span className="font-medium">Steps:</span> {thread.steps_to_reproduce}</div>}
-                    {thread.attachment_url && <div className="mt-1"><a href={thread.attachment_url} target="_blank" rel="noopener noreferrer" className="text-blue-600">Attachment</a></div>}
+                    {thread.steps_to_reproduce && <div className="mt-2 text-gray-500"><span className="font-medium">{t('support.stepsLabel')}</span> {thread.steps_to_reproduce}</div>}
+                    {thread.attachment_url && <div className="mt-1"><a href={thread.attachment_url} target="_blank" rel="noopener noreferrer" className="text-blue-600">{t('support.attachment')}</a></div>}
                     <div className="text-xs text-gray-400 mt-2">{formatDate(thread.created_at)}</div>
                   </div>
                   {thread.replies?.map((r) => (
                     <div key={r.id} className={`p-3 rounded-lg text-sm ${r.author_type === 'admin' ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'}`}>
-                      <div className="font-medium text-gray-700">{r.author_type === 'admin' ? 'Support' : 'You'}</div>
+                      <div className="font-medium text-gray-700">{r.author_type === 'admin' ? t('support.supportAuthor') : t('support.you')}</div>
                       <div className="text-gray-700 mt-1">{r.body}</div>
                       <div className="text-xs text-gray-400 mt-2">{formatDate(r.created_at)}</div>
                     </div>
@@ -338,7 +340,7 @@ export default function SupportFeedback() {
                       className="flex items-center justify-center gap-2 w-full py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg border border-red-200 hover:border-red-300 transition-colors disabled:opacity-50"
                     >
                       {deletingId === thread.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                      Delete ticket
+                      {t('common.deleteTicket')}
                     </button>
                   </div>
                 </div>

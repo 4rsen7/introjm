@@ -33,7 +33,7 @@ export default function StageLane({ lane, laneStages = [], onAddStage, onUpdateS
     <div className="flex min-h-[80px] bg-white border-b border-gray-200 isolate">
       
       {/* Sticky Header */}
-      <div className="w-64 shrink-0 sticky left-0 z-50 bg-gray-50 border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header">
+      <div className="w-64 shrink-0 sticky left-0 z-[100] bg-gray-50 border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header">
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
             <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 p-1 -ml-1 rounded hover:bg-gray-200/50 transition-colors touch-none shrink-0">
               <GripVertical size={16} />

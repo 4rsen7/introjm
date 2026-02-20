@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Archive, Trash2, Layout } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmModal from '../ConfirmModal'
@@ -10,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
 export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
+  const { t } = useTranslation();
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
   const queryClient = useQueryClient();
 
@@ -71,8 +73,8 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
     <div className="p-8 h-full overflow-auto bg-gray-50/30">
       <header className="mb-8 flex items-center justify-between">
         <div>
-            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Dashboard</h2>
-            <p className="text-gray-500 text-sm mt-1">Manage your customer journeys and personas</p>
+            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{t('dashboard.title')}</h2>
+            <p className="text-gray-500 text-sm mt-1">{t('dashboard.subtitle')}</p>
         </div>
       </header>
 
@@ -80,24 +82,24 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
         <ActionCard 
           icon={Map} 
-          label="New Journey" 
-          subLabel="Map a customer experience"
+          label={t('dashboard.newJourney')} 
+          subLabel={t('dashboard.newJourneySub')}
           color="text-orange-600" 
           bgColor="bg-orange-50"
           onClick={onNewJourney}
         />
         <ActionCard 
           icon={User} 
-          label="New Persona" 
-          subLabel="Define target audience"
+          label={t('dashboard.newPersona')} 
+          subLabel={t('dashboard.newPersonaSub')}
           color="text-blue-600" 
           bgColor="bg-blue-50"
           onClick={onNewPersona}
         />
         <ActionCard 
           icon={BarChart3} 
-          label="New Metric" 
-          subLabel="Track KPIs & data"
+          label={t('dashboard.newMetric')} 
+          subLabel={t('dashboard.newMetricSub')}
           color="text-emerald-600" 
           bgColor="bg-emerald-50"
           onClick={onNewMetric}
@@ -107,9 +109,9 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
       {/* Recents Section */}
       <section>
         <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-800">Recent Journeys</h3>
+            <h3 className="text-lg font-bold text-gray-800">{t('dashboard.recentJourneys')}</h3>
             <button onClick={() => onViewAllJourneys && onViewAllJourneys()} className="text-sm text-gray-500 hover:text-gray-900 font-medium flex items-center gap-1">
-                View all <ArrowRight size={14} />
+                {t('dashboard.viewAll')} <ArrowRight size={14} />
             </button>
         </div>
         
@@ -139,7 +141,7 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
                 <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-2 group-hover:border-orange-200 group-hover:bg-orange-100 transition-colors">
                     <Plus size={20} />
                 </div>
-                <span className="text-sm font-medium">Create new</span>
+                <span className="text-sm font-medium">{t('dashboard.createNew')}</span>
             </button>
         </div>
       </section>
@@ -148,10 +150,10 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
         onConfirm={handleConfirmAction}
-        title={confirmConfig.action === 'delete' ? "Delete this map?" : "Duplicate map?"}
-        message={confirmConfig.action === 'delete' ? "Are you sure you want to delete this journey map? This action cannot be undone." : `Create a copy of "${confirmConfig.item?.title}"?`}
+        title={confirmConfig.action === 'delete' ? t('dashboard.deleteThisMap') : t('dashboard.duplicateMap')}
+        message={confirmConfig.action === 'delete' ? t('dashboard.areYouSureDelete') : t('dashboard.duplicateCopyOf', { title: confirmConfig.item?.title })}
         isDestructive={confirmConfig.action === 'delete'}
-        confirmText={confirmConfig.action === 'delete' ? "Delete" : "Duplicate"}
+        confirmText={confirmConfig.action === 'delete' ? t('common.delete') : t('common.duplicate')}
       />
     </div>
   )
@@ -179,7 +181,8 @@ function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
 }
 
 function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDelete }) {
-    const date = getRelativeTime(journey.updated_at || journey.created_at);
+    const { t } = useTranslation();
+    const date = getRelativeTime(journey.updated_at || journey.created_at, t);
     
     // Calculate real stage count from map_data
     let stageCount = 0;
@@ -252,12 +255,12 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
                     
                     {showMenu && (
                         <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 z-30 animate-in fade-in zoom-in-95 duration-100 origin-top-right">
-                            <button title="Duplicate journey" onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> Duplicate</button>
-                            <button title="Archive journey" onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> Archive</button>
+                            <button title={t('dashboard.duplicateJourney')} onClick={(e) => handleAction(e, onDuplicate)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={13} /> {t('common.duplicate')}</button>
+                            <button title={t('dashboard.archiveJourney')} onClick={(e) => handleAction(e, onArchive)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Archive size={13} /> {t('common.archive')}</button>
                             {canDelete && (
                               <>
                                 <div className="h-px bg-gray-100 my-1"></div>
-                                <button title="Delete journey" onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> Delete</button>
+                                <button title={t('dashboard.deleteJourney')} onClick={(e) => handleAction(e, onDelete)} className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"><Trash2 size={13} /> {t('common.delete')}</button>
                               </>
                             )}
                         </div>
@@ -275,42 +278,42 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
                     <div className="flex items-center gap-3 mt-2">
                          <div className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                             <Layout size={10} />
-                            <span>{stageCount} {stageCount === 1 ? 'stage' : 'stages'}</span>
+                            <span>{stageCount} {stageCount === 1 ? t('dashboard.stage') : t('dashboard.stages')}</span>
                          </div>
                     </div>
                 </div>
                 
                 <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-3 pt-3 border-t border-gray-50">
                     <Clock size={11} />
-                    <span>Edited {date}</span>
+                    <span>{t('dashboard.edited')} {date}</span>
                 </div>
             </div>
         </div>
     )
 }
 
-function getRelativeTime(dateString) {
-    if (!dateString) return 'Just now';
+function getRelativeTime(dateString, t) {
+    if (!dateString || !t) return t ? t('dashboard.justNow') : 'Just now';
     const date = new Date(dateString);
     const now = new Date();
     const seconds = Math.floor((now - date) / 1000);
     
     let interval = Math.floor(seconds / 31536000);
-    if (interval >= 1) return interval + (interval === 1 ? " year ago" : " years ago");
+    if (interval >= 1) return t(interval === 1 ? 'dashboard.yearAgo' : 'dashboard.yearsAgo', { count: interval });
     
     interval = Math.floor(seconds / 2592000);
-    if (interval >= 1) return interval + (interval === 1 ? " month ago" : " months ago");
+    if (interval >= 1) return t(interval === 1 ? 'dashboard.monthAgo' : 'dashboard.monthsAgo', { count: interval });
     
     interval = Math.floor(seconds / 86400);
-    if (interval >= 1) return interval + (interval === 1 ? " day ago" : " days ago");
+    if (interval >= 1) return t(interval === 1 ? 'dashboard.dayAgo' : 'dashboard.daysAgo', { count: interval });
     
     interval = Math.floor(seconds / 3600);
-    if (interval >= 1) return interval + (interval === 1 ? " hour ago" : " hours ago");
+    if (interval >= 1) return t(interval === 1 ? 'dashboard.hourAgo' : 'dashboard.hoursAgo', { count: interval });
     
     interval = Math.floor(seconds / 60);
-    if (interval >= 1) return interval + (interval === 1 ? " minute ago" : " minutes ago");
+    if (interval >= 1) return t(interval === 1 ? 'dashboard.minuteAgo' : 'dashboard.minutesAgo', { count: interval });
     
-    return "Just now";
+    return t('dashboard.justNow');
 }
 
 // Компонент, що малює міні-схему (щоб карта виглядала як інтерфейс)

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import {
   DndContext,
@@ -22,7 +23,8 @@ import {
   CHANNEL_COLORS,
 } from './channelOptions'
 
-function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIconPickerToggle }) {
+function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIconPickerToggle, removeTitle = 'Remove' }) {
+  const { t } = useTranslation()
   const {
     attributes,
     listeners,
@@ -86,7 +88,7 @@ function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIcon
         value={item.label}
         onChange={(e) => onUpdate({ ...item, label: e.target.value })}
         className="flex-1 min-w-0 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500"
-        placeholder="Label"
+        placeholder={t('editor.placeholderLabel')}
       />
       <div className="flex items-center gap-1 shrink-0">
         <LinkIcon size={14} className="text-gray-400" />
@@ -94,7 +96,7 @@ function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIcon
           type="url"
           value={item.link || ''}
           onChange={(e) => onUpdate({ ...item, link: e.target.value })}
-          placeholder="URL"
+          placeholder={t('editor.placeholderUrl')}
           className="w-24 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-orange-500"
         />
       </div>
@@ -102,7 +104,7 @@ function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIcon
         type="button"
         onClick={() => onRemove(item.id)}
         className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
-        title="Remove"
+        title={removeTitle}
       >
         <Trash2 size={14} />
       </button>
@@ -111,6 +113,7 @@ function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIcon
 }
 
 export default function ChannelCardSettingsModal({ card, onClose, onSave }) {
+  const { t } = useTranslation()
   const initialDetails =
     card.channelDetails && card.channelDetails.length > 0
       ? card.channelDetails.map((ch) => ({
@@ -275,6 +278,7 @@ export default function ChannelCardSettingsModal({ card, onClose, onSave }) {
                     onRemove={removeItem}
                     isIconPickerOpen={openIconPickerId}
                     onIconPickerToggle={handleIconPickerToggle}
+                    removeTitle={t('common.remove')}
                   />
                 ))}
               </div>

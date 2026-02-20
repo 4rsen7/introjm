@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2 } from 'lucide-react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
@@ -93,7 +94,7 @@ function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop })
     // Only apply transform if dragging to prevent breaking 'position: sticky'
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
-    zIndex: isDragging ? 100 : (isPinned ? 40 : (zIndexOverride || 'auto')),
+    zIndex: isDragging ? 110 : (isPinned ? 100 : (zIndexOverride || 'auto')),
     position: isPinned ? 'sticky' : 'relative',
     top: isPinned ? stickyTop : 'auto', 
   };
@@ -110,6 +111,7 @@ function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop })
 }
 
 export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric }) {
+  const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -580,7 +582,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
     // 1. Validate Size (2MB)
     if (file.size > 2 * 1024 * 1024) {
-        alert("File is too large. Maximum size is 2MB.");
+        alert(t('editor.fileTooLarge'));
         e.target.value = '';
         return;
     }
@@ -954,7 +956,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       <style>{PRINT_STYLES}</style>
       <header 
         ref={headerRef}
-        className={`journey-editor-header bg-white border-b border-gray-200 shrink-0 z-[70] fixed top-0 left-0 w-full shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
+        className={`journey-editor-header bg-white border-b border-gray-200 shrink-0 z-[110] fixed top-0 left-0 w-full shadow-sm ${isExporting ? 'border-none shadow-none' : ''}`}
         onMouseDown={() => setSelectedCardId(null)}
       >
         <div className="h-16 flex items-center px-6 justify-between">
@@ -987,15 +989,15 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                     <div className="fixed inset-0 z-40 cursor-pointer" onClick={() => setIsHeaderMenuOpen(false)}></div>
                     <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 z-[100] overflow-hidden py-1">
                         <button onClick={handleExport} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                          <Download size={16} className="text-gray-400" /> Export PDF
+                          <Download size={16} className="text-gray-400" /> {t('editor.exportPdf')}
                         </button>
                         <div className="h-px bg-gray-100 my-1"></div>
                         <button onClick={handleDuplicateMap} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                          <Copy size={16} className="text-gray-400" /> Duplicate Journey
+                          <Copy size={16} className="text-gray-400" /> {t('editor.duplicateJourney')}
                         </button>
                         <div className="h-px bg-gray-100 my-1"></div>
                         <button onClick={handleClearMap} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                          <RotateCcw size={16} className="text-gray-400" /> Clear Content
+                          <RotateCcw size={16} className="text-gray-400" /> {t('editor.clearContent')}
                         </button>
                     </div>
                   </>
@@ -1019,9 +1021,9 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
             {/* Save Status Indicator */}
             <div className="flex items-center gap-2 text-xs font-medium text-gray-400 hide-on-export min-w-[80px] justify-end ml-auto">
                 {isSaving ? (
-                    <><div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div> Saving...</>
+                    <><div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div> {t('editor.saving')}</>
                 ) : lastSaved ? (
-                    <><Cloud size={14} /> Saved</>
+                    <><Cloud size={14} /> {t('editor.saved')}</>
                 ) : null}
             </div>
           </div>
@@ -1030,39 +1032,39 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         <div className={`overflow-hidden transition-all duration-300 ease-in-out bg-gray-50/50 hide-on-export ${showDetails ? 'max-h-96 border-t border-gray-100 opacity-100' : 'max-h-0 border-t-0 opacity-0'}`}>
           <div className="px-6 py-6 grid grid-cols-1 md:grid-cols-3 gap-8 shadow-inner">
              <div className="md:col-span-2 space-y-2">
-               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Description</label>
+               <label className="block text-xs font-bold text-gray-500">{t('editor.description')}</label>
                <textarea 
                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 h-24 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none bg-white transition-all"
-                 placeholder="Add a description for this journey map..."
+                 placeholder={t('editor.descriptionPlaceholder')}
                  value={journeyMeta.description}
                  onChange={(e) => setJourneyMeta({ ...journeyMeta, description: e.target.value })}
                />
              </div>
              <div className="space-y-5">
                 <div className="space-y-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Status</label>
+                  <label className="block text-xs font-bold text-gray-500">{t('editor.status')}</label>
                   <div className="relative">
                     <select 
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white appearance-none cursor-pointer"
                       value={journeyMeta.status}
                       onChange={(e) => setJourneyMeta({ ...journeyMeta, status: e.target.value })}
                     >
-                      <option value="draft">Draft</option>
-                      <option value="live">Live</option>
-                      <option value="archived">Archived</option>
+                      <option value="draft">{t('editor.statusDraft')}</option>
+                      <option value="live">{t('editor.statusLive')}</option>
+                      <option value="archived">{t('editor.statusArchived')}</option>
                     </select>
                     <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">Owner</label>
+                  <label className="block text-xs font-bold text-gray-500">{t('editor.owner')}</label>
                   <div className="relative">
                     <select
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 pr-9 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white appearance-none"
                       value={journeyMeta.ownerId ?? ''}
                       onChange={(e) => setJourneyMeta({ ...journeyMeta, ownerId: e.target.value })}
                     >
-                      <option value="">Select owner…</option>
+                      <option value="">{t('editor.selectOwner')}</option>
                       {workspaceMembers.map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.full_name || m.email || m.id}
@@ -1203,7 +1205,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                       </>
                     )}
                     <button onClick={() => setIsAddLaneMenuOpen(!isAddLaneMenuOpen)} className="w-full py-3 text-gray-400 font-medium hover:text-orange-600 hover:bg-orange-50 transition flex items-center justify-center gap-2 text-sm">
-                      <Plus size={18} /> Add Lane
+                      <Plus size={18} /> {t('editor.addLane')}
                     </button>
                   </div>
                </div>
@@ -1214,21 +1216,21 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
       {/* Zoom & Pan Controls */}
       <div className="fixed bottom-6 right-6 flex items-center gap-1 bg-white p-1.5 rounded-lg shadow-xl border border-gray-200 z-50 hide-on-export">
-        <button onClick={() => setIsHandMode(false)} className={`p-2 rounded hover:bg-gray-100 ${!isHandMode ? 'bg-orange-50 text-orange-600' : 'text-gray-500'}`} title="Pointer">
+        <button onClick={() => setIsHandMode(false)} className={`p-2 rounded hover:bg-gray-100 ${!isHandMode ? 'bg-orange-50 text-orange-600' : 'text-gray-500'}`} title={t('common.pointer')}>
           <MousePointer size={18} />
         </button>
-        <button onClick={() => setIsHandMode(true)} className={`p-2 rounded hover:bg-gray-100 ${isHandMode ? 'bg-orange-50 text-orange-600' : 'text-gray-500'}`} title="Hand Tool">
+        <button onClick={() => setIsHandMode(true)} className={`p-2 rounded hover:bg-gray-100 ${isHandMode ? 'bg-orange-50 text-orange-600' : 'text-gray-500'}`} title={t('common.handTool')}>
           <Hand size={18} />
         </button>
         <div className="w-px h-4 bg-gray-200 mx-1"></div>
-        <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2 rounded hover:bg-gray-100 text-gray-500" title="Zoom Out">
+        <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="p-2 rounded hover:bg-gray-100 text-gray-500" title={t('common.zoomOut')}>
           <ZoomOut size={18} />
         </button>
         <span className="text-xs font-medium w-12 text-center text-gray-600">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-2 rounded hover:bg-gray-100 text-gray-500" title="Zoom In">
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="p-2 rounded hover:bg-gray-100 text-gray-500" title={t('common.zoomIn')}>
           <ZoomIn size={18} />
         </button>
-        <button onClick={() => setZoom(1)} className="p-2 rounded hover:bg-gray-100 text-gray-500" title="Reset Zoom">
+        <button onClick={() => setZoom(1)} className="p-2 rounded hover:bg-gray-100 text-gray-500" title={t('common.resetZoom')}>
           <RotateCcw size={16} />
         </button>
       </div>
@@ -1283,16 +1285,16 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
         onConfirm={handleConfirmAction}
         title={
-            confirmConfig.type === 'delete-lane' ? "Delete Lane?" : 
-            confirmConfig.type === 'clear-map' ? "Clear Map?" :
-            "Duplicate Journey?"
+            confirmConfig.type === 'delete-lane' ? t('editor.deleteLane') : 
+            confirmConfig.type === 'clear-map' ? t('editor.clearMap') :
+            t('editor.duplicateJourneyTitle')
         }
         message={
-            confirmConfig.type === 'delete-lane' ? "Are you sure you want to delete this lane and all its content?" : 
-            confirmConfig.type === 'clear-map' ? "This will remove all content from the map. This action cannot be undone." :
-            "Are you sure you want to create a copy of this journey map?"
+            confirmConfig.type === 'delete-lane' ? t('editor.deleteLaneMessage') : 
+            confirmConfig.type === 'clear-map' ? t('editor.clearMapMessage') :
+            t('editor.duplicateJourneyConfirm')
         }
-        confirmText={confirmConfig.type === 'duplicate-map' ? "Duplicate" : "Delete"}
+        confirmText={confirmConfig.type === 'duplicate-map' ? t('common.duplicate') : t('common.delete')}
         isDestructive={confirmConfig.type !== 'duplicate-map'}
       />
 

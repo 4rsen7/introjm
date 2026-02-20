@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedType, setSelectedType] = useState('');
@@ -38,13 +40,13 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">Global Metrics</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('metrics.title')}</h1>
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
         >
           <Plus size={18} />
-          New Metric
+          {t('metrics.newMetric')}
         </button>
       </header>
 
@@ -54,7 +56,7 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
                 type="text" 
-                placeholder="Search metrics..." 
+                placeholder={t('metrics.searchMetrics')} 
                 className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -65,7 +67,7 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
             <Filter size={16} />
-            <span>Filters</span>
+            <span>{t('dashboard.filters')}</span>
         </button>
       </div>
 
@@ -74,20 +76,20 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
           <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
             <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Type</label>
+                    <label className="text-xs font-bold text-gray-500">{t('metrics.type')}</label>
                     <select 
                         className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
                         value={selectedType}
                         onChange={(e) => setSelectedType(e.target.value)}
                     >
-                        <option value="">All Types</option>
-                        <option value="Number">Number</option>
-                        <option value="Comparison">Comparison</option>
-                        <option value="Series">Series</option>
+                        <option value="">{t('metrics.allTypes')}</option>
+                        <option value="Number">{t('metrics.typeNumber')}</option>
+                        <option value="Comparison">{t('metrics.typeComparison')}</option>
+                        <option value="Series">{t('metrics.typeSeries')}</option>
                     </select>
                 </div>
                 {selectedType && (
-                    <button onClick={() => setSelectedType('')} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="Clear filters">
+                    <button onClick={() => setSelectedType('')} className="mt-auto mb-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition" title={t('common.clearFilters')}>
                         <X size={16} />
                     </button>
                 )}
@@ -101,11 +103,11 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Updated</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Linked Maps</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.name')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.type')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.lastUpdated')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.linkedMaps')}</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('journeys.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -114,8 +116,8 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
                     <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                         <div className="flex flex-col items-center justify-center">
                             <BarChart3 size={48} className="text-gray-200 mb-4" />
-                            <p className="text-lg font-medium text-gray-900">No metrics yet</p>
-                            <p className="text-sm text-gray-400 mt-1">Create your first metric to track success.</p>
+                            <p className="text-lg font-medium text-gray-900">{t('metrics.noMetricsYet')}</p>
+                            <p className="text-sm text-gray-400 mt-1">{t('metrics.createFirstMetric')}</p>
                         </div>
                     </td>
                 </tr>
@@ -163,13 +165,13 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
-                    <Tooltip content="Edit">
+                    <Tooltip content={t('metrics.edit')}>
                         <button onClick={(e) => { e.stopPropagation(); onEdit && onEdit(metric); }} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                             <Edit size={18} />
                         </button>
                     </Tooltip>
                     {currentUserId != null && metric.user_id === currentUserId && (
-                        <Tooltip content="Delete">
+                        <Tooltip content={t('common.delete')}>
                             <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(metric); }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                 <Trash2 size={18} />
                             </button>
@@ -186,10 +188,10 @@ const Metrics = ({ metrics = [], currentUserId, onCreate, onEdit, onDelete }) =>
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig({ isOpen: false, item: null })}
         onConfirm={handleConfirmDelete}
-        title="Delete Metric?"
-        message={`Are you sure you want to delete "${confirmConfig.item?.name}"? This action cannot be undone.`}
+        title={t('metrics.deleteMetricConfirm')}
+        message={t('metrics.deleteMetricMessage', { name: confirmConfig.item?.name })}
         isDestructive={true}
-        confirmText="Delete"
+        confirmText={t('common.delete')}
       />
 
       <LinkedMapsModal 

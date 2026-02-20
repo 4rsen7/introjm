@@ -1,19 +1,15 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
-const TIPS = [
-  "Click and drag the right side of a stage to resize it",
-  "Use the 'Pin' button to keep lanes visible while scrolling",
-  "Double click any card title to rename it",
-  "You can duplicate entire lanes from the lane menu",
-  "Use the hand tool to pan around large maps easily"
-]
+const TIP_KEYS = ['loader.tip1', 'loader.tip2', 'loader.tip3', 'loader.tip4', 'loader.tip5']
 
 export default function JourneyLoader() {
+  const { t } = useTranslation()
   const [progress, setProgress] = useState(0)
-  const [tip, setTip] = useState("")
+  const [tipKey, setTipKey] = useState('loader.tip1')
 
   useEffect(() => {
-    setTip(TIPS[Math.floor(Math.random() * TIPS.length)])
+    setTipKey(TIP_KEYS[Math.floor(Math.random() * TIP_KEYS.length)])
     // Start animation after mount
     const timer = setTimeout(() => setProgress(100), 100)
     return () => clearTimeout(timer)
@@ -36,7 +32,7 @@ export default function JourneyLoader() {
            </div>
         </div>
 
-        <h2 className="text-lg font-bold text-gray-900 mb-2">Setting up your map...</h2>
+        <h2 className="text-lg font-bold text-gray-900 mb-2">{t('loader.caption')}</h2>
         
         {/* Progress Bar */}
         <div className="h-1 w-64 bg-gray-100 rounded-full overflow-hidden mb-4">
@@ -47,8 +43,8 @@ export default function JourneyLoader() {
         </div>
 
         <p className="text-xs text-gray-500 font-medium text-center h-4 animate-in fade-in duration-700">
-          <span className="font-bold text-gray-400 uppercase tracking-wider mr-2">Tip:</span>
-          {tip}
+          <span className="font-bold text-gray-400 mr-2">{t('loader.tipLabel')}</span>
+          {t(tipKey)}
         </p>
       </div>
     </div>

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, BarChart3, Save, ArrowUp, ArrowDown, Minus, Trash2, Plus, TrendingUp, ChevronDown, Upload } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import MetricCard from '../components/metrics/MetricCard';
 
 const MetricBuilder = ({ onBack, onSave, initialData }) => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     name: 'New Metric',
     dataSource: 'manual',
@@ -94,16 +96,16 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
             <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition">
                 <ArrowLeft size={20} />
             </button>
-            <h2 className="text-lg font-bold text-gray-900">Metric Settings</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t('common.metricSettings')}</h2>
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
             {/* General Settings */}
             <section className="space-y-4">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">General</h3>
+                <h3 className="text-xs font-bold text-gray-400">General</h3>
                 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Metric Name</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('common.metricName')}</label>
                     <input 
                         type="text" 
                         value={formData.name}
@@ -148,7 +150,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
             {/* Contextual Settings */}
             {(formData.type === 'Number' || formData.type === 'Comparison') && (
                 <section className="space-y-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Value Configuration</h3>
+                    <h3 className="text-xs font-bold text-gray-400">Value Configuration</h3>
                     
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -201,7 +203,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
 
             {formData.type === 'Series' && (
                 <section className="space-y-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Chart Configuration</h3>
+                    <h3 className="text-xs font-bold text-gray-400">Chart Configuration</h3>
                     
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Chart Type</label>
@@ -289,7 +291,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                     <BarChart3 size={24} />
                 </div>
                 
-                <h3 className="text-gray-500 font-medium uppercase tracking-wide text-sm mb-2">{formData.name || 'Metric Name'}</h3>
+                <h3 className="text-gray-500 font-medium text-sm mb-2">{formData.name || 'Metric Name'}</h3>
                 
                 {formData.type === 'Number' ? (
                     <div className="text-6xl font-bold text-gray-900 tracking-tight my-4">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, RotateCcw, Trash2, Map, User, Archive as ArchiveIcon } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
@@ -16,6 +17,7 @@ const ArchivePage = ({
   onRestorePersona, 
   onDeletePersona 
 }) => {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('journeys');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -104,9 +106,9 @@ const ArchivePage = ({
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
-            <ArchiveIcon className="text-gray-400" /> Archive
+            <ArchiveIcon className="text-gray-400" /> {t('archive.title')}
         </h1>
-        <p className="text-gray-500 mt-1">Restore or permanently delete items.</p>
+        <p className="text-gray-500 mt-1">{t('archive.subtitle')}</p>
       </header>
 
       {/* Tabs */}
@@ -115,14 +117,14 @@ const ArchivePage = ({
             onClick={() => setActiveTab('journeys')}
             className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === 'journeys' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
         >
-            Journeys ({archivedJourneys.length})
+            {t('nav.journeyMaps')} ({archivedJourneys.length})
             {activeTab === 'journeys' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
         </button>
         <button
             onClick={() => setActiveTab('personas')}
             className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === 'personas' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
         >
-            Personas ({archivedPersonas.length})
+            {t('nav.personas')} ({archivedPersonas.length})
             {activeTab === 'personas' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
         </button>
       </div>
@@ -132,7 +134,7 @@ const ArchivePage = ({
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
         <input 
             type="text" 
-            placeholder={`Search archived ${activeTab}...`} 
+            placeholder={t('archive.searchPlaceholder', { tab: activeTab === 'journeys' ? t('nav.journeyMaps').toLowerCase() : t('nav.personas').toLowerCase() })} 
             className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -144,15 +146,15 @@ const ArchivePage = ({
         <table className="min-w-full divide-y divide-gray-100">
             <thead className="bg-gray-50/50">
                 <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Archived Date</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.name')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('archive.archivedDate')}</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('journeys.actions')}</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
                 {activeTab === 'journeys' ? (
                     filteredJourneys.length === 0 ? (
-                        <tr><td colSpan="3" className="px-6 py-12 text-center text-gray-500">No archived journeys found</td></tr>
+                        <tr><td colSpan="3" className="px-6 py-12 text-center text-gray-500">{t('archive.noJourneysFound')}</td></tr>
                     ) : (
                         filteredJourneys.map(journey => (
                             <tr key={journey.id} className="hover:bg-gray-50/80 transition-colors">
@@ -163,22 +165,22 @@ const ArchivePage = ({
                                         </div>
                                         <div>
                                             <div className="font-bold text-gray-900">{journey.title}</div>
-                                            <div className="text-xs text-gray-500">{journey.description || 'No description'}</div>
+                                            <div className="text-xs text-gray-500">{journey.description || t('common.noDescription')}</div>
                                         </div>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {journey.updated_at ? new Date(journey.updated_at).toLocaleDateString() : 'Unknown'}
+                                    {journey.updated_at ? new Date(journey.updated_at).toLocaleDateString() : t('common.unknown')}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                        <Tooltip content="Restore">
+                                        <Tooltip content={t('common.restore')}>
                                             <button onClick={() => handleRestoreJourneyClick(journey.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                                                 <RotateCcw size={18} />
                                             </button>
                                         </Tooltip>
                                         {currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner) && (
-                                            <Tooltip content="Delete">
+                                            <Tooltip content={t('common.delete')}>
                                                 <button onClick={() => handleDeleteJourneyClick(journey.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={18} />
                                                 </button>
@@ -191,7 +193,7 @@ const ArchivePage = ({
                     )
                 ) : (
                     filteredPersonas.length === 0 ? (
-                        <tr><td colSpan="3" className="px-6 py-12 text-center text-gray-500">No archived personas found</td></tr>
+                        <tr><td colSpan="3" className="px-6 py-12 text-center text-gray-500">{t('archive.noPersonasFound')}</td></tr>
                     ) : (
                         filteredPersonas.map(persona => (
                             <tr key={persona.id} className="hover:bg-gray-50/80 transition-colors">
@@ -211,17 +213,17 @@ const ArchivePage = ({
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {persona.updated_at ? new Date(persona.updated_at).toLocaleDateString() : 'Unknown'}
+                                    {persona.updated_at ? new Date(persona.updated_at).toLocaleDateString() : t('common.unknown')}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                        <Tooltip content="Restore">
+                                        <Tooltip content={t('common.restore')}>
                                             <button onClick={() => handleRestorePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                                                 <RotateCcw size={18} />
                                             </button>
                                         </Tooltip>
                                         {currentUserId != null && persona.user_id === currentUserId && (
-                                            <Tooltip content="Delete">
+                                            <Tooltip content={t('common.delete')}>
                                                 <button onClick={() => handleDeletePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={18} />
                                                 </button>

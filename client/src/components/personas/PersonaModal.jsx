@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X, Plus, Trash2, User, Briefcase, GraduationCap, Smile, Bot, Baby } from 'lucide-react'
 
 const AVATAR_OPTIONS = [
@@ -11,6 +12,7 @@ const AVATAR_OPTIONS = [
 ]
 
 export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }) {
+  const { t } = useTranslation()
   const [formData, setFormData] = useState({
     name: '',
     role: '',
@@ -98,7 +100,7 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}></div>
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
-          <h2 className="text-xl font-bold text-gray-900">{initialPersona ? 'Edit Persona' : 'Create Persona'}</h2>
+          <h2 className="text-xl font-bold text-gray-900">{initialPersona ? t('personas.editPersona') : t('personas.createPersona')}</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition">
             <X size={20} />
           </button>

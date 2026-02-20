@@ -1,13 +1,15 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowUp, ArrowDown, Minus, BarChart3 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, LabelList } from 'recharts';
 
 const JourneyMetricCard = ({ metric }) => {
+  const { t } = useTranslation();
   if (!metric) {
     return (
       <div className="flex flex-col items-center justify-center h-24 text-gray-400">
         <BarChart3 size={24} className="mb-2 opacity-50" />
-        <span className="text-xs">Metric not found</span>
+        <span className="text-xs">{t('common.metricNotFound')}</span>
       </div>
     );
   }
@@ -22,7 +24,7 @@ const JourneyMetricCard = ({ metric }) => {
             <div className="text-3xl font-bold text-gray-900 tracking-tight">
               {value}<span className="text-lg text-gray-500 ml-0.5 font-medium">{suffix}</span>
             </div>
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-1 text-center truncate w-full px-2">
+            <div className="text-xs font-medium text-gray-500 mt-1 text-center truncate w-full px-2">
               {name}
             </div>
           </div>
@@ -48,7 +50,7 @@ const JourneyMetricCard = ({ metric }) => {
               <Icon size={12} strokeWidth={3} />
               <span>{Math.abs(delta).toFixed(1)}</span>
             </div>
-            <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mt-1 truncate w-full text-center">
+            <div className="text-[10px] font-medium text-gray-400 mt-1 truncate w-full text-center">
               {name}
             </div>
           </div>
@@ -57,7 +59,7 @@ const JourneyMetricCard = ({ metric }) => {
       case 'Series':
         return (
           <div className="w-full h-full flex flex-col">
-            <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 px-1 truncate">
+            <div className="text-xs font-bold text-gray-500 mb-1 px-1 truncate">
               {name}
             </div>
             <div className="flex-1 min-h-0">

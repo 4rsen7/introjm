@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useLayoutEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Routes, Route, useNavigate, useLocation, Navigate, Outlet, useParams } from 'react-router-dom'
 import { LayoutGrid, Map, Users, BarChart3, Settings, Archive as ArchiveIcon, ChevronDown, LogOut } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
@@ -41,6 +42,7 @@ const MainLayout = ({
   isNavigating, 
   setSettingsTab 
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -63,15 +65,15 @@ const MainLayout = ({
         
         <nav className="flex-1 px-3 space-y-6 overflow-y-auto py-4">
           <div className="space-y-1">
-            <MenuItem icon={LayoutGrid} label="Dashboard" isActive={location.pathname === '/dashboard'} onClick={() => navigate('/dashboard')} />
+            <MenuItem icon={LayoutGrid} label={t('nav.dashboard')} isActive={location.pathname === '/dashboard'} onClick={() => navigate('/dashboard')} />
           </div>
           <div>
             <div className="relative">
               <div 
-                className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider flex justify-between items-center cursor-pointer hover:text-gray-600 select-none"
+                className="px-3 mb-2 text-xs font-semibold text-gray-400 flex justify-between items-center cursor-pointer hover:text-gray-600 select-none"
                 onClick={() => workspaces.length > 1 ? setSwitcherOpen((o) => !o) : setIsWorkspaceExpanded(!isWorkspaceExpanded)}
               >
-                <span className="truncate flex-1">{currentWorkspace?.name || 'Workspace'}</span>
+                <span className="truncate flex-1">{currentWorkspace?.name || t('nav.workspace')}</span>
                 <ChevronDown 
                   size={14} 
                   className={`flex-shrink-0 ml-1 transition-transform duration-500 ${(workspaces.length > 1 ? switcherOpen : isWorkspaceExpanded) ? '' : '-rotate-90'}`} 
@@ -107,7 +109,7 @@ const MainLayout = ({
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex justify-between items-center ${currentWorkspace?.id === ws.id ? 'bg-orange-50 text-orange-700 font-medium' : 'text-gray-700'}`}
                         >
                           <span className="truncate">{ws.name}</span>
-                          <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{ws.role === 'owner' ? 'Owner' : 'Member'}</span>
+                          <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{ws.role === 'owner' ? t('nav.owner') : t('nav.member')}</span>
                         </button>
                       ))}
                     </div>
@@ -132,11 +134,11 @@ const MainLayout = ({
                     transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
                 >
-                  <MenuItem icon={Map} label="Journey maps" isActive={location.pathname === '/journeys'} onClick={() => navigate('/journeys')} />
-                  <MenuItem icon={Users} label="Personas" isActive={location.pathname === '/personas'} onClick={() => navigate('/personas')} />
-                  <MenuItem icon={BarChart3} label="Metrics" isActive={location.pathname.startsWith('/metrics')} onClick={() => navigate('/metrics')} />
-                  <MenuItem icon={ArchiveIcon} label="Archive" isActive={location.pathname === '/archive'} onClick={() => navigate('/archive')} />
-                  <MenuItem icon={Settings} label="Settings" isActive={location.pathname === '/settings'} onClick={() => { setSettingsTab('workspace'); navigate('/settings'); }} />
+                  <MenuItem icon={Map} label={t('nav.journeyMaps')} isActive={location.pathname === '/journeys'} onClick={() => navigate('/journeys')} />
+                  <MenuItem icon={Users} label={t('nav.personas')} isActive={location.pathname === '/personas'} onClick={() => navigate('/personas')} />
+                  <MenuItem icon={BarChart3} label={t('nav.metrics')} isActive={location.pathname.startsWith('/metrics')} onClick={() => navigate('/metrics')} />
+                  <MenuItem icon={ArchiveIcon} label={t('nav.archive')} isActive={location.pathname === '/archive'} onClick={() => navigate('/archive')} />
+                  <MenuItem icon={Settings} label={t('nav.settings')} isActive={location.pathname === '/settings'} onClick={() => { setSettingsTab('workspace'); navigate('/settings'); }} />
                 </div>
               </div>
             </div>
@@ -166,7 +168,7 @@ const MainLayout = ({
             className="w-full flex items-center gap-3 px-2 py-2 mt-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600 transition text-sm font-medium"
           >
             <LogOut size={18} />
-            <span>Sign Out</span>
+            <span>{t('common.signOut')}</span>
           </button>
         </div>
       </aside>
@@ -188,7 +190,7 @@ const MainLayout = ({
 };
 
 function App() {
-  // Stan: 'dashboard' або 'editor'
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -450,7 +452,7 @@ function App() {
 
   const handleCreateJourney = async () => {
     if (!currentWorkspace?.id) {
-      alert('Please select a workspace first (use the workspace switcher in the sidebar).');
+      alert(t('common.selectWorkspaceFirst'));
       return;
     }
     const token = await getAuthToken();
@@ -473,11 +475,11 @@ function App() {
         navigate(`/journey/${data.data.id}`);
       } else {
         console.error('Server error:', data);
-        alert(`Failed to create journey: ${data.error || 'Unknown error'}`);
+        alert(t('common.failedCreateJourney') + (data.error ? `: ${data.error}` : ''));
       }
     } catch (error) {
       console.error('Error creating journey:', error);
-      alert('Network error. Check console for details.');
+      alert(t('common.networkError'));
     }
   }
 
@@ -619,11 +621,11 @@ function App() {
               navigate('/dashboard');
               return true;
           }
-          alert(data.error || data.message || 'Failed to delete workspace');
+          alert(data.error || data.message || t('common.failedDeleteWorkspace'));
           return false;
       } catch (error) {
           console.error('Error deleting workspace:', error);
-          alert('Failed to delete workspace. Please try again.');
+          alert(t('common.failedDeleteWorkspace'));
           return false;
       }
   };
