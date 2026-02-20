@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock } from 'lucide-react';
+import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock, ChevronDown } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
@@ -463,14 +463,17 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   </div>
                   <div className="pt-4 mt-4 border-t border-gray-100">
                     <label className="block text-sm font-medium text-gray-700 mb-2">{t('settings.interfaceLanguage')}</label>
-                    <select
-                      value={profileLocale}
-                      onChange={(e) => setProfileLocale(e.target.value)}
-                      className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
-                    >
-                      <option value="en">{t('settings.english')}</option>
-                      <option value="uk">{t('settings.ukrainian')}</option>
-                    </select>
+                    <div className="relative max-w-xs">
+                      <select
+                        value={profileLocale}
+                        onChange={(e) => setProfileLocale(e.target.value)}
+                        className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white appearance-none"
+                      >
+                        <option value="en">{t('settings.english')}</option>
+                        <option value="uk">{t('settings.ukrainian')}</option>
+                      </select>
+                      <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    </div>
                   </div>
                   <div className="pt-4">
                     <button 

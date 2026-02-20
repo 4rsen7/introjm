@@ -1092,7 +1092,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         <div className="inline-flex flex-col w-max pb-20 origin-top-left" style={{ zoom: zoom, pointerEvents: isHandMode ? 'none' : 'auto' }}>
 
           <div 
-            className={`flex sticky ${activeColMenu ? 'z-[90]' : 'z-[60]'} bg-white h-12 items-end pb-2 border-b border-transparent shadow-sm`}
+            className={`flex sticky ${activeColMenu ? 'z-[108]' : 'z-[105]'} bg-white h-12 items-end pb-2 border-b border-transparent shadow-sm`}
             style={{ top: stickyColHeaderTop }}
           >
             <div 
@@ -1215,7 +1215,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       </div>
 
       {/* Zoom & Pan Controls */}
-      <div className="fixed bottom-6 right-6 flex items-center gap-1 bg-white p-1.5 rounded-lg shadow-xl border border-gray-200 z-50 hide-on-export">
+      <div className="fixed bottom-6 right-6 flex items-center gap-1 bg-white p-1.5 rounded-lg shadow-xl border border-gray-200 z-[105] hide-on-export">
         <button onClick={() => setIsHandMode(false)} className={`p-2 rounded hover:bg-gray-100 ${!isHandMode ? 'bg-orange-50 text-orange-600' : 'text-gray-500'}`} title={t('common.pointer')}>
           <MousePointer size={18} />
         </button>
