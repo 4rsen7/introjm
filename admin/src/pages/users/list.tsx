@@ -175,9 +175,11 @@ export const UserList: React.FC = () => {
         <Table.Column 
           dataIndex="plan_status" 
           title="Plan" 
-          render={(value) => (
-            <Tag color={value === 'Pro' ? 'gold' : 'blue'}>{value}</Tag>
-          )}
+          render={(value) => {
+            const v = value || '—';
+            const color = v === 'Pro' ? 'gold' : v === 'Enterprise' ? 'purple' : v === 'Starter' ? 'blue' : 'default';
+            return <Tag color={color}>{v}</Tag>;
+          }}
         />
 
         <Table.Column 
