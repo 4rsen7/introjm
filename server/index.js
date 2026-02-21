@@ -10,6 +10,9 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 5005;
 
+// Required when running behind a proxy (e.g. Render, Vercel) so rate-limit and IP detection work
+app.set('trust proxy', 1);
+
 // GLOBAL LOGGER: Log every single request hitting the server
 app.use((req, res, next) => {
     console.log(`📡 [INCOMING] ${req.method} ${req.url}`);
@@ -134,6 +137,11 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
     } else if (eventName === 'subscription_created') {
         variantId = attrs?.variant_id;
         userEmail = attrs?.user_email;
+    }
+    // subscription_payment_success sends subscription-invoices payload (no variant_id); plan is set on subscription_created
+    if (eventName === 'subscription_payment_success') {
+        _dbg('subscription_payment_success acknowledged', { eventName }, 'C');
+        return res.status(200).json({ ok: true, message: 'Payment success acknowledged; plan updated on subscription_created' });
     }
     // #region agent log
     _dbg('parsed event', { eventName, variantId, variantIdType: typeof variantId, userEmail: userEmail ? '***@***' : null, hasCustomUserId: !!customData.user_id }, 'C');
