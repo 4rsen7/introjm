@@ -319,7 +319,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
             </section>
 
             <section className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
-              <p className="text-sm text-gray-500 mb-4">Once you delete a workspace, there is no going back. Please be certain.</p>
+              <p className="text-sm text-gray-500 mb-4">{t('settings.deleteWorkspaceWarning')}</p>
               <button 
                 onClick={() => setIsDeleteModalOpen(true)}
                 className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition"

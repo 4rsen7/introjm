@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
@@ -306,6 +307,16 @@ const AuthPage = ({ onLogin }) => {
             >
               {isLogin ? t('auth.signUp') : t('auth.signInLink')}
             </button>
+          </div>
+
+          <div className="mt-12 pt-8 border-t border-gray-100 text-center text-sm text-gray-500">
+            <Link to="/terms" className="text-gray-500 hover:text-gray-900 hover:underline transition-colors">
+              {t('auth.termsLink')}
+            </Link>
+            <span className="mx-2">·</span>
+            <Link to="/privacy" className="text-gray-500 hover:text-gray-900 hover:underline transition-colors">
+              {t('auth.privacyLink')}
+            </Link>
           </div>
         </div>
       </div>

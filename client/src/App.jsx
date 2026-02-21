@@ -12,6 +12,8 @@ import MetricBuilder from './pages/MetricBuilder'
 import SettingsPage from './pages/SettingsPage'
 import ArchivePage from './pages/ArchivePage'
 import AuthPage from './pages/AuthPage'
+import TermsPage from './pages/TermsPage'
+import PrivacyPage from './pages/PrivacyPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
 import { getAuthToken } from './services/auth'
@@ -197,7 +199,9 @@ function App() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token && location.pathname !== '/auth') {
+    const path = location.pathname;
+    const isPublicPath = path === '/auth' || path === '/terms' || path === '/privacy';
+    if (!token && !isPublicPath) {
       navigate('/auth');
     }
   }, [location, navigate]);
@@ -665,7 +669,9 @@ function App() {
       <div className={`fixed top-0 left-0 h-1 bg-orange-600 z-[9999] transition-all duration-300 ease-out ${isNavigating ? 'opacity-100' : 'opacity-0'}`} style={{ width: `${loadingProgress}%` }}></div>
       <Routes>
         <Route path="/auth" element={<AuthPage onLogin={() => navigate('/dashboard')} />} />
-        
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+
         <Route path="/journey/:id" element={
             <Editor 
               onBack={() => navigate('/dashboard')} 
