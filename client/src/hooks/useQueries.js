@@ -118,7 +118,7 @@ export const useWorkspaceLimits = (workspaceId) => {
       return json.data || null;
     },
     refetchOnWindowFocus: true,
-    staleTime: 60 * 1000,
+    staleTime: 15 * 1000,
   });
 };
 

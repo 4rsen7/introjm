@@ -779,7 +779,14 @@ function App() {
         </div>
       )}
 
-      <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} currentPlanName={planName} />
+      <PricingModal
+        isOpen={showPricingModal}
+        onClose={() => {
+          setShowPricingModal(false);
+          queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
+        }}
+        currentPlanName={planName}
+      />
     </>
   )
 }
