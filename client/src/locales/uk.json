@@ -17,6 +17,7 @@
     "enterDetails": "Уведіть дані для доступу до робочого простору.",
     "startTrial": "14 днів безкоштовно. Без банківської картки.",
     "errorLabel": "Помилка:",
+    "emailAlreadyRegistered": "Цей email вже зареєстровано. Увійдіть через Google, Microsoft або введіть пароль, якщо ви його встановлювали.",
     "firstName": "Ім'я",
     "lastName": "Прізвище",
     "email": "Email",
@@ -58,7 +59,17 @@
     "privacyTitle": "Політика конфіденційності",
     "privacyLastUpdated": "Останнє оновлення: {{date}}",
     "privacyPlaceholder": "Текст політики конфіденційності буде додано пізніше.",
-    "privacyBackToAuth": "Повернутися до входу"
+    "privacyBackToAuth": "Повернутися до входу",
+    "forgotPasswordTitle": "Відновлення пароля",
+    "forgotPasswordDescription": "Введіть email — ми надішлемо посилання для скидання пароля.",
+    "sendResetLink": "Надіслати посилання",
+    "backToSignIn": "Назад до входу",
+    "checkEmailForReset": "Перевірте email — ми надіслали посилання для скидання пароля.",
+    "setNewPassword": "Новий пароль",
+    "newPassword": "Новий пароль",
+    "confirmPassword": "Підтвердіть пароль",
+    "changePassword": "Змінити пароль",
+    "passwordMismatch": "Паролі не збігаються"
   },
   "settings": {
     "settings": "Налаштування",

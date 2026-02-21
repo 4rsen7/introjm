@@ -779,7 +779,7 @@ function App() {
         </div>
       )}
 
-      <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} />
+      <PricingModal isOpen={showPricingModal} onClose={() => setShowPricingModal(false)} currentPlanName={planName} />
     </>
   )
 }

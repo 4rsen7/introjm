@@ -17,6 +17,7 @@
     "enterDetails": "Enter your details to access your workspace.",
     "startTrial": "Start your 14-day free trial. No credit card required.",
     "errorLabel": "Error:",
+    "emailAlreadyRegistered": "This email is already registered. Sign in with Google, Microsoft, or enter your password if you've set one.",
     "firstName": "First Name",
     "lastName": "Last Name",
     "email": "Email",
@@ -58,7 +59,17 @@
     "privacyTitle": "Privacy Policy",
     "privacyLastUpdated": "Last updated: {{date}}",
     "privacyPlaceholder": "Privacy Policy content will be added here.",
-    "privacyBackToAuth": "Back to sign in"
+    "privacyBackToAuth": "Back to sign in",
+    "forgotPasswordTitle": "Reset password",
+    "forgotPasswordDescription": "Enter your email and we'll send you a link to reset your password.",
+    "sendResetLink": "Send link",
+    "backToSignIn": "Back to sign in",
+    "checkEmailForReset": "Check your email — we've sent a link to reset your password.",
+    "setNewPassword": "Set new password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "changePassword": "Change password",
+    "passwordMismatch": "Passwords do not match"
   },
   "settings": {
     "settings": "Settings",

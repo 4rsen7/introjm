@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const supabase = require('./supabaseClient');
@@ -76,7 +77,109 @@ app.use(cors({
 }));
 
 // Вмикає pre-flight для всіх маршрутів
-app.options('*', cors()); 
+app.options('*', cors());
+
+// Lemon Squeezy webhook: must receive raw body for signature verification (register before express.json)
+app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' }), async (req, res) => {
+    const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
+    if (!secret) {
+        console.error('LEMONSQUEEZY_WEBHOOK_SECRET is not set');
+        return res.status(500).json({ error: 'Webhook not configured' });
+    }
+    const rawBody = req.body;
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
+        return res.status(400).json({ error: 'Invalid body' });
+    }
+    const signature = req.get('X-Signature');
+    if (!signature) {
+        return res.status(401).json({ error: 'Missing X-Signature' });
+    }
+    try {
+        const hmac = crypto.createHmac('sha256', secret);
+        const digest = hmac.update(rawBody).digest('hex');
+        const sigBuf = Buffer.from(signature, 'utf8');
+        const digestBuf = Buffer.from(digest, 'utf8');
+        if (sigBuf.length !== digestBuf.length || !crypto.timingSafeEqual(digestBuf, sigBuf)) {
+            return res.status(401).json({ error: 'Invalid signature' });
+        }
+    } catch (e) {
+        return res.status(401).json({ error: 'Invalid signature' });
+    }
+    let payload;
+    try {
+        payload = JSON.parse(rawBody.toString('utf8'));
+    } catch (e) {
+        return res.status(400).json({ error: 'Invalid JSON' });
+    }
+    const eventName = payload?.meta?.event_name;
+    const customData = payload?.meta?.custom_data || {};
+    const data = payload?.data;
+    const attrs = data?.attributes || {};
+    let variantId = null;
+    let userEmail = null;
+    if (eventName === 'order_created') {
+        variantId = attrs?.first_order_item?.variant_id;
+        userEmail = attrs?.user_email;
+    } else if (eventName === 'subscription_created') {
+        variantId = attrs?.variant_id;
+        userEmail = attrs?.user_email;
+    }
+    if (!variantId && eventName !== 'subscription_cancelled') {
+        return res.status(200).json({ ok: true, message: 'Event ignored' });
+    }
+    if (eventName === 'subscription_cancelled') {
+        return res.status(200).json({ ok: true, message: 'Cancellation acknowledged' });
+    }
+    const variantIdStr = String(variantId);
+    const { data: planRow } = await supabaseAdmin
+        .from('plans')
+        .select('id, lemonsqueezy_variant_id_monthly, lemonsqueezy_variant_id_yearly')
+        .or(`lemonsqueezy_variant_id_monthly.eq.${variantIdStr},lemonsqueezy_variant_id_yearly.eq.${variantIdStr}`)
+        .limit(1)
+        .maybeSingle();
+    if (!planRow) {
+        console.warn('Lemon Squeezy webhook: no plan found for variant_id', variantIdStr);
+        return res.status(200).json({ ok: true, message: 'Plan not mapped' });
+    }
+    const interval = planRow.lemonsqueezy_variant_id_monthly === variantIdStr ? 'monthly' : 'yearly';
+    let userId = customData.user_id || null;
+    if (!userId && userEmail) {
+        const { data: { users }, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+        if (!listErr && Array.isArray(users)) {
+            const match = users.find((u) => (u.email || '').toLowerCase() === String(userEmail).toLowerCase());
+            if (match) userId = match.id;
+        }
+    }
+    if (!userId) {
+        console.warn('Lemon Squeezy webhook: could not resolve user for email', userEmail);
+        return res.status(200).json({ ok: true, message: 'User not found' });
+    }
+    const periodStart = new Date();
+    const periodEnd = new Date();
+    if (interval === 'yearly') {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+    await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'canceled' })
+        .eq('user_id', userId)
+        .eq('status', 'active');
+    const { error: insertErr } = await supabaseAdmin.from('subscriptions').insert([{
+        user_id: userId,
+        plan_id: planRow.id,
+        status: 'active',
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+    }]);
+    if (insertErr) {
+        console.error('Lemon Squeezy webhook: subscription insert failed', insertErr);
+        return res.status(500).json({ error: 'Failed to create subscription' });
+    }
+    return res.status(200).json({ ok: true });
+});
+
 app.use(express.json());
 
 // Rate limit for auth: 10 requests per minute per IP

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Check, Loader2 } from 'lucide-react';
+import { supabase } from '../../supabaseClient';
 
 // Fallback API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
@@ -10,11 +11,12 @@ function getCurrencySymbol(currency) {
   return CURRENCY_SYMBOLS[currency] ?? CURRENCY_SYMBOLS.USD;
 }
 
-const PricingModal = ({ isOpen, onClose }) => {
+const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
   const { t, i18n } = useTranslation();
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -29,6 +31,9 @@ const PricingModal = ({ isOpen, onClose }) => {
             })
             .catch(err => console.error("Failed to load plans:", err))
             .finally(() => setLoading(false));
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUserId(session?.user?.id ?? null);
+        });
     }
   }, [isOpen, i18n.language]);
 
@@ -105,10 +110,23 @@ const PricingModal = ({ isOpen, onClose }) => {
                         </ul>
 
                         <button 
-                        onClick={() => alert(`Selected ${plan.name} plan (Integration coming soon)`)}
+                        onClick={() => {
+                            const isCurrent = plan.tier === 1 || (currentPlanName && plan.name === currentPlanName);
+                            if (isCurrent) return;
+                            const url = billingCycle === 'monthly' ? plan.checkout_url_monthly : plan.checkout_url_yearly;
+                            if (url) {
+                                let target = url;
+                                if (userId) {
+                                    const sep = target.includes('?') ? '&' : '?';
+                                    target = `${target}${sep}checkout[custom][user_id]=${encodeURIComponent(userId)}`;
+                                }
+                                window.open(target, '_blank', 'noopener,noreferrer');
+                            }
+                        }}
+                        disabled={plan.tier === 1 || (currentPlanName && plan.name === currentPlanName)}
                         className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn}`}
                         >
-                        {plan.tier === 1 ? t('pricing.currentPlan') : (plan.tier === 3 ? t('pricing.contactSales') : t('pricing.upgrade'))}
+                        {plan.tier === 1 || (currentPlanName && plan.name === currentPlanName) ? t('pricing.currentPlan') : t('pricing.upgrade')}
                         </button>
                     </div>
                     );
