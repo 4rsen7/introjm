@@ -138,10 +138,29 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         variantId = attrs?.variant_id;
         userEmail = attrs?.user_email;
     }
-    // subscription_payment_success sends subscription-invoices payload (no variant_id); plan is set on subscription_created
+    // subscription_payment_success sends subscription-invoices (no variant_id); fetch subscription from API to get variant_id
     if (eventName === 'subscription_payment_success') {
-        _dbg('subscription_payment_success acknowledged', { eventName }, 'C');
-        return res.status(200).json({ ok: true, message: 'Payment success acknowledged; plan updated on subscription_created' });
+        const subscriptionId = attrs?.subscription_id;
+        const apiKey = process.env.LEMONSQUEEZY_API_KEY;
+        userEmail = attrs?.user_email || userEmail;
+        if (apiKey && subscriptionId) {
+            try {
+                const subRes = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${subscriptionId}`, {
+                    headers: { 'Accept': 'application/vnd.api+json', 'Content-Type': 'application/vnd.api+json', 'Authorization': `Bearer ${apiKey}` }
+                });
+                const subJson = await subRes.json();
+                const subAttrs = subJson?.data?.attributes;
+                variantId = subAttrs?.variant_id;
+                _dbg('subscription_payment_success fetched subscription', { subscriptionId, variantId, hasUser: !!customData.user_id }, 'C');
+            } catch (e) {
+                _dbg('subscription_payment_success fetch failed', { err: e.message }, 'C');
+            }
+        }
+        if (!variantId) {
+            _dbg('subscription_payment_success no variant_id', { hasApiKey: !!apiKey, subscriptionId }, 'C');
+            return res.status(200).json({ ok: true, message: 'Payment acknowledged; set LEMONSQUEEZY_API_KEY and subscription_id to update plan' });
+        }
+        // fall through to plan lookup and subscription update below
     }
     // #region agent log
     _dbg('parsed event', { eventName, variantId, variantIdType: typeof variantId, userEmail: userEmail ? '***@***' : null, hasCustomUserId: !!customData.user_id }, 'C');
