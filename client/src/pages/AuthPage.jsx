@@ -348,7 +348,7 @@ const AuthPage = ({ onLogin }) => {
       <div className="w-full md:w-1/2 flex flex-col justify-center px-8 sm:px-12 lg:px-24 py-12 relative z-10 bg-white">
         {/* Logo */}
         <div className="absolute top-8 left-8 sm:left-12 lg:left-24 flex items-center gap-2">
-           <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center text-white font-bold shadow-sm">I</div>
+           <img src="/logo.svg" alt="IteroJM" className="w-8 h-8 rounded-lg object-contain shrink-0" />
            <span className="text-xl font-bold tracking-tight text-gray-900">IteroJM</span>
         </div>
 
@@ -670,7 +670,7 @@ const AuthPage = ({ onLogin }) => {
                  {/* Toolbar */}
                  <div className="flex justify-between items-center mb-6">
                     <div className="flex gap-3 items-center">
-                       <div className="h-8 w-8 bg-orange-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-sm">I</div>
+                       <img src="/logo.svg" alt="" className="h-8 w-8 rounded-lg object-contain shrink-0" />
                        <div>
                           <div className="h-2.5 w-24 bg-slate-300 rounded mb-1.5"></div>
                           <div className="h-2 w-16 bg-slate-200 rounded"></div>

@@ -86,9 +86,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-slate-200/60 bg-slate-50/95 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/landing" className="flex items-center gap-2 font-bold text-xl tracking-tight text-slate-900">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white text-sm font-bold">
-              I
-            </span>
+            <img src="/logo.svg" alt="IteroJM" className="h-8 w-8 rounded-lg object-contain shrink-0" />
             IteroJM
           </Link>
           <nav className="hidden" aria-hidden>
@@ -203,7 +201,7 @@ export default function LandingPage() {
               <div className="absolute inset-0 -top-1/4 flex justify-center pointer-events-none" aria-hidden>
                 <div className="h-[280px] w-[120%] max-w-4xl rounded-full bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 blur-3xl" />
               </div>
-              <div className="relative overflow-hidden rounded-xl border border-slate-200/60 bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-200/40">
+              <div className="relative overflow-hidden rounded-lg border border-slate-200/60 bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-200/40">
                 {/* Browser chrome */}
                 <div className="flex items-center gap-2 border-b border-slate-200/60 bg-slate-100/80 px-4 py-2.5">
                   <div className="flex gap-1.5">
@@ -219,9 +217,7 @@ export default function LandingPage() {
                   {/* Sidebar */}
                   <aside className="hidden w-52 shrink-0 border-r border-slate-200/60 bg-slate-50/80 sm:block">
                     <div className="flex items-center gap-2.5 p-4">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-sm font-bold text-white shadow-sm">
-                        I
-                      </div>
+                      <img src="/logo.svg" alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
                       <div className="min-w-0 flex-1">
                         <div className="mb-1 h-2.5 w-20 rounded bg-slate-300" />
                         <div className="h-2 w-14 rounded bg-slate-200" />
@@ -280,7 +276,7 @@ export default function LandingPage() {
                         {[1, 2, 3, 4, 5, 6].map((n) => (
                           <div
                             key={n}
-                            className="rounded-xl border border-slate-200/60 bg-white p-4 shadow-sm"
+                            className="rounded-lg border border-slate-200/60 bg-white p-4 shadow-sm"
                           >
                             <div className="mb-3 h-9 w-9 rounded-lg bg-slate-100" />
                             <div className="mb-1.5 h-2.5 w-4/5 rounded bg-slate-200" />
@@ -294,7 +290,7 @@ export default function LandingPage() {
                       <div className="w-20 shrink-0 pt-2">
                         <div className="h-2.5 w-14 rounded bg-slate-400" />
                       </div>
-                      <div className="relative h-28 flex-1 overflow-hidden rounded-xl border border-slate-200/60 bg-white shadow-sm sm:h-32">
+                      <div className="relative h-28 flex-1 overflow-hidden rounded-lg border border-slate-200/60 bg-white shadow-sm sm:h-32">
                         <div className="absolute inset-0 grid grid-cols-3 divide-x divide-slate-50">
                           <div />
                           <div />
@@ -357,8 +353,8 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                   <Map className="h-6 w-6" strokeWidth={2} />
                 </div>
                 <h3 className="mt-6 text-xl font-semibold text-slate-900">
@@ -368,8 +364,8 @@ export default function LandingPage() {
                   {t('landing.feature1Desc')}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
+              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
                   <Users className="h-6 w-6" strokeWidth={2} />
                 </div>
                 <h3 className="mt-6 text-xl font-semibold text-slate-900">
@@ -379,8 +375,8 @@ export default function LandingPage() {
                   {t('landing.feature2Desc')}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:col-span-2 lg:col-span-1">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:col-span-2 lg:col-span-1">
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
                   <UsersRound className="h-6 w-6" strokeWidth={2} />
                 </div>
                 <h3 className="mt-6 text-xl font-semibold text-slate-900">
@@ -435,7 +431,7 @@ export default function LandingPage() {
             <div className="mt-14 grid gap-8 lg:grid-cols-3">
               {plansLoading ? (
                 [1, 2, 3].map((i) => (
-                  <div key={i} className="flex flex-col rounded-xl border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div key={i} className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
                     <div className="h-5 w-5 rounded bg-slate-200" />
                     <div className="mt-6 h-9 w-24 rounded bg-slate-200" />
                     <div className="mt-2 h-4 w-full rounded bg-slate-100" />
@@ -450,7 +446,7 @@ export default function LandingPage() {
               ) : plansError || plans.length === 0 ? (
                 /* Fallback: static content when API fails or returns no plans */
                 <>
-                  <div className="flex flex-col rounded-xl border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
                     <div className="flex items-center gap-2">
                       <Zap className="h-5 w-5 text-slate-500" />
                       <h3 className="text-lg font-semibold text-slate-900">{t('landing.free')}</h3>
@@ -472,7 +468,7 @@ export default function LandingPage() {
                       {t('landing.signUpFree')}
                     </Link>
                   </div>
-                  <div className="relative flex flex-col rounded-xl border-2 border-violet-500 bg-white p-8 shadow-xl shadow-violet-500/10">
+                  <div className="relative flex flex-col rounded-lg border-2 border-violet-500 bg-white p-8 shadow-xl shadow-violet-500/10">
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-500 px-3 py-1 text-xs font-semibold text-white">
                       {t('landing.mostPopular')}
                     </div>
@@ -497,7 +493,7 @@ export default function LandingPage() {
                       {t('landing.upgradeToPro')}
                     </Link>
                   </div>
-                  <div className="flex flex-col rounded-xl border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
                     <div className="flex items-center gap-2">
                       <Shield className="h-5 w-5 text-slate-500" />
                       <h3 className="text-lg font-semibold text-slate-900">{t('landing.enterprise')}</h3>
@@ -529,7 +525,7 @@ export default function LandingPage() {
                   return (
                     <div
                       key={plan.id}
-                      className={`relative flex flex-col rounded-xl bg-white p-8 shadow-sm ${
+                      className={`relative flex flex-col rounded-lg bg-white p-8 shadow-sm ${
                         isPro ? 'border-2 border-violet-500 shadow-xl shadow-violet-500/10' : 'border border-slate-200/60'
                       }`}
                     >

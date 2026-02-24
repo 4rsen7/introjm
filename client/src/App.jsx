@@ -62,7 +62,7 @@ const MainLayout = ({
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10">
         <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center text-white font-bold">I</div>
+          <img src="/logo.svg" alt="IteroJM" className="w-8 h-8 rounded-lg object-contain shrink-0" />
           <span className="text-xl font-bold tracking-tight text-gray-900">IteroJM</span>
         </div>
         
