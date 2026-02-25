@@ -567,6 +567,7 @@ function App() {
         }
         if (data.status === 'success') {
            const savedMetric = mapMetricToClient(data.data);
+           queryClient.setQueryData(['metrics'], (prev) => Array.isArray(prev) ? [...prev, savedMetric] : [savedMetric]);
            queryClient.invalidateQueries(['metrics']);
            if (shouldNavigate) navigate('/metrics');
            return savedMetric;
@@ -645,7 +646,6 @@ function App() {
           });
           const data = await response.json();
           if (data.status === 'success') {
-              // Invalidate only profile — do not touch workspace/limits to avoid 401 side effects
               queryClient.invalidateQueries({ queryKey: ['profile'] });
           }
       } catch (error) {

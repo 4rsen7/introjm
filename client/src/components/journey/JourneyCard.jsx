@@ -39,9 +39,9 @@ function LinkedJourneyBlock({ card, globalJourneys = [] }) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); navigate(`/journey/${card.content}`); }}
-          className="shrink-0 flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium text-sm py-1.5 px-2 rounded hover:bg-amber-100 transition-colors"
+          className="shrink-0 flex items-center justify-center text-amber-600 hover:text-amber-700 font-medium text-sm py-1.5 px-2 rounded hover:bg-amber-100 transition-colors"
+          title={t('editor.open')}
         >
-          {t('editor.open')}
           <ChevronRight size={16} />
         </button>
       )}
@@ -484,7 +484,6 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       <div className="p-3 cursor-text" onPointerDown={(e) => e.stopPropagation()}>
          {card.type === 'channel' || card.type === 'metric' ? (
            card.type === 'channel' ? <ChannelCard card={card} onUpdate={onUpdate} /> : (
-             // Find the metric in globalMetrics using the ID stored in card.content
              <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
            )
          ) : card.type === 'linked_journey' ? (

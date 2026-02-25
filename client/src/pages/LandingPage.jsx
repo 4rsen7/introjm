@@ -18,6 +18,8 @@ import {
   ChevronDown,
 } from 'lucide-react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
+
 const scrollTo = (id) => {
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -35,14 +37,14 @@ export default function LandingPage() {
   useEffect(() => {
     setPlansLoading(true);
     setPlansError(null);
-    fetch(`/api/plans?locale=${currentLang}`)
+    fetch(`${API_URL}/plans?locale=${currentLang}`)
       .then((res) => {
         if (!res.ok) throw new Error(res.statusText || 'Failed to load plans');
         return res.json();
       })
       .then((body) => {
-        if (body.status === 'success' && Array.isArray(body.data)) setPlans(body.data);
-        else setPlans([]);
+        const list = body.status === 'success' && Array.isArray(body.data) ? body.data : [];
+        setPlans(list);
       })
       .catch((err) => {
         setPlansError(err.message);

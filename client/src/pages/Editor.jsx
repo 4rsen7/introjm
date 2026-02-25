@@ -526,11 +526,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     setTriggerSaveNow(true); // force save so linked_journey is persisted immediately
   }
 
-  const handleCreateMetric = (metricData) => {
-      const newMetric = onSaveGlobalMetric(metricData);
+  const handleCreateMetric = async (metricData) => {
+      const newMetric = await onSaveGlobalMetric(metricData);
       setIsMetricModalOpen(false);
-      // Add the newly created metric to the map
-      handleSelectMetric(newMetric);
+      if (newMetric) handleSelectMetric(newMetric);
   }
 
   const handleUpdateCard = (laneId, colId, updatedCard) => {

@@ -102,7 +102,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
             {/* General Settings */}
             <section className="space-y-4">
-                <h3 className="text-xs font-bold text-gray-400">General</h3>
+                <h3 className="text-xs font-bold text-gray-400">{t('metrics.general')}</h3>
                 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('common.metricName')}</label>
@@ -111,36 +111,36 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                         value={formData.name}
                         onChange={(e) => handleChange('name', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                        placeholder="e.g. NPS Score"
+                        placeholder={t('metrics.metricNamePlaceholder')}
                     />
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Source</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.dataSource')}</label>
                     <div className="relative">
                         <select 
                             value={formData.dataSource}
                             onChange={(e) => handleChange('dataSource', e.target.value)}
                             className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none"
                         >
-                            <option value="manual">Manual Entry</option>
-                            <option value="api" disabled>API Integration (Soon)</option>
+                            <option value="manual">{t('metrics.manualEntry')}</option>
+                            <option value="api" disabled>{t('metrics.apiIntegrationSoon')}</option>
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.type')}</label>
                     <div className="relative">
                         <select 
                             value={formData.type}
                             onChange={(e) => handleChange('type', e.target.value)}
                             className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none"
                         >
-                            <option value="Number">Number</option>
-                            <option value="Comparison">Comparison</option>
-                            <option value="Series">Series</option>
+                            <option value="Number">{t('metrics.typeNumber')}</option>
+                            <option value="Comparison">{t('metrics.typeComparison')}</option>
+                            <option value="Series">{t('metrics.typeSeries')}</option>
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>
@@ -150,11 +150,11 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
             {/* Contextual Settings */}
             {(formData.type === 'Number' || formData.type === 'Comparison') && (
                 <section className="space-y-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                    <h3 className="text-xs font-bold text-gray-400">Value Configuration</h3>
+                    <h3 className="text-xs font-bold text-gray-400">{t('metrics.valueConfiguration')}</h3>
                     
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Current Value</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.currentValue')}</label>
                             <input 
                                 type="text" 
                                 value={formData.value}
@@ -164,19 +164,19 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Suffix</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.suffix')}</label>
                             <input 
                                 type="text" 
                                 value={formData.suffix}
                                 onChange={(e) => handleChange('suffix', e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="%, $"
+                                placeholder={t('metrics.suffixPlaceholder')}
                             />
                         </div>
                         {formData.type === 'Comparison' && (
                             <div className="col-span-2 space-y-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Previous Value</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.previousValue')}</label>
                                     <input 
                                         type="text" 
                                         value={formData.previousValue}
@@ -193,7 +193,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                                         onChange={(e) => handleChange('reverseColors', e.target.checked)}
                                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
                                     />
-                                    <label htmlFor="reverseColors" className="text-sm text-gray-700 select-none">Reverse Colors (Lower is better)</label>
+                                    <label htmlFor="reverseColors" className="text-sm text-gray-700 select-none">{t('metrics.reverseColors')}</label>
                                 </div>
                             </div>
                         )}
@@ -203,28 +203,28 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
 
             {formData.type === 'Series' && (
                 <section className="space-y-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2">
-                    <h3 className="text-xs font-bold text-gray-400">Chart Configuration</h3>
+                    <h3 className="text-xs font-bold text-gray-400">{t('metrics.chartConfiguration')}</h3>
                     
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Chart Type</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('metrics.chartType')}</label>
                         <div className="flex bg-gray-100 p-1 rounded-lg">
                             <button 
                                 onClick={() => handleChange('chartType', 'bar')}
                                 className={`flex-1 py-1.5 text-sm font-medium rounded-md transition flex items-center justify-center gap-2 ${formData.chartType === 'bar' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
                             >
-                                <BarChart3 size={16} /> Bar Chart
+                                <BarChart3 size={16} /> {t('metrics.barChart')}
                             </button>
                             <button 
                                 onClick={() => handleChange('chartType', 'line')}
                                 className={`flex-1 py-1.5 text-sm font-medium rounded-md transition flex items-center justify-center gap-2 ${formData.chartType === 'line' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
                             >
-                                <TrendingUp size={16} /> Line Chart
+                                <TrendingUp size={16} /> {t('metrics.lineChart')}
                             </button>
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Data Series</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('metrics.dataSeries')}</label>
                         <div className="space-y-2">
                             {formData.seriesData.map((row, i) => (
                                 <div key={i} className="flex gap-2">
@@ -232,14 +232,14 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                                         className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:border-blue-500" 
                                         value={row.label} 
                                         onChange={(e) => handleSeriesChange(i, 'label', e.target.value)} 
-                                        placeholder="Label"
+                                        placeholder={t('metrics.labelPlaceholder')}
                                     />
                                     <input 
                                         type="number"
                                         className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:border-blue-500" 
                                         value={row.value} 
                                         onChange={(e) => handleSeriesChange(i, 'value', e.target.value)} 
-                                        placeholder="Value"
+                                        placeholder={t('metrics.valuePlaceholder')}
                                     />
                                     <button onClick={() => removeSeriesRow(i)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition">
                                         <Trash2 size={16} />
@@ -248,10 +248,10 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                             ))}
                             <div className="flex gap-4 mt-2">
                                 <button onClick={addSeriesRow} className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-                                    <Plus size={14} /> Add Row
+                                    <Plus size={14} /> {t('metrics.addRow')}
                                 </button>
                                 <button onClick={() => fileInputRef.current?.click()} className="text-sm text-gray-500 hover:text-gray-700 font-medium flex items-center gap-1">
-                                    <Upload size={14} /> Import CSV
+                                    <Upload size={14} /> {t('metrics.importCsv')}
                                 </button>
                                 <input 
                                     type="file" 
@@ -273,7 +273,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
             >
                 <Save size={18} />
-                Save Metric
+                {t('metrics.saveMetric')}
             </button>
         </div>
       </div>
@@ -281,7 +281,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
       {/* Right Panel - Preview (60%) */}
       <div className="w-3/5 bg-gray-100 flex flex-col relative overflow-hidden">
          <div className="absolute top-6 right-20 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-gray-500 border border-gray-200 shadow-sm z-10">
-            Live Preview
+            {t('metrics.livePreview')}
          </div>
 
          <div className="flex-1 flex items-center justify-center p-12">
@@ -291,7 +291,7 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                     <BarChart3 size={24} />
                 </div>
                 
-                <h3 className="text-gray-500 font-medium text-sm mb-2">{formData.name || 'Metric Name'}</h3>
+                <h3 className="text-gray-500 font-medium text-sm mb-2">{formData.name || t('common.metricName')}</h3>
                 
                 {formData.type === 'Number' ? (
                     <div className="text-6xl font-bold text-gray-900 tracking-tight my-4">
@@ -351,13 +351,13 @@ const MetricBuilder = ({ onBack, onSave, initialData }) => {
                 ) : (
                     <div className="h-32 flex flex-col items-center justify-center text-gray-400 italic bg-gray-50 w-full rounded-lg border-2 border-dashed border-gray-200 my-4">
                         <BarChart3 size={32} className="mb-2 opacity-20" />
-                        <span>Preview not available for {formData.type}</span>
+                        <span>{t('metrics.previewNotAvailable', { type: formData.type === 'Number' ? t('metrics.typeNumber') : formData.type === 'Comparison' ? t('metrics.typeComparison') : t('metrics.typeSeries') })}</span>
                     </div>
                 )}
 
                 <div className="mt-6 pt-6 border-t border-gray-100 w-full flex justify-between text-xs text-gray-400">
-                    <span>Source: {formData.dataSource === 'manual' ? 'Manual Entry' : 'API'}</span>
-                    <span>Updated: Just now</span>
+                    <span>{formData.dataSource === 'manual' ? t('metrics.sourceManual') : t('metrics.sourceApi')}</span>
+                    <span>{t('metrics.updatedJustNow')}</span>
                 </div>
             </div>
          </div>

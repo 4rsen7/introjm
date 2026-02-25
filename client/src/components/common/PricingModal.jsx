@@ -26,7 +26,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    setPlans(data.data);
+                    setPlans(data.data || []);
                 }
             })
             .catch(err => console.error("Failed to load plans:", err))

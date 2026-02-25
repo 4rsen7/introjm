@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileText } from 'lucide-react';
 import termsEn from '../content/terms.en';
 import termsUk from '../content/terms.uk';
@@ -37,19 +37,25 @@ function SectionBody({ body }) {
 
 const TermsPage = () => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const lang = i18n.language === 'uk' ? 'uk' : 'en';
   const content = termsContent[lang] || termsContent.en;
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <div className="max-w-3xl mx-auto px-6 sm:px-8 py-12">
-        <Link
-          to="/auth"
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
           className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8 transition-colors text-sm font-medium"
         >
           <ArrowLeft size={18} />
           {t('auth.termsBackToAuth')}
-        </Link>
+        </button>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="bg-gradient-to-br from-orange-500 to-orange-600 px-8 py-10 text-white">

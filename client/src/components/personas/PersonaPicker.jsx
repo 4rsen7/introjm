@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Search, Plus } from 'lucide-react';
 
 const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }) => {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
 
   if (!isOpen) return null;
@@ -16,7 +18,7 @@ const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-800">Select Persona</h2>
+          <h2 className="text-lg font-semibold text-gray-800">{t('personas.selectPersona')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
@@ -27,7 +29,7 @@ const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="Search personas..." 
+              placeholder={t('personas.searchPersonas')} 
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -37,7 +39,7 @@ const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }
 
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {filteredPersonas.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">No personas found</div>
+                <div className="text-center py-8 text-gray-400 text-sm">{t('personas.noPersonasFound')}</div>
             ) : (
                 filteredPersonas.map(persona => (
                 <div 
@@ -66,7 +68,7 @@ const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }
                 className="w-full flex items-center justify-center gap-2 py-2.5 text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition-colors"
             >
               <Plus size={18} />
-              Create new persona
+              {t('personas.createNewPersona')}
             </button>
           </div>
         </div>
