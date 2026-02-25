@@ -375,6 +375,7 @@
     "perYear": "/рік",
     "currentPlan": "Поточний план",
     "upgrade": "Оновити",
+    "downgrade": "Понизити план",
     "contactSales": "Оновити",
     "needHelp": "Потрібна допомога з вибором?",
     "contactSalesLink": "Зв'яжіться з нашою командою продажів"
@@ -417,6 +418,7 @@
     "proFeature3": "5 менеджерських місць",
     "proFeature4": "Пріоритетна підтримка по email",
     "upgradeToPro": "Перейти на Pro",
+    "upgradeToEnterprise": "Перейти на Enterprise",
     "mostPopular": "Найпопулярніший",
     "enterprise": "Enterprise",
     "enterpriseDesc": "Безлімітні мапи та персони, власні ролі, пріоритетна підтримка.",

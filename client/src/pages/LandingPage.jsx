@@ -67,10 +67,9 @@ export default function LandingPage() {
   };
 
   const getPlanCta = (plan) => {
-    const { isEnterprise } = getPlanStyle(plan);
-    if (isEnterprise) return { type: 'mailto', labelKey: 'landing.contactSales' };
-    const name = (plan.name || '').toLowerCase();
-    if (name.includes('pro')) return { type: 'link', labelKey: 'landing.upgradeToPro' };
+    const { isPro, isEnterprise } = getPlanStyle(plan);
+    if (isEnterprise) return { type: 'link', labelKey: 'landing.upgradeToEnterprise' };
+    if (isPro) return { type: 'link', labelKey: 'landing.upgradeToPro' };
     return { type: 'link', labelKey: 'landing.signUpFree' };
   };
 
@@ -511,9 +510,9 @@ export default function LandingPage() {
                         </li>
                       ))}
                     </ul>
-                    <a href="mailto:iterojm.app@gmail.com?subject=Enterprise%20plan%20inquiry" className="mt-8 block w-full rounded-lg bg-slate-900 py-3 text-center text-sm font-medium text-white transition hover:bg-slate-800">
-                      {t('landing.contactSales')}
-                    </a>
+                    <Link to="/auth" className="mt-8 block w-full rounded-lg bg-slate-900 py-3 text-center text-sm font-medium text-white transition hover:bg-slate-800">
+                      {t('landing.upgradeToEnterprise')}
+                    </Link>
                   </div>
                 </>
               ) : (
@@ -565,25 +564,18 @@ export default function LandingPage() {
                             ))
                           : null}
                       </ul>
-                      {cta.type === 'mailto' ? (
-                        <a
-                          href="mailto:iterojm.app@gmail.com?subject=Enterprise%20plan%20inquiry"
-                          className="mt-8 block w-full rounded-lg bg-slate-900 py-3 text-center text-sm font-medium text-white transition hover:bg-slate-800"
-                        >
-                          {t(cta.labelKey)}
-                        </a>
-                      ) : (
-                        <Link
-                          to="/auth"
-                          className={`mt-8 block w-full rounded-lg py-3 text-center text-sm font-medium transition ${
-                            isPro
-                              ? 'bg-violet-600 text-white hover:bg-violet-700'
+                      <Link
+                        to="/auth"
+                        className={`mt-8 block w-full rounded-lg py-3 text-center text-sm font-medium transition ${
+                          isPro
+                            ? 'bg-violet-600 text-white hover:bg-violet-700'
+                            : isEnterprise
+                              ? 'bg-slate-900 text-white hover:bg-slate-800'
                               : 'border border-slate-200/60 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          {t(cta.labelKey)}
-                        </Link>
-                      )}
+                        }`}
+                      >
+                        {t(cta.labelKey)}
+                      </Link>
                     </div>
                   );
                 })

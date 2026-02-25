@@ -1080,7 +1080,7 @@ app.post('/api/personas', async (req, res) => {
   }
 });
 
-// 3. Видалити персону
+// 3. Видалити персону — creator або власник воркспейсу може видалити
 app.delete('/api/personas/:id', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
@@ -1090,12 +1090,18 @@ app.delete('/api/personas/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { error } = await supabaseAdmin
-      .from('personas')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id); // Перевіряємо, що видаляємо свою персону
+    const { data: persona } = await supabaseAdmin.from('personas').select('id, user_id, workspace_id').eq('id', id).single();
+    if (!persona) return res.status(404).json({ status: 'error', message: 'Persona not found' });
 
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+    if (!workspaceIds.includes(persona.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+    const isCreator = persona.user_id === user.id;
+    const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', persona.workspace_id).maybeSingle();
+    const isOwner = ws && ws.owner_id === user.id;
+    if (!isCreator && !isOwner) return res.status(403).json({ status: 'error', message: 'Only the creator or workspace owner can delete this persona' });
+
+    const { error } = await supabaseAdmin.from('personas').delete().eq('id', id);
     if (error) throw error;
     res.json({ status: 'success', message: 'Persona deleted successfully' });
   } catch (err) {
@@ -1340,7 +1346,7 @@ app.put('/api/metrics/:id', async (req, res) => {
   }
 });
 
-// 4. Видалити метрику — тільки автор (creator)
+// 4. Видалити метрику — creator або власник воркспейсу може видалити
 app.delete('/api/metrics/:id', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
@@ -1354,7 +1360,11 @@ app.delete('/api/metrics/:id', async (req, res) => {
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
-    if (metric.user_id !== user.id) return res.status(403).json({ error: 'Only the creator can delete this metric' });
+
+    const isCreator = metric.user_id === user.id;
+    const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', metric.workspace_id).maybeSingle();
+    const isOwner = ws && ws.owner_id === user.id;
+    if (!isCreator && !isOwner) return res.status(403).json({ error: 'Only the creator or workspace owner can delete this metric' });
 
     const { error } = await supabaseAdmin
       .from('metrics')

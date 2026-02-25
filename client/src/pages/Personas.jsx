@@ -5,7 +5,7 @@ import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
-const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
+const Personas = ({ personas = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -198,7 +198,7 @@ const Personas = ({ personas = [], currentUserId, onCreate, onEdit, onDelete, on
                             <Archive size={18} />
                         </button>
                     </Tooltip>
-                    {currentUserId != null && persona.user_id === currentUserId && (
+                    {currentUserId != null && (persona.user_id === currentUserId || isWorkspaceOwner) && (
                         <Tooltip content={t('common.delete')}>
                             <button 
                                 onClick={(e) => { e.stopPropagation(); openConfirm('delete', persona); }}

@@ -8,7 +8,7 @@ import JourneyCard from './JourneyCard'
 
 const DROPDOWN_APPROX_HEIGHT = 320
 const SPACE_MARGIN = 16
-const PICKER_PORTAL_Z = 100
+const PICKER_PORTAL_Z = 150
 
 function getScrollParent(node) {
   if (!node) return null

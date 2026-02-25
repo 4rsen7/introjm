@@ -222,7 +222,7 @@ const ArchivePage = ({
                                                 <RotateCcw size={18} />
                                             </button>
                                         </Tooltip>
-                                        {currentUserId != null && persona.user_id === currentUserId && (
+                                        {currentUserId != null && (persona.user_id === currentUserId || isWorkspaceOwner) && (
                                             <Tooltip content={t('common.delete')}>
                                                 <button onClick={() => handleDeletePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={18} />

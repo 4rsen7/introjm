@@ -96,7 +96,7 @@ export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose}></div>
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white z-10">

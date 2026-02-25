@@ -726,13 +726,14 @@ function App() {
             <Route path="/personas" element={<Personas 
                 personas={personasWithUsage.filter(p => p.status !== 'archived')} 
                 currentUserId={userProfile?.id}
+                isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onCreate={() => { setEditingPersona(null); setIsPersonaModalOpen(true); }} 
                 onEdit={(p) => { setEditingPersona(p); setIsPersonaModalOpen(true); }}
                 onDelete={handleDeletePersona}
                 onDuplicate={handleDuplicatePersona}
                 onArchive={handleArchivePersona}
             />} />
-            <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
+            <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />

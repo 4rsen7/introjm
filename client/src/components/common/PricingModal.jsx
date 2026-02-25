@@ -39,11 +39,19 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
 
   if (!isOpen) return null;
 
-  // Helper to style plans based on tier
-  const getPlanStyle = (tier) => {
-      if (tier === 2) return { highlight: true, btn: 'bg-purple-600 text-white hover:bg-purple-700 shadow-md' };
-      if (tier === 3) return { highlight: false, btn: 'bg-gray-900 text-white hover:bg-gray-800' };
-      return { highlight: false, btn: 'bg-gray-100 text-gray-700 hover:bg-gray-200' };
+  // Current plan tier (for disabling "Upgrade" on lower tiers)
+  const currentPlanTier = (currentPlanName && plans.length)
+    ? (plans.find((p) => p.name === currentPlanName)?.tier ?? 0)
+    : 0;
+
+  // Helper to style plans based on tier (and whether this is the user's current plan)
+  const getPlanStyle = (tier, isCurrentPlan) => {
+      if (isCurrentPlan) {
+        return { highlight: false, isCurrent: true, btn: 'bg-gray-100 text-gray-700 cursor-default' };
+      }
+      if (tier === 2) return { highlight: true, isCurrent: false, btn: 'bg-purple-600 text-white hover:bg-purple-700 shadow-md' };
+      if (tier === 3) return { highlight: false, isCurrent: false, btn: 'bg-gray-900 text-white hover:bg-gray-800' };
+      return { highlight: false, isCurrent: false, btn: 'bg-gray-100 text-gray-700 hover:bg-gray-200' };
   };
 
   return (
@@ -80,19 +88,32 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 {plans.map((plan) => {
-                    const style = getPlanStyle(plan.tier);
+                    const isCurrentPlan = Boolean(currentPlanName && plan.name === currentPlanName);
+                    const isLowerTier = currentPlanTier > 0 && plan.tier < currentPlanTier;
+                    const style = getPlanStyle(plan.tier, isCurrentPlan);
                     const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly;
                     const period = billingCycle === 'monthly' ? t('pricing.perMonth') : t('pricing.perYear');
 
+                    const cardClass = style.isCurrent
+                      ? 'border-emerald-400 shadow-xl ring-2 ring-emerald-100 bg-emerald-50/50'
+                      : style.highlight
+                        ? 'border-purple-200 shadow-xl ring-1 ring-purple-100 scale-105 z-10'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all';
+
                     return (
-                    <div key={plan.id} className={`relative rounded-2xl border p-8 flex flex-col ${style.highlight ? 'border-purple-200 shadow-xl ring-1 ring-purple-100 scale-105 z-10' : 'border-gray-200 hover:border-gray-300 hover:shadow-lg transition-all'}`}>
-                        {style.highlight && (
+                    <div key={plan.id} className={`relative rounded-2xl border p-8 flex flex-col ${cardClass}`}>
+                        {style.isCurrent && (
+                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-4 py-1 rounded-full text-xs font-bold shadow-sm">
+                            {t('pricing.currentPlan')}
+                        </div>
+                        )}
+                        {style.highlight && !style.isCurrent && (
                         <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-4 py-1 rounded-full text-xs font-bold shadow-sm">
                             {t('pricing.mostPopular')}
                         </div>
                         )}
                         <div className="mb-6">
-                        <h3 className={`text-lg font-bold mb-2 ${style.highlight ? 'text-purple-600' : 'text-gray-900'}`}>{plan.name}</h3>
+                        <h3 className={`text-lg font-bold mb-2 ${style.isCurrent ? 'text-emerald-700' : style.highlight ? 'text-purple-600' : 'text-gray-900'}`}>{plan.name}</h3>
                         <div className="flex items-baseline gap-1">
                             <span className="text-4xl font-bold text-gray-900">{getCurrencySymbol(plan.currency || 'USD')}{price}</span>
                             <span className="text-gray-500 font-medium">{period}</span>
@@ -103,7 +124,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                         <ul className="space-y-3 mb-8 flex-1">
                         {plan.features && plan.features.map((feature, i) => (
                             <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
-                            <Check size={18} className={`shrink-0 ${style.highlight ? 'text-purple-600' : 'text-green-600'}`} />
+                            <Check size={18} className={`shrink-0 ${style.isCurrent ? 'text-emerald-600' : style.highlight ? 'text-purple-600' : 'text-green-600'}`} />
                             <span>{feature}</span>
                             </li>
                         ))}
@@ -111,8 +132,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
 
                         <button 
                         onClick={() => {
-                            const isCurrent = plan.tier === 1 || (currentPlanName && plan.name === currentPlanName);
-                            if (isCurrent) return;
+                            if (isCurrentPlan || isLowerTier) return;
                             const url = billingCycle === 'monthly' ? plan.checkout_url_monthly : plan.checkout_url_yearly;
                             if (url) {
                                 let target = url;
@@ -123,10 +143,10 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                                 window.open(target, '_blank', 'noopener,noreferrer');
                             }
                         }}
-                        disabled={plan.tier === 1 || (currentPlanName && plan.name === currentPlanName)}
-                        className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn}`}
+                        disabled={isCurrentPlan || isLowerTier}
+                        className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn} ${(isCurrentPlan || isLowerTier) ? 'opacity-90' : ''}`}
                         >
-                        {plan.tier === 1 || (currentPlanName && plan.name === currentPlanName) ? t('pricing.currentPlan') : t('pricing.upgrade')}
+                        {isCurrentPlan ? t('pricing.currentPlan') : isLowerTier ? t('pricing.downgrade') : t('pricing.upgrade')}
                         </button>
                     </div>
                     );
@@ -135,7 +155,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
           )}
           
           <div className="mt-12 text-center text-sm text-gray-400">
-            {t('pricing.needHelp')} <a href="#" className="text-blue-600 hover:underline">{t('pricing.contactSalesLink')}</a>
+            {t('pricing.needHelp')} <a href="mailto:iterojm.app@gmail.com?subject=Pricing%20%2F%20plan%20inquiry" className="text-blue-600 hover:underline">{t('pricing.contactSalesLink')}</a>
           </div>
         </div>
       </div>

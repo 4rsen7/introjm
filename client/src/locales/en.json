@@ -375,6 +375,7 @@
     "perYear": "/yr",
     "currentPlan": "Current Plan",
     "upgrade": "Upgrade",
+    "downgrade": "Downgrade",
     "contactSales": "Contact Sales",
     "needHelp": "Need help choosing?",
     "contactSalesLink": "Contact our sales team"
@@ -417,6 +418,7 @@
     "proFeature3": "5 manager seats",
     "proFeature4": "Priority email support",
     "upgradeToPro": "Upgrade to Pro",
+    "upgradeToEnterprise": "Upgrade to Enterprise",
     "mostPopular": "Most Popular",
     "enterprise": "Enterprise",
     "enterpriseDesc": "Unlimited maps & personas, custom roles, priority support.",
