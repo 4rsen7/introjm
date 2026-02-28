@@ -3,6 +3,10 @@ const cors = require('cors');
 const crypto = require('crypto');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const { encrypt, decrypt } = require('./integrations/encrypt');
+const googleSheets = require('./integrations/googleSheets');
+const microsoftExcel = require('./integrations/microsoftExcel');
+const { mapRowsToMetric } = require('./integrations/mapRowsToMetric');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
 const rateLimit = require('express-rate-limit');
@@ -1221,6 +1225,59 @@ app.put('/api/personas/:id', async (req, res) => {
 
 // --- РОУТИ ДЛЯ МЕТРИК (METRICS) ---
 
+const SERIES_CHART_TYPES = ['bar', 'line', 'area', 'pie', 'donut'];
+
+const INTEGRATION_DATA_SOURCES = ['google_sheets', 'microsoft_excel'];
+
+function validateMetricPayload(body, isPut = false) {
+  const type = body.type;
+  if (!type) return isPut ? { ok: true } : { ok: false, message: 'Metric type is required' };
+
+  const isIntegration = INTEGRATION_DATA_SOURCES.includes(body.data_source);
+
+  if (type === 'Number' || type === 'Comparison') {
+    if (!isIntegration) {
+      const valueNum = parseFloat(body.value);
+      if (body.value === '' || body.value === undefined || body.value === null || Number.isNaN(valueNum)) {
+        return { ok: false, message: 'Value must be a valid number' };
+      }
+      if (type === 'Comparison') {
+        const prevNum = parseFloat(body.previous_value);
+        if (body.previous_value === '' || body.previous_value === undefined || body.previous_value === null || Number.isNaN(prevNum)) {
+          return { ok: false, message: 'Previous value must be a valid number for Comparison type' };
+        }
+      }
+    }
+    return { ok: true };
+  }
+
+  if (type === 'Series') {
+    const seriesData = body.series_data;
+    if (!Array.isArray(seriesData)) {
+      if (!isIntegration) return { ok: false, message: 'Series data is required and must be a non-empty array' };
+      return { ok: true };
+    }
+    if (seriesData.length === 0 && !isIntegration) return { ok: false, message: 'Series data is required and must be a non-empty array' };
+    for (let i = 0; i < seriesData.length; i++) {
+      const row = seriesData[i];
+      if (!row || typeof row !== 'object') {
+        return { ok: false, message: `Series data item at index ${i} must be an object with value` };
+      }
+      const num = Number(row.value);
+      if (Number.isNaN(num)) {
+        return { ok: false, message: `Series data item at index ${i}: value must be a number` };
+      }
+    }
+    const chartType = body.chart_type;
+    if (chartType != null && !SERIES_CHART_TYPES.includes(chartType)) {
+      return { ok: false, message: `chart_type must be one of: ${SERIES_CHART_TYPES.join(', ')}` };
+    }
+    return { ok: true };
+  }
+
+  return { ok: true };
+}
+
 // 1. Отримати всі метрики — по доступних воркспейсах (owner + member)
 app.get('/api/metrics', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -1255,7 +1312,12 @@ app.post('/api/metrics', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
-  const { name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors, workspace_id: bodyWorkspaceId } = req.body;
+  const { name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors, series_label_format, integration_config, workspace_id: bodyWorkspaceId } = req.body;
+
+  const validation = validateMetricPayload(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ status: 'error', code: 'VALIDATION_ERROR', error: validation.message });
+  }
 
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
@@ -1289,14 +1351,18 @@ app.post('/api/metrics', async (req, res) => {
       return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'metrics' });
     }
 
+    const insertPayload = {
+      name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors,
+      user_id: user.id,
+      workspace_id: workspace.id,
+      updated_at: new Date()
+    };
+    if (series_label_format !== undefined) insertPayload.series_label_format = series_label_format;
+    if (integration_config !== undefined) insertPayload.integration_config = integration_config;
+
     const { data, error } = await supabaseAdmin
       .from('metrics')
-      .insert([{
-        name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors,
-        user_id: user.id,
-        workspace_id: workspace.id,
-        updated_at: new Date()
-      }])
+      .insert([insertPayload])
       .select()
       .single();
 
@@ -1329,6 +1395,11 @@ app.put('/api/metrics/:id', async (req, res) => {
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
+
+    const validation = validateMetricPayload(updates, true);
+    if (!validation.ok) {
+      return res.status(400).json({ status: 'error', code: 'VALIDATION_ERROR', error: validation.message });
+    }
 
     const { data, error } = await supabaseAdmin
       .from('metrics')
@@ -1377,6 +1448,156 @@ app.delete('/api/metrics/:id', async (req, res) => {
     logSystemError(err, 'DELETE /api/metrics/:id');
     console.error('Error deleting metric:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- ІНТЕГРАЦІЇ (GOOGLE SHEETS / MICROSOFT EXCEL) ---
+const INTEGRATION_PROVIDERS = ['google_sheets', 'microsoft_excel'];
+const STATE_SECRET = process.env.ENCRYPTION_KEY || process.env.SUPABASE_JWT_SECRET || 'integration-state-secret';
+
+function createIntegrationState(userId) {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const payload = nonce + '.' + userId;
+  const sig = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  return payload + '.' + sig;
+}
+
+function verifyIntegrationState(state) {
+  if (!state || typeof state !== 'string') return null;
+  const parts = state.split('.');
+  if (parts.length !== 3) return null;
+  const [nonce, userId, sig] = parts;
+  const payload = nonce + '.' + userId;
+  const expected = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  if (sig !== expected) return null;
+  return userId;
+}
+
+async function getOrRefreshIntegrationTokens(userId, provider) {
+  const { data: row } = await supabaseAdmin.from('user_integrations').select('*').eq('user_id', userId).eq('provider', provider).maybeSingle();
+  if (!row || !row.access_token) return null;
+  let accessToken = decrypt(row.access_token);
+  const refreshToken = row.refresh_token ? decrypt(row.refresh_token) : null;
+  const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
+  if (expiresAt && expiresAt.getTime() < Date.now() + 60000 && refreshToken) {
+    try {
+      const refreshed = provider === 'google_sheets' ? await googleSheets.refreshAccessToken(refreshToken) : await microsoftExcel.refreshAccessToken(refreshToken);
+      accessToken = refreshed.access_token;
+      const update = { access_token: encrypt(accessToken), updated_at: new Date() };
+      if (refreshed.expires_at) update.expires_at = refreshed.expires_at;
+      await supabaseAdmin.from('user_integrations').update(update).eq('user_id', userId).eq('provider', provider);
+    } catch (e) {
+      console.error('Integration token refresh failed:', e);
+      return null;
+    }
+  }
+  return accessToken;
+}
+
+const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+app.get('/api/integrations/:provider/authorize', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', message: 'Invalid provider' });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const state = createIntegrationState(user.id);
+    const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
+    const url = provider === 'google_sheets'
+      ? googleSheets.getAuthorizeUrl(redirectUri, state)
+      : microsoftExcel.getAuthorizeUrl(redirectUri, state);
+    return res.json({ status: 'success', redirectUrl: url });
+  } catch (err) {
+    logSystemError(err, 'GET /api/integrations/:provider/authorize');
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/integrations/:provider/callback', async (req, res) => {
+  const provider = req.params.provider;
+  const { code, state } = req.query;
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(clientOrigin + '/metrics?integration=error&message=Invalid+provider');
+  const userId = verifyIntegrationState(state);
+  if (!userId || !code) return res.redirect(clientOrigin + '/metrics?integration=error&message=Invalid+state');
+  const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
+  try {
+    const tokens = provider === 'google_sheets'
+      ? await googleSheets.exchangeCodeForTokens(code, redirectUri)
+      : await microsoftExcel.exchangeCodeForTokens(code, redirectUri);
+    const row = {
+      user_id: userId,
+      provider,
+      access_token: encrypt(tokens.access_token),
+      refresh_token: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
+      expires_at: tokens.expires_at,
+      updated_at: new Date()
+    };
+    const { error } = await supabaseAdmin.from('user_integrations').upsert(row, { onConflict: 'user_id,provider' });
+    if (error) throw error;
+    return res.redirect(clientOrigin + '/metrics?integration=connected');
+  } catch (err) {
+    logSystemError(err, 'GET /api/integrations/:provider/callback');
+    return res.redirect(clientOrigin + '/metrics?integration=error&message=' + encodeURIComponent(err.message || 'Connection failed'));
+  }
+});
+
+app.get('/api/integrations/status', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const { data: rows } = await supabaseAdmin.from('user_integrations').select('provider').eq('user_id', user.id).in('provider', INTEGRATION_PROVIDERS);
+    const connected = (rows || []).map(r => r.provider);
+    return res.json({ status: 'success', data: { google_sheets: connected.includes('google_sheets'), microsoft_excel: connected.includes('microsoft_excel') } });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+const syncMetricRateLimit = rateLimit({ windowMs: 2 * 60 * 1000, max: 30, message: { status: 'error', message: 'Too many sync requests' } });
+
+app.post('/api/metrics/:id/sync', syncMetricRateLimit, async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  const { id } = req.params;
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const { data: metric } = await supabaseAdmin.from('metrics').select('*').eq('id', id).single();
+    if (!metric) return res.status(404).json({ error: 'Metric not found' });
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+    if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
+    const cfg = metric.integration_config;
+    const provider = metric.data_source;
+    if (!cfg || !INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', code: 'NOT_INTEGRATION', message: 'Metric is not linked to an integration' });
+    const accessToken = await getOrRefreshIntegrationTokens(user.id, provider);
+    if (!accessToken) return res.status(401).json({ status: 'error', code: 'INTEGRATION_DISCONNECTED', message: 'Please reconnect your account' });
+    let rows;
+    if (provider === 'google_sheets') {
+      const spreadsheetId = cfg.spreadsheetId;
+      const range = cfg.range || 'Sheet1!A1:Z1000';
+      if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
+      rows = await googleSheets.fetchRange(accessToken, spreadsheetId, range);
+    } else {
+      const fileId = cfg.fileId;
+      const range = cfg.range || 'A1:Z1000';
+      const sheetName = cfg.sheetName || 'Sheet1';
+      if (!fileId) return res.status(400).json({ status: 'error', message: 'Missing fileId' });
+      rows = await microsoftExcel.fetchRange(accessToken, fileId, range, sheetName);
+    }
+    const updates = mapRowsToMetric(metric.type, rows);
+    const updatePayload = { updated_at: new Date(), ...updates };
+    const { data: updated, error } = await supabaseAdmin.from('metrics').update(updatePayload).eq('id', id).select().single();
+    if (error) throw error;
+    return res.json({ status: 'success', data: updated });
+  } catch (err) {
+    logSystemError(err, 'POST /api/metrics/:id/sync');
+    const code = err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR';
+    return res.status(400).json({ status: 'error', code, error: err.message });
   }
 });
 

@@ -21,6 +21,8 @@ export const mapMetricToClient = (m) => ({
   dataSource: m.data_source,
   chartType: m.chart_type,
   seriesData: m.series_data,
+  seriesLabelFormat: m.series_label_format ?? 'text',
+  integrationConfig: m.integration_config,
   updatedAt: formatDate(m.updated_at)
 });
 

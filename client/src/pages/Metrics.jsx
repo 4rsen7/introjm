@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
@@ -7,9 +8,23 @@ import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete }) => {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [integrationBanner, setIntegrationBanner] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedType, setSelectedType] = useState('');
+
+  useEffect(() => {
+    const integration = searchParams.get('integration');
+    if (integration === 'connected') {
+      setIntegrationBanner({ type: 'success', text: t('metrics.integrationConnected') });
+      setSearchParams((p) => { p.delete('integration'); return p; }, { replace: true });
+    } else if (integration === 'error') {
+      const message = searchParams.get('message') || t('metrics.integrationError');
+      setIntegrationBanner({ type: 'error', text: message });
+      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
+    }
+  }, [searchParams, setSearchParams, t]);
 
   const filteredMetrics = metrics.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -39,6 +54,12 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+      {integrationBanner && (
+        <div className={`mb-4 px-4 py-3 rounded-lg flex items-center justify-between ${integrationBanner.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+          <span>{integrationBanner.text}</span>
+          <button onClick={() => setIntegrationBanner(null)} className="p-1 hover:opacity-70"><X size={18} /></button>
+        </div>
+      )}
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('metrics.title')}</h1>
         <button 
