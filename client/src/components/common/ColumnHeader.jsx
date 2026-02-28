@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { MoreHorizontal, ArrowLeft, ArrowRight, Trash2, Plus } from 'lucide-react'
 
-export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, onMoveRight, onDelete, isMenuOpen, onToggleMenu }) {
+export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, onMoveRight, onDelete, isMenuOpen, onToggleMenu, readOnly }) {
   const { t } = useTranslation()
   const handleAction = (action) => {
     onToggleMenu(false)
@@ -10,6 +10,10 @@ export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, on
 
   return (
     <div className="w-72 shrink-0 px-2 border-l border-gray-100 relative group z-0">
+      {readOnly ? (
+        <div className="h-6 flex items-center justify-center rounded" aria-hidden />
+      ) : (
+        <>
       {/* Hoverable Block with Menu Icon */}
       <div 
         className="h-6 flex items-center justify-center rounded hover:bg-gray-100 cursor-pointer transition-colors"
@@ -51,6 +55,8 @@ export default function ColumnHeader({ index, isLast, onAddRight, onMoveLeft, on
               <Trash2 size={14} /> {t('editor.deleteColumn')}
             </button>
           </div>
+        </>
+      )}
         </>
       )}
     </div>

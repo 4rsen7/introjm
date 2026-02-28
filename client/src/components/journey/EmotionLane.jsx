@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GripVertical, MoreHorizontal, Trash2, Copy, Palette, Pin, PinOff } from 'lucide-react'
 
-export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, onTogglePin }) {
+export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, onTogglePin, readOnly }) {
   const { t } = useTranslation()
   const svgRef = useRef(null)
   const [draggingId, setDraggingId] = useState(null)
@@ -38,7 +38,7 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
   }
 
   const handleMouseMove = (e) => {
-    if (!draggingId) return
+    if (readOnly || !draggingId) return
     const rect = svgRef.current.getBoundingClientRect()
     const y = e.clientY - rect.top
     let newVal = (0.5 - (y / LANE_HEIGHT)) / 0.2
@@ -57,17 +57,22 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
     >
       <div className={`w-64 shrink-0 sticky left-0 z-[100] ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
-          {!lane.isPinned && (
-            <div {...dragHandleProps} className="cursor-grab hover:bg-gray-200/50 p-1 rounded text-gray-300 hover:text-gray-600 shrink-0 hide-on-export"><GripVertical size={16} /></div>
+          {!readOnly && !lane.isPinned && (
+            <div {...(dragHandleProps || {})} className="cursor-grab hover:bg-gray-200/50 p-1 rounded text-gray-300 hover:text-gray-600 shrink-0 hide-on-export"><GripVertical size={16} /></div>
           )}
-          {lane.isPinned && <Pin size={14} className="text-orange-500 shrink-0 transform rotate-45" />}
+          {!readOnly && lane.isPinned && <Pin size={14} className="text-orange-500 shrink-0 transform rotate-45" />}
+          {readOnly ? (
+            <span className="font-bold text-gray-700 text-sm w-full truncate block">{lane.title || ''}</span>
+          ) : (
           <input 
              className="font-bold text-gray-700 text-sm bg-transparent outline-none border-b border-transparent focus:border-orange-500 w-full truncate"
              value={lane.title}
              onChange={(e) => onUpdate({ title: e.target.value })}
           />
+          )}
         </div>
 
+        {!readOnly && (
         <div className="relative shrink-0">
           <button 
             onClick={() => onToggleMenu(!isMenuOpen)}
@@ -107,6 +112,7 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
             </>
           )}
         </div>
+        )}
       </div>
 
       <div className="flex relative items-center">
@@ -115,7 +121,7 @@ export default function EmotionLane({ lane, gridColumns, laneData, onUpdatePoint
            {[0, 1, 2, 3, 4].map(i => ( <line key={i} x1="0" y1={i * 32 + 16} x2="100%" y2={i * 32 + 16} stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 4" /> ))}
            <path d={d} fill="none" stroke="#f97316" strokeWidth="3" />
            {points.map(p => (
-             <g key={p.id} transform={`translate(${p.x}, ${p.y})`} className="pointer-events-auto cursor-grab" onMouseDown={() => setDraggingId(p.id)}>
+             <g key={p.id} transform={`translate(${p.x}, ${p.y})`} className={readOnly ? 'pointer-events-none' : 'pointer-events-auto cursor-grab'} onMouseDown={readOnly ? undefined : () => setDraggingId(p.id)}>
                <circle r="16" fill="white" stroke="#f97316" strokeWidth="2" className="shadow-sm hover:scale-110 transition-transform" />
                <text textAnchor="middle" dy="5" fontSize="14" style={{ userSelect: 'none' }}>{getIcon(p.val)}</text>
              </g>

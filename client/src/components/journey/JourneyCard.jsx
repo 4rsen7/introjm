@@ -20,12 +20,21 @@ const FONT_SIZE_OPTIONS = [
   { value: '7', label: '18' }
 ];
 
-function LinkedJourneyBlock({ card, globalJourneys = [] }) {
+function LinkedJourneyBlock({ card, globalJourneys = [], onOpenLinkedJourneyPreview }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const journey = card.content ? globalJourneys.find(j => j.id === card.content) : null
   const title = journey?.title || (card.content ? t('editor.untitled') : t('editor.selectJourney'))
   const canOpen = Boolean(card.content)
+
+  const handleOpen = (e) => {
+    e.stopPropagation()
+    if (onOpenLinkedJourneyPreview) {
+      onOpenLinkedJourneyPreview(card.content)
+    } else {
+      navigate(`/journey/${card.content}`)
+    }
+  }
 
   return (
     <div className="flex items-center gap-3 p-2 rounded-lg bg-amber-50/50 border border-amber-100">
@@ -38,7 +47,7 @@ function LinkedJourneyBlock({ card, globalJourneys = [] }) {
       {canOpen && (
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); navigate(`/journey/${card.content}`); }}
+          onClick={handleOpen}
           className="shrink-0 flex items-center justify-center text-amber-600 hover:text-amber-700 font-medium text-sm py-1.5 px-2 rounded hover:bg-amber-100 transition-colors"
           title={t('editor.open')}
         >
@@ -49,7 +58,7 @@ function LinkedJourneyBlock({ card, globalJourneys = [] }) {
   )
 }
 
-export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric }) {
+export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
   const { t } = useTranslation()
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
@@ -79,12 +88,12 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: readOnly ? undefined : CSS.Transform.toString(transform),
     transition,
-    // ФІКС ДУБЛЮВАННЯ: Якщо тягнемо - робимо картку в списку повністю прозорою
-    opacity: isDragging ? 0 : 1, 
-    zIndex: isDragging ? 999 : (card.type === 'stage' ? 10 : 'auto'),
+    opacity: isDragging && !readOnly ? 0 : 1,
+    zIndex: isDragging && !readOnly ? 999 : (card.type === 'stage' ? 10 : 'auto'),
   }
+  const dragProps = readOnly ? {} : { ...attributes, ...listeners }
 
   useEffect(() => { setLocalContent(card.content || '') }, [card.content])
 
@@ -197,11 +206,10 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
         ref={setNodeRef}
         style={{ ...style, width, maxWidth: '200vw' }}
         className={`mb-2 relative group filter drop-shadow-sm transition-all duration-200`}
-        {...attributes} 
-        {...listeners}
-        onClick={handleCardClick}
+        {...dragProps}
+        onClick={readOnly ? undefined : handleCardClick}
       >
-        {isActive && (
+        {!readOnly && isActive && (
           <div 
             onMouseDown={(e) => e.preventDefault()}
             className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
@@ -224,6 +232,10 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
           className={`h-12 flex items-center px-6 ${bgColor} transition-colors relative`}
           style={{ clipPath: 'polygon(0% 0%, calc(100% - 20px) 0%, 100% 50%, calc(100% - 20px) 100%, 0% 100%)', width: '100%' }}
         >
+          {readOnly ? (
+            <span className="font-bold text-gray-800 text-sm truncate block w-full">{localContent || ''}</span>
+          ) : (
+            <>
           <input
             className="w-full bg-transparent outline-none font-bold text-gray-800 text-sm placeholder-gray-500/50"
             value={localContent}
@@ -243,9 +255,11 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
           >
              <div className="w-1 h-4 bg-black/20 rounded-full"></div>
           </div>
+            </>
+          )}
         </div>
 
-        {showMenu && (
+        {!readOnly && showMenu && (
             <div 
               ref={menuRef}
               className="absolute top-full right-0 mt-2 p-3 bg-white rounded-lg shadow-xl border border-gray-100 z-50 w-56 flex flex-col gap-3 cursor-auto"
@@ -283,11 +297,11 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   if (card.type === 'image' && !card.content) {
     return (
        <div 
-         ref={setNodeRef} style={style} {...attributes} {...listeners}
-         className={`${commonClasses} cursor-grab active:cursor-grabbing ${isActive ? 'ring-2 ring-blue-500/20' : ''}`}
-         onClick={handleCardClick}
+         ref={setNodeRef} style={style} {...dragProps}
+         className={`${commonClasses} ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'} ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''}`}
+         onClick={readOnly ? undefined : handleCardClick}
        >
-        {isActive && (
+        {!readOnly && isActive && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
              <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteImage')}>
                 <Trash2 size={14} />
@@ -295,12 +309,16 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
           </div>
         )}
         <div className="flex items-center gap-2 mb-2 text-gray-400 text-xs font-bold select-none"><ImageIcon size={12} /> {t('editor.cardImage')}</div>
+        {readOnly ? (
+          <div className="h-24 bg-gray-50 border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 text-xs">{t('editor.upload')}</div>
+        ) : (
         <div 
             onClick={(e) => { e.stopPropagation(); onUploadImage && onUploadImage(card.id); }}
             className="h-24 bg-gray-50 border-2 border-dashed border-gray-200 rounded flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:border-gray-300 transition cursor-pointer"
         >
            <ImageIcon size={20} className="mb-1" /> <span className="text-xs">{t('editor.upload')}</span>
         </div>
+        )}
       </div>
     )
   }
@@ -313,10 +331,10 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       <div
         ref={setNodeRef}
         style={style}
-        className={`flex rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${isActive ? 'ring-2 ring-blue-500/20' : ''} ${config.bg}`}
-        onClick={handleCardClick}
+        className={`flex rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''} ${config.bg}`}
+        onClick={readOnly ? undefined : handleCardClick}
       >
-        {isActive && (
+        {!readOnly && isActive && (
           <div
             onMouseDown={(e) => e.preventDefault()}
             className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
@@ -370,13 +388,20 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
             </button>
           </div>
         )}
+        {readOnly ? (
+          <div className={`w-2 shrink-0 rounded-l-md ${config.bar}`} title={config.label} />
+        ) : (
         <div
           {...attributes}
           {...listeners}
           className={`w-2 shrink-0 rounded-l-md ${config.bar} select-none cursor-grab active:cursor-grabbing`}
           title={config.label}
         />
-        <div className="flex-1 min-w-0 py-2 px-3 cursor-text" onPointerDown={(e) => e.stopPropagation()}>
+        )}
+        <div className={`flex-1 min-w-0 py-2 px-3 ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => readOnly && e.stopPropagation()}>
+          {readOnly ? (
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: card.content || '' }} />
+          ) : (
           <RichTextEditor
             ref={editorRef}
             initialContent={card.content}
@@ -387,6 +412,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
             onFontSizeChange={setToolbarFontSize}
             compact={true}
           />
+          )}
         </div>
       </div>
     )
@@ -396,11 +422,11 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
     <div 
       ref={setNodeRef} 
       style={style} 
-      className={`bg-white rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${isActive ? 'ring-2 ring-blue-500/20' : ''}`}
-      onClick={handleCardClick}
+      className={`bg-white rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''}`}
+      onClick={readOnly ? undefined : handleCardClick}
     >
       {/* Toolbar for non-text cards (Channels, Metrics) */}
-      {isActive && (
+      {!readOnly && isActive && (
         <div 
           onMouseDown={(e) => e.preventDefault()}
           className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
@@ -471,8 +497,8 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
 
       {/* Header - DRAG HANDLE */}
       <div 
-        {...attributes} {...listeners}
-        className={`${config.bg} px-3 py-2 flex items-center justify-between border-b ${config.border} select-none cursor-grab active:cursor-grabbing`}
+        {...dragProps}
+        className={`${config.bg} px-3 py-2 flex items-center justify-between border-b ${config.border} select-none ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
       >
         <div className="flex items-center gap-2">
            <Icon size={14} className={config.color} /> 
@@ -481,21 +507,22 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       </div>
 
       {/* Body - NO DRAG */}
-      <div className="p-3 cursor-text" onPointerDown={(e) => e.stopPropagation()}>
+      <div className={`p-3 ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => e.stopPropagation()}>
          {card.type === 'channel' || card.type === 'metric' ? (
-           card.type === 'channel' ? <ChannelCard card={card} onUpdate={onUpdate} /> : (
+           card.type === 'channel' ? <ChannelCard card={card} onUpdate={readOnly ? () => {} : onUpdate} /> : (
              <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
            )
          ) : card.type === 'linked_journey' ? (
-           <LinkedJourneyBlock card={card} globalJourneys={globalJourneys} />
+           <LinkedJourneyBlock card={card} globalJourneys={globalJourneys} onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview} />
          ) : card.type === 'image' ? (
              <div className="relative group/image">
                  <img 
                     src={card.content} 
                     alt="Uploaded content" 
-                    className="w-full h-auto rounded-md object-cover border border-gray-100 cursor-pointer hover:opacity-95 transition-opacity" 
-                    onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
+                    className={`w-full h-auto rounded-md object-cover border border-gray-100 ${readOnly ? '' : 'cursor-pointer hover:opacity-95'} transition-opacity`}
+                    onClick={readOnly ? undefined : (e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
                  />
+                 {!readOnly && (
                  <button 
                     onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(true); }}
                     className="absolute bottom-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-full opacity-0 group-hover/image:opacity-100 transition-opacity backdrop-blur-sm"
@@ -503,8 +530,9 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                  >
                     <Maximize2 size={14} />
                  </button>
+                 )}
 
-                 {isImageModalOpen && createPortal(
+                 {!readOnly && isImageModalOpen && createPortal(
                     <div 
                         className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-sm flex items-center justify-center p-8 animate-in fade-in duration-200"
                         onClick={(e) => { e.stopPropagation(); setIsImageModalOpen(false); }}
@@ -525,6 +553,8 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                     document.body
                  )}
              </div>
+         ) : readOnly ? (
+           <div className="text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: card.content || '' }} />
          ) : (
            <RichTextEditor 
               ref={editorRef}
@@ -537,7 +567,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
            />
          )}
       </div>
-      {card.type === 'channel' && showChannelSettings && createPortal(
+      {!readOnly && card.type === 'channel' && showChannelSettings && createPortal(
         <ChannelCardSettingsModal
           card={card}
           onClose={() => setShowChannelSettings(false)}

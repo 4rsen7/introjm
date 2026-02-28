@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
@@ -8,6 +8,7 @@ import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [integrationBanner, setIntegrationBanner] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -220,6 +221,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
         onClose={() => setLinkedMapsConfig({ ...linkedMapsConfig, isOpen: false })}
         title={linkedMapsConfig.title}
         items={linkedMapsConfig.items}
+        onOpenJourney={(id) => navigate(`/journey/${id}`)}
       />
     </div>
   );

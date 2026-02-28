@@ -110,7 +110,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   )
 }
 
-function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage, onEditMetric }) {
+function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
   const containerId = `${laneId}::${colId}`;
   
   const { setNodeRef } = useDroppable({
@@ -166,10 +166,13 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
               onSelectCard={onSelectCard}
               onUploadImage={onUploadImage}
               onEditMetric={onEditMetric}
+              onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview}
+              readOnly={readOnly}
             /> 
           )
         })}
         
+        {!readOnly && (
         <CardPicker 
           onPick={(type) => onAddCard(laneId, colId, type)} 
           isOpen={activePickerId === containerId}
@@ -178,12 +181,13 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
              onSetActivePicker(isOpen ? containerId : null);
           }} 
         />
+        )}
       </div>
     </SortableContext>
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
   const { t } = useTranslation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -239,19 +243,24 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
     <div className={`flex min-h-[112px] ${bgColor} border-b border-gray-200 transition-colors`}>
       <div className={`w-64 shrink-0 sticky left-0 z-[100] ${bgColor} border-r border-gray-200 px-4 py-3 flex flex-row items-start justify-between group/header`}>
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
-            {!lane.isPinned && (
-              <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 p-1 -ml-1 rounded hover:bg-gray-200/50 transition-colors touch-none shrink-0 hide-on-export">
+            {!readOnly && !lane.isPinned && (
+              <div {...(dragHandleProps || {})} className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-600 p-1 -ml-1 rounded hover:bg-gray-200/50 transition-colors touch-none shrink-0 hide-on-export">
                 <GripVertical size={16} />
               </div>
             )}
-            {lane.isPinned && <Pin size={14} className="text-orange-500 shrink-0 transform rotate-45" />}
+            {!readOnly && lane.isPinned && <Pin size={14} className="text-orange-500 shrink-0 transform rotate-45" />}
+            {readOnly ? (
+              <span className="font-bold text-gray-700 text-sm w-full truncate block">{lane.title || ''}</span>
+            ) : (
             <input 
               className="font-bold text-gray-700 text-sm bg-transparent outline-none border-b border-transparent focus:border-orange-500 w-full truncate"
               value={lane.title}
               onChange={(e) => onUpdate({ title: e.target.value })}
             />
+            )}
         </div>
 
+        {!readOnly && (
         <div className="relative shrink-0">
           <button 
             onClick={() => toggleDropdown(!isDropdownOpen)}
@@ -291,11 +300,12 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
             </>
           )}
         </div>
+        )}
       </div>
 
       <div className="flex">
         {gridColumns.map((col, index) => {
-          const isColActive = laneData[col.id]?.cards?.some(c => c.id === selectedCardId);
+          const isColActive = !readOnly && laneData[col.id]?.cards?.some(c => c.id === selectedCardId);
           return (
             <LaneCell 
               key={col.id}
@@ -316,6 +326,8 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
               onSetActivePicker={onSetActivePicker}
               onUploadImage={onUploadImage}
               onEditMetric={onEditMetric}
+              onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview}
+              readOnly={readOnly}
             />
           )
         })}

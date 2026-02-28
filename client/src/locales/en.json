@@ -288,7 +288,19 @@
     "linkJourneyMapTitle": "Link journey map",
     "exportPdf": "Export PDF",
     "duplicateJourney": "Duplicate Journey",
-    "clearContent": "Clear Content"
+    "clearContent": "Clear Content",
+    "invalidJourney": "Invalid map link",
+    "loadFailed": "Failed to load the map. Please try again or go back.",
+    "backToDashboard": "Back to dashboard"
+  },
+  "journeyPreview": {
+    "title": "Journey preview",
+    "openJourney": "Open journey",
+    "close": "Close",
+    "stagesCount": "Stages: {{count}}",
+    "loading": "Loading…",
+    "noLinkedMaps": "No linked maps found.",
+    "errorLoading": "Failed to load journey"
   },
   "personas": {
     "title": "Personas",

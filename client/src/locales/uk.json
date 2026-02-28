@@ -288,7 +288,19 @@
     "linkJourneyMapTitle": "Посилання на джорні-мапу",
     "exportPdf": "Експорт PDF",
     "duplicateJourney": "Дублювати джорні",
-    "clearContent": "Очистити контент"
+    "clearContent": "Очистити контент",
+    "invalidJourney": "Невірне посилання на мапу",
+    "loadFailed": "Не вдалося завантажити мапу. Спробуйте ще раз або поверніться на головну.",
+    "backToDashboard": "На головну"
+  },
+  "journeyPreview": {
+    "title": "Перегляд джорні",
+    "openJourney": "Відкрити джорні",
+    "close": "Закрити",
+    "stagesCount": "Етапів: {{count}}",
+    "loading": "Завантаження…",
+    "noLinkedMaps": "Немає пов’язаних мап",
+    "errorLoading": "Не вдалося завантажити джорні"
   },
   "personas": {
     "title": "Персони",

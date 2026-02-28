@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react'
+import { createRoot } from 'react-dom/client'
+import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2 } from 'lucide-react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -34,9 +36,12 @@ import PersonaPicker from '../components/personas/PersonaPicker'
 import MetricPicker from '../components/metrics/MetricPicker'
 import MetricModal from '../components/metrics/MetricModal'
 import JourneyPicker from '../components/journey/JourneyPicker'
+import JourneyPreviewModal from '../components/journey/JourneyPreviewModal'
+import JourneyMapView from '../components/journey/JourneyMapView'
 import ConfirmModal from '../ConfirmModal'
 import { supabase } from '../supabaseClient'
 import { getAuthToken } from '../services/auth'
+import { parseMapData } from '../utils/parseMapData'
 
 // Fallback to localhost:5005 if env var is missing
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
@@ -123,6 +128,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const [activeDragItem, setActiveDragItem] = useState(null);
   const [selectedCardId, setSelectedCardId] = useState(null);
   const [activePickerId, setActivePickerId] = useState(null);
+  const [previewJourneyId, setPreviewJourneyId] = useState(null);
   const fileInputRef = useRef(null);
   const [uploadTargetCardId, setUploadTargetCardId] = useState(null);
 
@@ -240,6 +246,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
   // Helper to load data into state
   const loadJourneyState = (j) => {
+    try {
     setJourneyMeta({
       title: j.title,
       description: j.description || '',
@@ -249,19 +256,23 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     });
 
     if (j.map_data) {
-       let mapData = j.map_data;
-       if (typeof mapData === 'string') {
-           try { mapData = JSON.parse(mapData); } catch (e) { console.error(e); setLoadError(true); return; }
+       try {
+         const { lanes: parsedLanes, cells: parsedCells, gridColumns: parsedCols, emotionValues: parsedEmotion, persona: parsedPersona } = parseMapData(j.map_data);
+         setLanes(parsedLanes);
+         setCells(parsedCells);
+         setGridColumns(parsedCols);
+         setEmotionValues(parsedEmotion);
+         if (parsedPersona) {
+           const freshPersona = globalPersonas.find(p => p.id === parsedPersona.id);
+           setPersona(freshPersona || parsedPersona);
+         }
+       } catch (e) {
+         console.error(e);
+         setLoadError(true);
        }
-       if (mapData.lanes) setLanes(mapData.lanes);
-       if (mapData.cells) setCells(mapData.cells);
-       if (mapData.gridColumns) setGridColumns(mapData.gridColumns);
-       if (mapData.emotionValues) setEmotionValues(mapData.emotionValues);
-       if (mapData.persona) {
-           // Try to find fresh data from global state, fallback to snapshot
-           const freshPersona = globalPersonas.find(p => p.id === mapData.persona.id);
-           setPersona(freshPersona || mapData.persona);
-       }
+    }
+    } catch (e) {
+      setLoadError(true);
     }
   };
 
@@ -646,83 +657,69 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   }
 
   const handleExport = async () => {
-    const headerEl = headerRef.current;
-    const scrollContainer = scrollContainerRef.current;
-    const mapEl = scrollContainer?.firstElementChild;
-    if (!headerEl || !mapEl) return;
-
     setSelectedCardId(null);
     setIsHeaderMenuOpen(false);
     setIsExporting(true);
     setIsGeneratingPdf(true);
 
+    const pad = 32;
+    let wrap = null;
+    let root = null;
+
     try {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       await new Promise((r) => setTimeout(r, 100));
 
-      const originalZoom = zoom;
-      setZoom(1);
-      const savedScrollX = window.scrollX;
-      const savedScrollY = window.scrollY;
-      window.scrollTo(0, 0);
-      if (scrollContainer) {
-        scrollContainer.scrollTop = 0;
-        scrollContainer.scrollLeft = 0;
-      }
-      await new Promise((r) => setTimeout(r, 450));
-
-      const headerHeight = headerEl.offsetHeight;
-      const mapWidth = mapEl.scrollWidth;
-      const mapHeight = mapEl.scrollHeight;
-      const contentWidth = Math.max(mapWidth, headerEl.offsetWidth);
-      const pad = 32;
-      const totalWidth = contentWidth + pad * 2;
-      const totalHeight = pad + headerHeight + mapHeight + pad;
-
-      const wrap = document.createElement('div');
+      wrap = document.createElement('div');
       wrap.setAttribute('data-export-wrap', 'true');
-      wrap.className = 'is-exporting';
       Object.assign(wrap.style, {
         position: 'fixed',
         top: '0',
         left: '0',
-        width: `${totalWidth}px`,
-        height: `${totalHeight}px`,
         padding: `${pad}px`,
         boxSizing: 'border-box',
         overflow: 'visible',
         backgroundColor: '#fff',
         zIndex: '9998',
         pointerEvents: 'none',
+        opacity: '0',
+        visibility: 'hidden',
       });
-
-      const headerClone = headerEl.cloneNode(true);
-      headerClone.style.cssText = `position:static;width:100%;height:${headerHeight}px;min-height:${headerHeight}px;overflow:visible;flex-shrink:0;`;
-      const mapClone = mapEl.cloneNode(true);
-      mapClone.style.cssText = `width:${mapWidth}px;height:${mapHeight}px;min-height:${mapHeight}px;transform:none;zoom:1;overflow:visible;position:relative;flex-shrink:0;`;
-
-      wrap.appendChild(headerClone);
-      wrap.appendChild(mapClone);
       document.body.appendChild(wrap);
 
-      wrap.querySelectorAll('.sticky').forEach((el) => {
-        el.style.position = 'relative';
-        el.style.top = 'auto';
-        el.style.left = 'auto';
-        el.style.transform = 'none';
+      root = createRoot(wrap);
+      flushSync(() => {
+        root.render(
+          <div className="flex flex-col bg-white w-max">
+            <div className="px-6 py-4 border-b border-gray-100 shrink-0">
+              <h2 className="text-lg font-bold text-gray-900 truncate">{journeyMeta.title || 'Journey'}</h2>
+            </div>
+            <div style={{ zoom: 0.7 }} className="origin-top-left w-max">
+              <JourneyMapView
+                lanes={lanes}
+                gridColumns={gridColumns}
+                cells={cells}
+                emotionValues={emotionValues}
+                globalMetrics={globalMetrics || []}
+                globalJourneys={globalJourneys || []}
+                onOpenLinkedJourneyPreview={() => {}}
+              />
+            </div>
+          </div>
+        );
       });
-      const firstRow = mapClone.firstElementChild;
-      if (firstRow) {
-        firstRow.style.position = 'relative';
-        firstRow.style.top = '0';
-        firstRow.style.transform = 'none';
-        firstRow.style.marginTop = '0';
-        Array.from(firstRow.children).forEach((c) => {
-          c.style.transform = 'none';
-        });
-      }
 
-      await new Promise((r) => setTimeout(r, 180));
+      const contentEl = wrap.firstElementChild;
+      if (!contentEl) throw new Error('Export content did not render');
+      await new Promise((r) => setTimeout(r, 100));
+      const contentWidth = contentEl.scrollWidth;
+      const contentHeight = contentEl.scrollHeight;
+      const totalWidth = contentWidth + pad * 2;
+      const totalHeight = contentHeight + pad * 2;
+      wrap.style.width = `${totalWidth}px`;
+      wrap.style.height = `${totalHeight}px`;
+
+      await new Promise((r) => setTimeout(r, 80));
 
       const canvas = await html2canvas(wrap, {
         scale: 2,
@@ -740,10 +737,6 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         scrollY: 0,
       });
 
-      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-      window.scrollTo(savedScrollX, savedScrollY);
-      setZoom(originalZoom);
-
       const dataUrl = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         orientation: totalWidth > totalHeight ? 'landscape' : 'portrait',
@@ -752,10 +745,19 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       });
       pdf.addImage(dataUrl, 'PNG', 0, 0, totalWidth, totalHeight);
       pdf.save(`${journeyMeta.title || 'journey-map'}.pdf`);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 300));
     } catch (err) {
       console.error('Export failed:', err);
+      if (typeof window !== 'undefined' && window.alert) {
+        window.alert(typeof err?.message === 'string' ? err.message : 'Export failed. Check console for details.');
+      }
     } finally {
+      if (root && wrap) {
+        try {
+          root.unmount();
+        } catch (_) {}
+      }
+      if (wrap?.parentNode) wrap.parentNode.removeChild(wrap);
       setIsExporting(false);
       setIsGeneratingPdf(false);
     }
@@ -933,7 +935,39 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const handleMoveColumnRight = (index) => { if (index === gridColumns.length - 1) return; const newCols = [...gridColumns]; const [col] = newCols.splice(index, 1); newCols.splice(index + 1, 0, col); setGridColumns(newCols); }
   const handleDeleteColumn = (index) => { const newCols = [...gridColumns]; newCols.splice(index, 1); setGridColumns(newCols); }
 
-  if ((!isMinLoadComplete || !isDataLoaded || isQueryLoading) && !isQueryError) return <JourneyLoader />
+  if ((!isDataLoaded || isQueryLoading) && !isQueryError) return <JourneyLoader />
+
+  // Invalid or missing journey id — avoid rendering editor and show message
+  if (!journeyId) {
+    return (
+      <div className="flex flex-col min-h-screen bg-white pt-16">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center max-w-md">
+            <p className="text-gray-600 mb-4">{t('editor.invalidJourney')}</p>
+            <button onClick={onBack} className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition">
+              <ArrowLeft size={18} /> {t('editor.backToDashboard')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Query failed (e.g. 404, 500, network) — show error state instead of blank editor
+  if (isQueryError) {
+    return (
+      <div className="flex flex-col min-h-screen bg-white pt-16">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center max-w-md">
+            <p className="text-gray-600 mb-4">{t('editor.loadFailed')}</p>
+            <button onClick={onBack} className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition">
+              <ArrowLeft size={18} /> {t('editor.backToDashboard')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Calculate dynamic sticky offsets based on zoom
   // 64px is the height of the fixed main header
@@ -1165,6 +1199,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                         onSetActivePicker={setActivePickerId}
                         onUploadImage={handleTriggerImageUpload}
                         onEditMetric={(metric) => { if (metric) { setEditingMetric(metric); setIsMetricModalOpen(true); } }}
+                        onOpenLinkedJourneyPreview={setPreviewJourneyId}
                       />
                     )}
                   </SortableLaneItem>
@@ -1278,6 +1313,22 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         }}
         initialMetric={editingMetric}
       />
+
+      {previewJourneyId != null && (
+        <JourneyPreviewModal
+          isOpen={true}
+          onClose={() => setPreviewJourneyId(null)}
+          journeyId={previewJourneyId}
+          journey={globalJourneys?.find((j) => j.id === previewJourneyId)}
+          onOpen={() => {
+            if (previewJourneyId) navigate(`/journey/${previewJourneyId}`);
+            setPreviewJourneyId(null);
+          }}
+          globalMetrics={globalMetrics}
+          globalJourneys={globalJourneys || []}
+          onOpenLinkedJourneyPreview={setPreviewJourneyId}
+        />
+      )}
 
       <ConfirmModal 
         isOpen={confirmConfig.isOpen}

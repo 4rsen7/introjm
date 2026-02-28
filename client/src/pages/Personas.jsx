@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Copy, Trash2, Plus, User, X, Archive } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
@@ -7,6 +8,7 @@ import LinkedMapsModal from '../components/common/LinkedMapsModal';
 
 const Personas = ({ personas = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
@@ -232,6 +234,7 @@ const Personas = ({ personas = [], currentUserId, isWorkspaceOwner, onCreate, on
         onClose={() => setLinkedMapsConfig({ ...linkedMapsConfig, isOpen: false })}
         title={linkedMapsConfig.title}
         items={linkedMapsConfig.items}
+        onOpenJourney={(id) => navigate(`/journey/${id}`)}
       />
     </div>
   );
