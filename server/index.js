@@ -88,16 +88,8 @@ app.options('*', cors());
 
 // Lemon Squeezy webhook: must receive raw body for signature verification (register before express.json)
 app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' }), async (req, res) => {
-    // #region agent log
-    const _dbg = (msg, data, hypothesisId) => {
-        console.log('[LS webhook]', hypothesisId || '', msg, data !== undefined ? JSON.stringify(data) : '');
-        fetch('http://127.0.0.1:7242/ingest/421f9409-2981-4f25-bb49-df405f2a7d1b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '69a3de' }, body: JSON.stringify({ sessionId: '69a3de', location: 'index.js:webhook', message: msg, data: data || {}, timestamp: Date.now(), hypothesisId: hypothesisId || null }) }).catch(() => {});
-    };
-    // #endregion
-    _dbg('webhook hit', { hasBody: !!req.body, bodyIsBuffer: Buffer.isBuffer(req.body), hasSignature: !!req.get('X-Signature') }, 'A');
     const secret = process.env.LEMONSQUEEZY_WEBHOOK_SECRET;
     if (!secret) {
-        _dbg('secret missing', {}, 'B');
         console.error('LEMONSQUEEZY_WEBHOOK_SECRET is not set');
         return res.status(500).json({ error: 'Webhook not configured' });
     }
@@ -107,7 +99,6 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
     }
     const signature = req.get('X-Signature');
     if (!signature) {
-        _dbg('missing X-Signature', {}, 'B');
         return res.status(401).json({ error: 'Missing X-Signature' });
     }
     try {
@@ -116,11 +107,9 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         const sigBuf = Buffer.from(signature, 'utf8');
         const digestBuf = Buffer.from(digest, 'utf8');
         if (sigBuf.length !== digestBuf.length || !crypto.timingSafeEqual(digestBuf, sigBuf)) {
-            _dbg('signature invalid', { sigLen: sigBuf.length, digestLen: digestBuf.length }, 'B');
             return res.status(401).json({ error: 'Invalid signature' });
         }
     } catch (e) {
-        _dbg('signature error', { err: e.message }, 'B');
         return res.status(401).json({ error: 'Invalid signature' });
     }
     let payload;
@@ -155,22 +144,15 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
                 const subJson = await subRes.json();
                 const subAttrs = subJson?.data?.attributes;
                 variantId = subAttrs?.variant_id;
-                _dbg('subscription_payment_success fetched subscription', { subscriptionId, variantId, hasUser: !!customData.user_id }, 'C');
             } catch (e) {
-                _dbg('subscription_payment_success fetch failed', { err: e.message }, 'C');
             }
         }
         if (!variantId) {
-            _dbg('subscription_payment_success no variant_id', { hasApiKey: !!apiKey, subscriptionId }, 'C');
             return res.status(200).json({ ok: true, message: 'Payment acknowledged; set LEMONSQUEEZY_API_KEY and subscription_id to update plan' });
         }
         // fall through to plan lookup and subscription update below
     }
-    // #region agent log
-    _dbg('parsed event', { eventName, variantId, variantIdType: typeof variantId, userEmail: userEmail ? '***@***' : null, hasCustomUserId: !!customData.user_id }, 'C');
-    // #endregion
     if (!variantId && eventName !== 'subscription_cancelled') {
-        _dbg('event ignored no variant', { eventName }, 'C');
         return res.status(200).json({ ok: true, message: 'Event ignored' });
     }
     if (eventName === 'subscription_cancelled') {
@@ -183,9 +165,6 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         .or(`lemonsqueezy_variant_id_monthly.eq.${variantIdStr},lemonsqueezy_variant_id_yearly.eq.${variantIdStr}`)
         .limit(1)
         .maybeSingle();
-    // #region agent log
-    _dbg('plan lookup', { variantIdStr, planFound: !!planRow, planId: planRow?.id, planError: planError?.message }, 'D');
-    // #endregion
     if (!planRow) {
         console.warn('Lemon Squeezy webhook: no plan found for variant_id', variantIdStr);
         return res.status(200).json({ ok: true, message: 'Plan not mapped' });
@@ -199,12 +178,8 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
             const match = users.find((u) => (u.email || '').toLowerCase() === String(userEmail).toLowerCase());
             if (match) userId = match.id;
         }
-        // #region agent log
-        _dbg('user by email', { userEmailLen: userEmail?.length, listErr: listErr?.message, usersCount: users?.length, userIdResolved: !!userId }, 'E');
-        // #endregion
     }
     if (!userId) {
-        _dbg('user not found', { hasCustomUserId: !!customData.user_id }, 'E');
         console.warn('Lemon Squeezy webhook: could not resolve user for email', userEmail);
         return res.status(200).json({ ok: true, message: 'User not found' });
     }
@@ -220,9 +195,6 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         .update({ status: 'canceled' })
         .eq('user_id', userId)
         .eq('status', 'active');
-    // #region agent log
-    _dbg('cancel old', { userId: userId.slice(0, 8) + '...', updateErr: updateErr?.message }, 'F');
-    // #endregion
     const { error: insertErr } = await supabaseAdmin.from('subscriptions').insert([{
         user_id: userId,
         plan_id: planRow.id,
@@ -230,14 +202,10 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         current_period_start: periodStart,
         current_period_end: periodEnd,
     }]);
-    // #region agent log
-    _dbg('insert new', { planId: planRow.id, insertErr: insertErr?.message, insertCode: insertErr?.code }, 'F');
-    // #endregion
     if (insertErr) {
         console.error('Lemon Squeezy webhook: subscription insert failed', insertErr);
         return res.status(500).json({ error: 'Failed to create subscription' });
     }
-    _dbg('success', { planId: planRow.id, interval }, null);
     return res.status(200).json({ ok: true });
 });
 
