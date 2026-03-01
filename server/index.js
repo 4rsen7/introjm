@@ -1261,14 +1261,32 @@ app.get('/api/metrics', async (req, res) => {
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (workspaceIds.length === 0) return res.json({ status: 'success', data: [] });
 
-    const { data, error } = await supabase
+    const { data: rawData, error } = await supabase
       .from('metrics')
       .select('*')
       .in('workspace_id', workspaceIds)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json({ status: 'success', data: data || [] });
+    const data = rawData || [];
+
+    const connectedUserIds = [...new Set(data.map((m) => m.integration_config?.connected_user_id).filter(Boolean))];
+    let profilesMap = {};
+    if (connectedUserIds.length > 0) {
+      const { data: profiles } = await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', connectedUserIds);
+      if (profiles) profiles.forEach((p) => { profilesMap[p.id] = p.full_name || p.email || null; });
+    }
+
+    const enriched = data.map((m) => {
+      const out = { ...m };
+      const uid = m.integration_config?.connected_user_id;
+      if (uid && profilesMap[uid]) {
+        out.integration_connected_by = { id: uid, full_name: profilesMap[uid] };
+      }
+      return out;
+    });
+
+    res.json({ status: 'success', data: enriched });
   } catch (err) {
     logSystemError(err, 'GET /api/metrics');
     console.error('Error fetching metrics:', err);
@@ -1320,6 +1338,14 @@ app.post('/api/metrics', async (req, res) => {
       return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'metrics' });
     }
 
+    let finalIntegrationConfig = integration_config;
+    if (integration_config != null && typeof integration_config === 'object' && (data_source === 'google_sheets' || data_source === 'microsoft_excel')) {
+      const hasConnection = await userHasIntegrationConnected(user.id, data_source);
+      if (hasConnection) {
+        finalIntegrationConfig = { ...integration_config, connected_user_id: user.id };
+      }
+    }
+
     const insertPayload = {
       name, type, value, previous_value, suffix, data_source, chart_type, series_data, reverse_colors,
       user_id: user.id,
@@ -1327,7 +1353,7 @@ app.post('/api/metrics', async (req, res) => {
       updated_at: new Date()
     };
     if (series_label_format !== undefined) insertPayload.series_label_format = series_label_format;
-    if (integration_config !== undefined) insertPayload.integration_config = integration_config;
+    if (finalIntegrationConfig !== undefined) insertPayload.integration_config = finalIntegrationConfig;
 
     const { data, error } = await supabaseAdmin
       .from('metrics')
@@ -1360,7 +1386,7 @@ app.put('/api/metrics/:id', async (req, res) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { data: metric } = await supabaseAdmin.from('metrics').select('id, workspace_id').eq('id', id).single();
+    const { data: metric } = await supabaseAdmin.from('metrics').select('id, workspace_id, data_source').eq('id', id).single();
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
@@ -1368,6 +1394,16 @@ app.put('/api/metrics/:id', async (req, res) => {
     const validation = validateMetricPayload(updates, true);
     if (!validation.ok) {
       return res.status(400).json({ status: 'error', code: 'VALIDATION_ERROR', error: validation.message });
+    }
+
+    if (updates.integration_config != null && typeof updates.integration_config === 'object') {
+      const provider = updates.data_source ?? metric.data_source;
+      if (provider === 'google_sheets' || provider === 'microsoft_excel') {
+        const hasConnection = await userHasIntegrationConnected(user.id, provider);
+        if (hasConnection) {
+          updates.integration_config = { ...updates.integration_config, connected_user_id: user.id };
+        }
+      }
     }
 
     const { data, error } = await supabaseAdmin
@@ -1423,6 +1459,12 @@ app.delete('/api/metrics/:id', async (req, res) => {
 // --- ІНТЕГРАЦІЇ (GOOGLE SHEETS / MICROSOFT EXCEL) ---
 const INTEGRATION_PROVIDERS = ['google_sheets', 'microsoft_excel'];
 const STATE_SECRET = process.env.ENCRYPTION_KEY || process.env.SUPABASE_JWT_SECRET || 'integration-state-secret';
+
+async function userHasIntegrationConnected(userId, provider) {
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return false;
+  const { data: row } = await supabaseAdmin.from('user_integrations').select('id').eq('user_id', userId).eq('provider', provider).maybeSingle();
+  return !!row;
+}
 
 function createIntegrationState(userId, returnPath) {
   const nonce = crypto.randomBytes(16).toString('hex');
