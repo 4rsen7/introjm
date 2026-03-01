@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Search, Map } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 const JourneyPicker = ({ isOpen, onClose, journeys = [], onSelect }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
+  useBodyScrollLock(isOpen);
 
   if (!isOpen) return null;
 

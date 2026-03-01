@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Search, BarChart3, Plus } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 const MetricPicker = ({ isOpen, onClose, onSelect, onCreateNew, metrics = [] }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
+  useBodyScrollLock(isOpen);
 
   if (!isOpen) return null;
 

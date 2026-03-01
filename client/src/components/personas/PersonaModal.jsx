@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Plus, Trash2, User, Briefcase, GraduationCap, Smile, Bot, Baby } from 'lucide-react'
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
 
 const AVATAR_OPTIONS = [
   { id: 'man', icon: User, label: 'Man' },
@@ -13,6 +14,7 @@ const AVATAR_OPTIONS = [
 
 export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }) {
   const { t } = useTranslation()
+  useBodyScrollLock(isOpen)
   const [formData, setFormData] = useState({
     name: '',
     role: '',

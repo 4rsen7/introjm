@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Search, Plus } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 const PersonaPicker = ({ isOpen, onClose, onSelect, onCreateNew, personas = [] }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
+  useBodyScrollLock(isOpen);
 
   if (!isOpen) return null;
 

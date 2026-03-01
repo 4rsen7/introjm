@@ -1,8 +1,10 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import MetricBuilder from '../../pages/MetricBuilder';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export default function MetricModal({ isOpen, onClose, onSave, initialMetric }) {
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
   return (

@@ -19,7 +19,12 @@ const JourneyMetricCard = ({ metric }) => {
   const { name, type, value, suffix, previousValue, reverseColors, seriesData, chartType, seriesLabelFormat = 'text' } = metric;
   const getColor = (i) => (seriesData && seriesData[i]?.color) ? seriesData[i].color : CHART_PALETTE[i % CHART_PALETTE.length];
   const getBarColor = (i) => (seriesData && seriesData[i]?.color) ? seriesData[i].color : DEFAULT_BAR_COLOR;
-  const formatLabel = (label) => formatSeriesLabel(label, seriesLabelFormat, locale);
+  const MAX_LABEL_LEN = 7;
+  const formatLabel = (label) => {
+    const text = formatSeriesLabel(label, seriesLabelFormat, locale);
+    if (!text || text.length <= MAX_LABEL_LEN) return text ?? '';
+    return text.slice(0, MAX_LABEL_LEN) + '..';
+  };
 
   const renderContent = () => {
     switch (type) {
@@ -71,7 +76,7 @@ const JourneyMetricCard = ({ metric }) => {
               <ResponsiveContainer width="100%" height="100%">
                 {chartType === 'line' ? (
                   <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
-                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="value" stroke={getColor(0)} strokeWidth={2} dot={{ r: 3, fill: getColor(0), strokeWidth: 0 }} isAnimationActive={true}>
                       <LabelList dataKey="value" position="top" offset={5} fontSize={10} fill="#6b7280" />
@@ -79,7 +84,7 @@ const JourneyMetricCard = ({ metric }) => {
                   </LineChart>
                 ) : chartType === 'area' ? (
                   <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
-                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Area type="monotone" dataKey="value" fill={getColor(0)} stroke={getColor(0)} strokeWidth={2} fillOpacity={0.6} isAnimationActive={true}>
                       <LabelList dataKey="value" position="top" offset={5} fontSize={10} fill="#6b7280" />
@@ -106,7 +111,7 @@ const JourneyMetricCard = ({ metric }) => {
                   </PieChart>
                 ) : (
                   <BarChart data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 4 }}>
-                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Bar dataKey="value" radius={[2, 2, 0, 0]} isAnimationActive={true}>
                       {seriesData.map((_, i) => (

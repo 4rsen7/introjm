@@ -1,6 +1,8 @@
 import React from 'react';
+import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "Delete", cancelText = "Cancel", isDestructive = false }) => {
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
   return (

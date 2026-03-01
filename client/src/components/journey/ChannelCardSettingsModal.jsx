@@ -22,6 +22,7 @@ import {
   getDefaultChannelDetails,
   CHANNEL_COLORS,
 } from './channelOptions'
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
 
 function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIconPickerToggle, removeTitle = 'Remove' }) {
   const { t } = useTranslation()
@@ -114,6 +115,7 @@ function SortableChannelRow({ item, onUpdate, onRemove, isIconPickerOpen, onIcon
 
 export default function ChannelCardSettingsModal({ card, onClose, onSave }) {
   const { t } = useTranslation()
+  useBodyScrollLock(true)
   const initialDetails =
     card.channelDetails && card.channelDetails.length > 0
       ? card.channelDetails.map((ch) => ({

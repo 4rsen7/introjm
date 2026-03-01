@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X, Loader2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { parseMapData } from '../../utils/parseMapData';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import JourneyMapView from './JourneyMapView';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
@@ -48,6 +49,7 @@ export default function JourneyPreviewModal({
     return parseMapData(journey.map_data);
   }, [journey?.map_data]);
 
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
   return (

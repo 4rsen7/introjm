@@ -9,6 +9,7 @@ import RichTextEditor from '../common/RichTextEditor'
 import ChannelCard from './ChannelCard'
 import ChannelCardSettingsModal from './ChannelCardSettingsModal'
 import JourneyMetricCard from './JourneyMetricCard'
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
 
 const STAGE_COLORS = ['bg-blue-100', 'bg-green-100', 'bg-purple-100', 'bg-orange-100', 'bg-pink-100', 'bg-yellow-100', 'bg-red-100', 'bg-teal-100'];
 const COL_WIDTH = 288; // 18rem
@@ -68,6 +69,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   const [showChannelSettings, setShowChannelSettings] = useState(false)
   const [toolbarFontSize, setToolbarFontSize] = useState('3')
   const [showFontSizeMenu, setShowFontSizeMenu] = useState(false)
+  useBodyScrollLock(isImageModalOpen)
   const editorRef = useRef(null)
   const menuRef = useRef(null)
   const buttonRef = useRef(null)
@@ -400,7 +402,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
         )}
         <div className={`flex-1 min-w-0 py-2 px-3 ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => readOnly && e.stopPropagation()}>
           {readOnly ? (
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: card.content || '' }} />
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none min-h-[2.5rem]" dangerouslySetInnerHTML={{ __html: card.content || '' }} />
           ) : (
           <RichTextEditor
             ref={editorRef}
