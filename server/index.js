@@ -1270,7 +1270,15 @@ app.get('/api/metrics', async (req, res) => {
     if (error) throw error;
     const data = rawData || [];
 
-    const connectedUserIds = [...new Set(data.map((m) => m.integration_config?.connected_user_id).filter(Boolean))];
+    const isIntegrationMetric = (m) => (m.data_source === 'google_sheets' || m.data_source === 'microsoft_excel') && m.integration_config && typeof m.integration_config === 'object';
+    const getConnectedUserId = (m) => {
+      const fromConfig = m.integration_config?.connected_user_id;
+      if (fromConfig) return fromConfig;
+      if (isIntegrationMetric(m) && m.user_id) return m.user_id;
+      return null;
+    };
+
+    const connectedUserIds = [...new Set(data.map(getConnectedUserId).filter(Boolean))];
     let profilesMap = {};
     if (connectedUserIds.length > 0) {
       const { data: profiles } = await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', connectedUserIds);
@@ -1279,7 +1287,7 @@ app.get('/api/metrics', async (req, res) => {
 
     const enriched = data.map((m) => {
       const out = { ...m };
-      const uid = m.integration_config?.connected_user_id;
+      const uid = getConnectedUserId(m);
       if (uid && profilesMap[uid]) {
         out.integration_connected_by = { id: uid, full_name: profilesMap[uid] };
       }
