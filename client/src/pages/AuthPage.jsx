@@ -5,6 +5,7 @@ import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
 import InfoModal from '../components/common/InfoModal';
+import { MS_EXCEL_DISABLED } from '../config/features';
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
@@ -584,8 +585,8 @@ const AuthPage = ({ onLogin }) => {
             <button
               type="button"
               onClick={handleMicrosoftSignIn}
-              disabled={loadingOAuth !== null || isLoading}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-medium text-gray-700 text-sm shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+              disabled={MS_EXCEL_DISABLED || loadingOAuth !== null || isLoading}
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 border rounded-lg transition-colors font-medium text-sm shadow-sm ${MS_EXCEL_DISABLED ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed' : 'border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-70 disabled:cursor-not-allowed'}`}
             >
               {loadingOAuth === 'azure' ? (
                 <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />

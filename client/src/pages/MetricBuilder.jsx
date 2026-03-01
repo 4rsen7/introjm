@@ -5,6 +5,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, Tooltip, ResponsiveContainer, La
 import { CHART_PALETTE, DEFAULT_BAR_COLOR, formatSeriesLabel } from '../utils/metrics';
 import { getAuthToken } from '../services/auth';
 import { mapMetricToClient } from '../hooks/useQueries';
+import { MS_EXCEL_DISABLED } from '../config/features';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
@@ -341,7 +342,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                         >
                             <option value="manual">{t('metrics.manualEntry')}</option>
                             <option value="google_sheets">{t('metrics.googleSheets')}</option>
-                            <option value="microsoft_excel">{t('metrics.microsoftExcel')}</option>
+                            <option value="microsoft_excel" disabled={MS_EXCEL_DISABLED}>{t('metrics.microsoftExcel')}{MS_EXCEL_DISABLED ? ` (${t('common.soon')})` : ''}</option>
                         </select>
                         <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                     </div>

@@ -7,6 +7,7 @@ import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
 import { useWorkspaceLimits } from '../hooks/useQueries';
 import i18n, { setLocale } from '../i18n';
+import { MS_EXCEL_DISABLED } from '../config/features';
 
 // Fallback API URL
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
@@ -545,15 +546,15 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                     </button>
                   )}
                 </div>
-                <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-gray-700">{t('metrics.microsoftExcel')}</span>
+                <div className={`flex items-center justify-between py-2 border-b border-gray-100 ${MS_EXCEL_DISABLED ? 'opacity-60' : ''}`}>
+                  <span className="text-gray-700">{t('metrics.microsoftExcel')}{MS_EXCEL_DISABLED ? ` (${t('common.soon')})` : ''}</span>
                   {integrationStatus.microsoft_excel ? (
                     <button type="button" onClick={() => setDisconnectConfirm({ provider: 'microsoft_excel', label: t('metrics.microsoftExcel') })} disabled={disconnectLoading !== null} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50">
                       {disconnectLoading === 'microsoft_excel' ? <Loader2 size={16} className="animate-spin" /> : null} {t('settings.disconnect')}
                     </button>
                   ) : (
-                    <button type="button" onClick={() => handleConnectIntegration('microsoft_excel')} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition">
-                      <Link2 size={16} /> {t('settings.connect')}
+                    <button type="button" onClick={() => handleConnectIntegration('microsoft_excel')} disabled={MS_EXCEL_DISABLED} className={`flex items-center gap-2 px-3 py-2 text-sm font-medium border rounded-lg transition ${MS_EXCEL_DISABLED ? 'text-gray-400 border-gray-200 bg-gray-100 cursor-not-allowed' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                      <Link2 size={16} /> {MS_EXCEL_DISABLED ? t('common.soon') : t('settings.connect')}
                     </button>
                   )}
                 </div>
