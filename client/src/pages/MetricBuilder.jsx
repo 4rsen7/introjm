@@ -47,6 +47,8 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
   const [integrationStatus, setIntegrationStatus] = useState({ google_sheets: false, microsoft_excel: false });
   const [syncLoading, setSyncLoading] = useState(false);
   const [integrationError, setIntegrationError] = useState(null);
+  const [sheetSuggestions, setSheetSuggestions] = useState([]);
+  const [sheetsLoadLoading, setSheetsLoadLoading] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -194,18 +196,47 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
   };
 
   const handleSync = async () => {
-    if (!formData.id) return;
     setSyncLoading(true);
     setIntegrationError(null);
     try {
       const token = await getAuthToken();
       if (!token) { setIntegrationError(t('metrics.integrationLoginRequired')); setSyncLoading(false); return; }
-      const res = await fetch(`${API_URL}/metrics/${formData.id}/sync`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (formData.id) {
+        const res = await fetch(`${API_URL}/metrics/${formData.id}/sync`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.status === 'success' && data.data) {
+          const mapped = mapMetricToClient(data.data);
+          setFormData(prev => ({ ...prev, ...mapped, value: mapped.value, previousValue: mapped.previousValue, seriesData: mapped.seriesData || prev.seriesData }));
+          onSyncSuccess?.();
+          setSyncLoading(false);
+          return;
+        }
+        setIntegrationError(data.error || data.message || t('metrics.syncFailed'));
+        setSyncLoading(false);
+        return;
+      }
+      const cfg = formData.integrationConfig;
+      const hasConfig = formData.dataSource === 'google_sheets'
+        ? (cfg?.spreadsheetId && cfg?.range)
+        : (cfg?.fileId && cfg?.range);
+      if (!hasConfig) {
+        setIntegrationError(t('metrics.integrationEnterSpreadsheetAndRange'));
+        setSyncLoading(false);
+        return;
+      }
+      const res = await fetch(`${API_URL}/integrations/fetch-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          provider: formData.dataSource,
+          integration_config: formData.integrationConfig,
+          type: formData.type
+        })
+      });
       const data = await res.json();
       if (data.status === 'success' && data.data) {
         const mapped = mapMetricToClient(data.data);
-        setFormData(prev => ({ ...prev, ...mapped, value: mapped.value, previousValue: mapped.previousValue, seriesData: mapped.seriesData || prev.seriesData }));
-        onSyncSuccess?.();
+        setFormData(prev => ({ ...prev, value: mapped.value, previousValue: mapped.previousValue, seriesData: mapped.seriesData || prev.seriesData }));
         return;
       }
       setIntegrationError(data.error || data.message || t('metrics.syncFailed'));
@@ -213,6 +244,29 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
       setIntegrationError(e.message || t('metrics.syncFailed'));
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+  const handleLoadSheets = async () => {
+    const sid = formData.integrationConfig?.spreadsheetId?.trim();
+    if (!sid) { setIntegrationError(t('metrics.integrationEnterSpreadsheetAndRange')); return; }
+    setSheetsLoadLoading(true);
+    setIntegrationError(null);
+    setSheetSuggestions([]);
+    try {
+      const token = await getAuthToken();
+      if (!token) { setIntegrationError(t('metrics.integrationLoginRequired')); setSheetsLoadLoading(false); return; }
+      const res = await fetch(`${API_URL}/integrations/google_sheets/spreadsheet-info?spreadsheetId=${encodeURIComponent(sid)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.status === 'success' && Array.isArray(data.data?.sheets)) {
+        setSheetSuggestions(data.data.sheets);
+        return;
+      }
+      setIntegrationError(data.error || data.message || t('metrics.sheetsLoadError'));
+    } catch (e) {
+      setIntegrationError(e.message || t('metrics.sheetsLoadError'));
+    } finally {
+      setSheetsLoadLoading(false);
     }
   };
 
@@ -309,8 +363,28 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
                                     <div className="mt-3 space-y-2">
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.spreadsheetId')}</label>
                                         <input type="text" value={formData.integrationConfig?.spreadsheetId || ''} onChange={(e) => handleIntegrationConfigChange('spreadsheetId', e.target.value)} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        {integrationStatus.google_sheets && formData.integrationConfig?.spreadsheetId?.trim() && (
+                                            <button type="button" onClick={handleLoadSheets} disabled={sheetsLoadLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition disabled:opacity-50">
+                                                <RefreshCw size={16} className={sheetsLoadLoading ? 'animate-spin' : ''} /> {sheetsLoadLoading ? t('metrics.loadingSheets') : t('metrics.loadSheets')}
+                                            </button>
+                                        )}
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.range')}</label>
                                         <input type="text" value={formData.integrationConfig?.range || ''} onChange={(e) => handleIntegrationConfigChange('range', e.target.value)} placeholder="Sheet1!A1:B10" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        {sheetSuggestions.length > 0 && (
+                                            <div className="mt-2">
+                                                <p className="text-xs font-medium text-gray-500 mb-1">{t('metrics.suggestedRanges')}</p>
+                                                <ul className="space-y-1">
+                                                    {sheetSuggestions.map((s, i) => (
+                                                        <li key={i} className="flex items-center justify-between gap-2 text-sm">
+                                                            <span className="text-gray-700 truncate">{s.title} ({s.rowCount} × {s.columnCount})</span>
+                                                            <button type="button" onClick={() => handleIntegrationConfigChange('range', s.suggestedRange)} className="shrink-0 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                                                                {t('metrics.useThisRange')}
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
                                     </div>
                                 </>
                             )}
@@ -333,7 +407,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
                                 </>
                             )}
                         </div>
-                        {formData.id && isIntegration && (integrationStatus[formData.dataSource] || formData.integrationConfig) && (
+                        {isIntegration && (integrationStatus[formData.dataSource] || formData.integrationConfig) && (
                             <button type="button" onClick={handleSync} disabled={syncLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition disabled:opacity-50">
                                 <RefreshCw size={16} className={syncLoading ? 'animate-spin' : ''} /> {syncLoading ? t('metrics.syncing') : t('metrics.refreshData')}
                             </button>

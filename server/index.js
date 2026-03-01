@@ -7,6 +7,7 @@ const { encrypt, decrypt } = require('./integrations/encrypt');
 const googleSheets = require('./integrations/googleSheets');
 const microsoftExcel = require('./integrations/microsoftExcel');
 const { mapRowsToMetric } = require('./integrations/mapRowsToMetric');
+const { normalizeRangeA1 } = require('./integrations/normalizeRangeA1');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
 const rateLimit = require('express-rate-limit');
@@ -1423,9 +1424,10 @@ app.delete('/api/metrics/:id', async (req, res) => {
 const INTEGRATION_PROVIDERS = ['google_sheets', 'microsoft_excel'];
 const STATE_SECRET = process.env.ENCRYPTION_KEY || process.env.SUPABASE_JWT_SECRET || 'integration-state-secret';
 
-function createIntegrationState(userId) {
+function createIntegrationState(userId, returnPath) {
   const nonce = crypto.randomBytes(16).toString('hex');
-  const payload = nonce + '.' + userId;
+  const path = returnPath ? String(returnPath).replace(/^\//, '') : '';
+  const payload = path ? nonce + '.' + userId + '.' + path : nonce + '.' + userId;
   const sig = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
   return payload + '.' + sig;
 }
@@ -1433,12 +1435,14 @@ function createIntegrationState(userId) {
 function verifyIntegrationState(state) {
   if (!state || typeof state !== 'string') return null;
   const parts = state.split('.');
-  if (parts.length !== 3) return null;
-  const [nonce, userId, sig] = parts;
-  const payload = nonce + '.' + userId;
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const sig = parts[parts.length - 1];
+  const payload = parts.slice(0, -1).join('.');
   const expected = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
   if (sig !== expected) return null;
-  return userId;
+  const userId = parts[1];
+  const returnPath = parts.length === 4 ? parts[2] : null;
+  return { userId, returnPath };
 }
 
 async function getOrRefreshIntegrationTokens(userId, provider) {
@@ -1469,10 +1473,11 @@ app.get('/api/integrations/:provider/authorize', async (req, res) => {
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
   const provider = req.params.provider;
   if (!INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', message: 'Invalid provider' });
+  const returnPath = req.query.returnPath || null;
   try {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const state = createIntegrationState(user.id);
+    const state = createIntegrationState(user.id, returnPath);
     const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
     const url = provider === 'google_sheets'
       ? googleSheets.getAuthorizeUrl(redirectUri, state)
@@ -1487,9 +1492,12 @@ app.get('/api/integrations/:provider/authorize', async (req, res) => {
 app.get('/api/integrations/:provider/callback', async (req, res) => {
   const provider = req.params.provider;
   const { code, state } = req.query;
-  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(clientOrigin + '/metrics?integration=error&message=Invalid+provider');
-  const userId = verifyIntegrationState(state);
-  if (!userId || !code) return res.redirect(clientOrigin + '/metrics?integration=error&message=Invalid+state');
+  const verified = verifyIntegrationState(state);
+  const basePath = verified?.returnPath || 'metrics';
+  const redirectBase = clientOrigin + '/' + basePath;
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(redirectBase + '?integration=error&message=Invalid+provider');
+  if (!verified || !verified.userId || !code) return res.redirect(redirectBase + '?integration=error&message=Invalid+state');
+  const userId = verified.userId;
   const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
   try {
     const tokens = provider === 'google_sheets'
@@ -1505,10 +1513,10 @@ app.get('/api/integrations/:provider/callback', async (req, res) => {
     };
     const { error } = await supabaseAdmin.from('user_integrations').upsert(row, { onConflict: 'user_id,provider' });
     if (error) throw error;
-    return res.redirect(clientOrigin + '/metrics?integration=connected');
+    return res.redirect(redirectBase + '?integration=connected');
   } catch (err) {
     logSystemError(err, 'GET /api/integrations/:provider/callback');
-    return res.redirect(clientOrigin + '/metrics?integration=error&message=' + encodeURIComponent(err.message || 'Connection failed'));
+    return res.redirect(redirectBase + '?integration=error&message=' + encodeURIComponent(err.message || 'Connection failed'));
   }
 });
 
@@ -1523,6 +1531,60 @@ app.get('/api/integrations/status', async (req, res) => {
     return res.json({ status: 'success', data: { google_sheets: connected.includes('google_sheets'), microsoft_excel: connected.includes('microsoft_excel') } });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/integrations/:provider', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  const provider = req.params.provider;
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', message: 'Invalid provider' });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const { error: deleteError } = await supabaseAdmin.from('user_integrations').delete().eq('user_id', user.id).eq('provider', provider);
+    if (deleteError) throw deleteError;
+    return res.json({ status: 'success' });
+  } catch (err) {
+    logSystemError(err, 'DELETE /api/integrations/:provider');
+    return res.status(500).json({ status: 'error', message: err.message || 'Failed to disconnect' });
+  }
+});
+
+function columnIndexToLetter(n) {
+  if (!n || n < 1) return 'A';
+  let s = '';
+  while (n > 0) {
+    n--;
+    s = String.fromCharCode(65 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
+const spreadsheetInfoRateLimit = rateLimit({ windowMs: 2 * 60 * 1000, max: 20, message: { status: 'error', message: 'Too many requests' } });
+
+app.get('/api/integrations/google_sheets/spreadsheet-info', spreadsheetInfoRateLimit, async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  const spreadsheetId = req.query.spreadsheetId;
+  if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const accessToken = await getOrRefreshIntegrationTokens(user.id, 'google_sheets');
+    if (!accessToken) return res.status(401).json({ status: 'error', code: 'INTEGRATION_DISCONNECTED', message: 'Please reconnect your account' });
+    const sheets = await googleSheets.getSpreadsheetInfo(accessToken, spreadsheetId);
+    const withSuggested = sheets.map((s) => {
+      const rowCount = Math.max(1, s.rowCount || 1000);
+      const colCount = Math.max(1, s.columnCount || 26);
+      const suggestedRange = (s.title ? s.title + '!' : '') + 'A1:' + columnIndexToLetter(colCount) + rowCount;
+      return { sheetId: s.sheetId, title: s.title, rowCount: s.rowCount, columnCount: s.columnCount, suggestedRange };
+    });
+    return res.json({ status: 'success', data: { sheets: withSuggested } });
+  } catch (err) {
+    logSystemError(err, 'GET /api/integrations/google_sheets/spreadsheet-info');
+    return res.status(400).json({ status: 'error', error: err.message });
   }
 });
 
@@ -1547,12 +1609,12 @@ app.post('/api/metrics/:id/sync', syncMetricRateLimit, async (req, res) => {
     let rows;
     if (provider === 'google_sheets') {
       const spreadsheetId = cfg.spreadsheetId;
-      const range = cfg.range || 'Sheet1!A1:Z1000';
+      const range = normalizeRangeA1(cfg.range || 'Sheet1!A1:Z1000');
       if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
       rows = await googleSheets.fetchRange(accessToken, spreadsheetId, range);
     } else {
       const fileId = cfg.fileId;
-      const range = cfg.range || 'A1:Z1000';
+      const range = normalizeRangeA1(cfg.range || 'A1:Z1000');
       const sheetName = cfg.sheetName || 'Sheet1';
       if (!fileId) return res.status(400).json({ status: 'error', message: 'Missing fileId' });
       rows = await microsoftExcel.fetchRange(accessToken, fileId, range, sheetName);
@@ -1564,6 +1626,42 @@ app.post('/api/metrics/:id/sync', syncMetricRateLimit, async (req, res) => {
     return res.json({ status: 'success', data: updated });
   } catch (err) {
     logSystemError(err, 'POST /api/metrics/:id/sync');
+    const code = err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR';
+    return res.status(400).json({ status: 'error', code, error: err.message });
+  }
+});
+
+// Fetch integration data without saving (preview for new metrics)
+app.post('/api/integrations/fetch-data', syncMetricRateLimit, async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+  const { provider, integration_config: cfg, type } = req.body || {};
+  if (!provider || !INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', message: 'Invalid provider' });
+  if (!cfg || typeof cfg !== 'object') return res.status(400).json({ status: 'error', message: 'Missing integration_config' });
+  const validTypes = ['Number', 'Comparison', 'Series'];
+  if (!type || !validTypes.includes(type)) return res.status(400).json({ status: 'error', message: 'Invalid type' });
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const accessToken = await getOrRefreshIntegrationTokens(user.id, provider);
+    if (!accessToken) return res.status(401).json({ status: 'error', code: 'INTEGRATION_DISCONNECTED', message: 'Please reconnect your account' });
+    let rows;
+    if (provider === 'google_sheets') {
+      const spreadsheetId = cfg.spreadsheetId;
+      const range = normalizeRangeA1(cfg.range || 'Sheet1!A1:Z1000');
+      if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
+      rows = await googleSheets.fetchRange(accessToken, spreadsheetId, range);
+    } else {
+      const fileId = cfg.fileId;
+      const range = normalizeRangeA1(cfg.range || 'A1:Z1000');
+      const sheetName = cfg.sheetName || 'Sheet1';
+      if (!fileId) return res.status(400).json({ status: 'error', message: 'Missing fileId' });
+      rows = await microsoftExcel.fetchRange(accessToken, fileId, range, sheetName);
+    }
+    const updates = mapRowsToMetric(type, rows);
+    return res.json({ status: 'success', data: updates });
+  } catch (err) {
+    logSystemError(err, 'POST /api/integrations/fetch-data');
     const code = err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR';
     return res.status(400).json({ status: 'error', code, error: err.message });
   }

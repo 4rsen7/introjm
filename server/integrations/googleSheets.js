@@ -58,9 +58,37 @@ async function refreshAccessToken(refreshToken) {
   };
 }
 
+async function getSpreadsheetInfo(accessToken, spreadsheetId) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties(sheetId,title,sheetType,gridProperties(rowCount,columnCount))'
+  });
+  const list = [];
+  for (const sheet of res.data.sheets || []) {
+    const p = sheet.properties || {};
+    if (p.sheetType !== 'GRID' || !p.gridProperties) continue;
+    const rowCount = p.gridProperties.rowCount || 0;
+    const columnCount = p.gridProperties.columnCount || 0;
+    list.push({
+      sheetId: p.sheetId,
+      title: p.title || '',
+      rowCount,
+      columnCount
+    });
+  }
+  return list;
+}
+
 module.exports = {
   getAuthorizeUrl,
   exchangeCodeForTokens,
   fetchRange,
-  refreshAccessToken
+  refreshAccessToken,
+  getSpreadsheetInfo
 };

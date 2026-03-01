@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock, ChevronDown } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock, ChevronDown, Link2, X } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
@@ -12,6 +13,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   // 1. Real Role Check
   const isOwner = workspace?.role === 'owner';
 
@@ -67,6 +69,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
+  // Profile: integrations for metrics
+  const [integrationStatus, setIntegrationStatus] = useState({ google_sheets: false, microsoft_excel: false });
+  const [integrationBanner, setIntegrationBanner] = useState(null);
+  const [disconnectLoading, setDisconnectLoading] = useState(null); // 'google_sheets' | 'microsoft_excel' | null
+  const [disconnectConfirm, setDisconnectConfirm] = useState(null); // { provider, label } | null
+
   const { data: limitsData } = useWorkspaceLimits(workspace?.id);
   const limits = limitsData?.limits;
   const usage = limits?.usage ?? { members: 0, journeys: 0, personas: 0, metrics: 0 };
@@ -81,6 +89,37 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         fetchTeam();
     }
   }, [activeTab, isOwner]);
+
+  // Profile: handle ?integration=connected|error from OAuth callback
+  useEffect(() => {
+    const integration = searchParams.get('integration');
+    if (integration === 'connected') {
+      setIntegrationBanner({ type: 'success', text: t('settings.integrationConnected') });
+      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
+    } else if (integration === 'error') {
+      const message = searchParams.get('message') || t('settings.integrationError');
+      setIntegrationBanner({ type: 'error', text: message });
+      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
+    }
+  }, [searchParams, setSearchParams, t]);
+
+  // Profile: fetch integration status when profile tab is active
+  useEffect(() => {
+    if (activeTab !== 'profile') return;
+    let cancelled = false;
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_URL}/integrations/status`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.status === 'success' && data.data)
+          setIntegrationStatus({ google_sheets: !!data.data.google_sheets, microsoft_excel: !!data.data.microsoft_excel });
+      } catch (e) { if (!cancelled) setIntegrationStatus({ google_sheets: false, microsoft_excel: false }); }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const fetchTeam = async () => {
       const token = await getAuthToken();
@@ -169,6 +208,40 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
       setInfoModal({ open: true, title: t('settings.errorTitle'), message: t('settings.requestFailed'), variant: 'error' });
     } finally {
       setTeamActionLoading(false);
+    }
+  };
+
+  const handleConnectIntegration = async (provider) => {
+    const token = await getAuthToken();
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/integrations/${provider}/authorize?returnPath=settings`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.redirectUrl) window.location.href = data.redirectUrl;
+      else setIntegrationBanner({ type: 'error', text: data.error || data.message || t('settings.integrationError') });
+    } catch (e) {
+      setIntegrationBanner({ type: 'error', text: e.message || t('settings.integrationError') });
+    }
+  };
+
+  const handleDisconnectIntegration = async (provider) => {
+    if (!disconnectConfirm || disconnectConfirm.provider !== provider) return;
+    setDisconnectLoading(provider);
+    const token = await getAuthToken();
+    try {
+      const res = await fetch(`${API_URL}/integrations/${provider}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setIntegrationStatus((prev) => ({ ...prev, [provider]: false }));
+        setIntegrationBanner({ type: 'success', text: t('settings.integrationDisconnected') });
+        setDisconnectConfirm(null);
+      } else {
+        setIntegrationBanner({ type: 'error', text: data.message || t('settings.integrationError') });
+      }
+    } catch (e) {
+      setIntegrationBanner({ type: 'error', text: e.message || t('settings.integrationError') });
+    } finally {
+      setDisconnectLoading(null);
     }
   };
 
@@ -400,6 +473,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         {/* PROFILE TAB */}
         {activeTab === 'profile' && allowedTabs.find(t => t.id === 'profile') && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            {integrationBanner && (
+              <div className={`px-4 py-3 rounded-lg flex items-center justify-between ${integrationBanner.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                <span>{integrationBanner.text}</span>
+                <button type="button" onClick={() => setIntegrationBanner(null)} className="p-1 hover:opacity-70"><X size={18} /></button>
+              </div>
+            )}
              <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
                 <User size={20} className="text-gray-400" /> {t('settings.personalProfile')}
@@ -450,11 +529,51 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   </div>
               </div>
             </section>
+
+            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold mb-6">{t('settings.connectedServicesForMetrics')}</h2>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-700">{t('metrics.googleSheets')}</span>
+                  {integrationStatus.google_sheets ? (
+                    <button type="button" onClick={() => setDisconnectConfirm({ provider: 'google_sheets', label: t('metrics.googleSheets') })} disabled={disconnectLoading !== null} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50">
+                      {disconnectLoading === 'google_sheets' ? <Loader2 size={16} className="animate-spin" /> : null} {t('settings.disconnect')}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => handleConnectIntegration('google_sheets')} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition">
+                      <Link2 size={16} /> {t('settings.connect')}
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-700">{t('metrics.microsoftExcel')}</span>
+                  {integrationStatus.microsoft_excel ? (
+                    <button type="button" onClick={() => setDisconnectConfirm({ provider: 'microsoft_excel', label: t('metrics.microsoftExcel') })} disabled={disconnectLoading !== null} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50">
+                      {disconnectLoading === 'microsoft_excel' ? <Loader2 size={16} className="animate-spin" /> : null} {t('settings.disconnect')}
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => handleConnectIntegration('microsoft_excel')} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition">
+                      <Link2 size={16} /> {t('settings.connect')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
         )}
       </div>
 
-      <ConfirmModal 
+      <ConfirmModal
+        isOpen={!!disconnectConfirm}
+        onClose={() => !disconnectLoading && setDisconnectConfirm(null)}
+        onConfirm={() => disconnectConfirm && handleDisconnectIntegration(disconnectConfirm.provider)}
+        title={t('settings.disconnect')}
+        message={disconnectConfirm ? t('settings.integrationDisconnected') : ''}
+        confirmText={disconnectLoading ? '...' : t('settings.disconnect')}
+        isDestructive={true}
+      />
+
+      <ConfirmModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={async () => {
