@@ -70,7 +70,7 @@ const JourneyMetricCard = ({ metric }) => {
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
                 {chartType === 'line' ? (
-                  <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 22 }}>
+                  <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Line type="monotone" dataKey="value" stroke={getColor(0)} strokeWidth={2} dot={{ r: 3, fill: getColor(0), strokeWidth: 0 }} isAnimationActive={true}>
@@ -78,7 +78,7 @@ const JourneyMetricCard = ({ metric }) => {
                     </Line>
                   </LineChart>
                 ) : chartType === 'area' ? (
-                  <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 22 }}>
+                  <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Area type="monotone" dataKey="value" fill={getColor(0)} stroke={getColor(0)} strokeWidth={2} fillOpacity={0.6} isAnimationActive={true}>
@@ -105,7 +105,7 @@ const JourneyMetricCard = ({ metric }) => {
                     <Tooltip formatter={(value, name) => [value, name]} contentStyle={{ fontSize: 11 }} />
                   </PieChart>
                 ) : (
-                  <BarChart data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 20 }}>
+                  <BarChart data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} />
                     <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
                     <Bar dataKey="value" radius={[2, 2, 0, 0]} isAnimationActive={true}>
@@ -126,8 +126,10 @@ const JourneyMetricCard = ({ metric }) => {
     }
   };
 
-  const cardHeight = type === 'Series' ? 'h-40' : 'h-28';
-  return <div className={`w-full ${cardHeight} p-2`}>{renderContent()}</div>;
+  const cardHeight = type === 'Series'
+    ? (chartType === 'bar' || chartType === 'pie' || chartType === 'donut' ? 'h-36' : 'h-40')
+    : 'h-28';
+  return <div className={`w-full ${cardHeight} px-2 pt-2 pb-1`}>{renderContent()}</div>;
 };
 
 export default JourneyMetricCard;

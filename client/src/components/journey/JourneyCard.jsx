@@ -507,7 +507,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       </div>
 
       {/* Body - NO DRAG */}
-      <div className={`p-3 ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => e.stopPropagation()}>
+      <div className={`${card.type === 'metric' ? 'px-3 pt-3 pb-1.5' : 'p-3'} ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => e.stopPropagation()}>
          {card.type === 'channel' || card.type === 'metric' ? (
            card.type === 'channel' ? <ChannelCard card={card} onUpdate={readOnly ? () => {} : onUpdate} /> : (
              <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
