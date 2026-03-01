@@ -599,7 +599,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
             {t('metrics.livePreview')}
          </div>
 
-         <div className="flex-1 flex items-start justify-center pt-12 pb-12">
+         <div className="flex-1 flex items-start justify-center pt-32 pb-12">
             {/* Preview Card */}
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 w-full max-w-md flex flex-col items-center text-center transition-all duration-300 transform hover:scale-105">
                 <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-4">
