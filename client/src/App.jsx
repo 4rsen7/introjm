@@ -27,10 +27,10 @@ const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
 // Helper wrapper for editing metrics
-const MetricEditorWrapper = ({ metrics, onSave, onBack, onSyncSuccess }) => {
+const MetricEditorWrapper = ({ metrics, onSave, onBack, onSyncSuccess, currentUserId }) => {
   const { id } = useParams();
   const metric = metrics.find(m => m.id.toString() === id);
-  return <MetricBuilder initialData={metric} onSave={onSave} onBack={onBack} onSyncSuccess={onSyncSuccess} />;
+  return <MetricBuilder initialData={metric} onSave={onSave} onBack={onBack} onSyncSuccess={onSyncSuccess} currentUserId={currentUserId} />;
 };
 
 // --- ВИПРАВЛЕННЯ: MainLayout винесено за межі App ---
@@ -737,7 +737,7 @@ function App() {
             />} />
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
-            <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
+            <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
                 archivedJourneys={filteredJourneys.filter(j => j.status === 'archived')}

@@ -23,6 +23,7 @@ export const mapMetricToClient = (m) => ({
   seriesData: m.series_data,
   seriesLabelFormat: m.series_label_format ?? 'text',
   integrationConfig: m.integration_config,
+  integrationConnectedBy: m.integration_connected_by ?? null,
   updatedAt: formatDate(m.updated_at)
 });
 

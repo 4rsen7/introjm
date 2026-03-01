@@ -394,6 +394,8 @@
     "connectedGoogle": "Google account connected.",
     "connectExcelFirst": "Connect your Microsoft account to use an Excel file as data source.",
     "connectedExcel": "Microsoft account connected.",
+    "integrationConnectedToOther": "Data is connected from {{name}}'s account.",
+    "anotherUser": "another user",
     "dataFromYourConnectedAccount": "Data for this metric is fetched from your connected account.",
     "spreadsheetId": "Spreadsheet ID",
     "fileId": "File ID",

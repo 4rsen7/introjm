@@ -14,7 +14,7 @@ const defaultSeriesData = () => [
   { label: 'Mar', value: 600, color: CHART_PALETTE[2] },
 ];
 
-const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
+const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUserId }) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en';
   const [formData, setFormData] = useState(() => {
@@ -351,6 +351,11 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
                     <section className="space-y-4 pt-4 border-t border-gray-100">
                         <h3 className="text-xs font-bold text-gray-400">{t('metrics.integrationSetup')}</h3>
                         {integrationError && <p className="text-sm text-red-600">{integrationError}</p>}
+                        {formData.integrationConnectedBy && formData.integrationConnectedBy.id !== currentUserId && (
+                            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+                                {t('metrics.integrationConnectedToOther', { name: formData.integrationConnectedBy.full_name || t('metrics.anotherUser') })}
+                            </p>
+                        )}
                         <div>
                             {formData.dataSource === 'google_sheets' && (
                                 <>

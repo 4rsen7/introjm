@@ -394,6 +394,8 @@
     "connectedGoogle": "Google-акаунт підключено.",
     "connectExcelFirst": "Підключіть обліковий запис Microsoft, щоб використовувати файл Excel як джерело даних.",
     "connectedExcel": "Обліковий запис Microsoft підключено.",
+    "integrationConnectedToOther": "Дані підключаються з акаунту {{name}}.",
+    "anotherUser": "інший користувач",
     "dataFromYourConnectedAccount": "Дані для цієї метрики підтягуються з вашого підключеного акаунту.",
     "spreadsheetId": "ID таблиці",
     "fileId": "ID файлу",
