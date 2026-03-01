@@ -593,13 +593,13 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
         </div>
       </div>
 
-      {/* Right Panel - Preview (60%) */}
-      <div className="w-3/5 bg-gray-100 flex flex-col relative overflow-hidden">
+      {/* Right Panel - Preview (60%) — sticky so it stays at top when left column scrolls */}
+      <div className="w-3/5 bg-gray-100 flex flex-col relative overflow-hidden sticky top-0 self-start min-h-screen">
          <div className="absolute top-6 right-20 bg-white/80 backdrop-blur px-3 py-1 rounded-full text-xs font-medium text-gray-500 border border-gray-200 shadow-sm z-10">
             {t('metrics.livePreview')}
          </div>
 
-         <div className="flex-1 flex items-center justify-center p-12">
+         <div className="flex-1 flex items-start justify-center pt-12 pb-12">
             {/* Preview Card */}
             <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 w-full max-w-md flex flex-col items-center text-center transition-all duration-300 transform hover:scale-105">
                 <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-4">
@@ -645,16 +645,16 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
                     <div className="w-full h-64 mt-4">
                         <ResponsiveContainer width="100%" height="100%">
                             {formData.chartType === 'line' ? (
-                                <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 0 }}>
-                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
+                                <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 28 }}>
+                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} padding={{ left: 10, right: 10 }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ stroke: '#e5e7eb' }} labelFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
                                     <Line type="monotone" dataKey="value" stroke={seriesData[0]?.color || CHART_PALETTE[0]} strokeWidth={3} dot={{ r: 4, fill: seriesData[0]?.color || CHART_PALETTE[0], strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, strokeWidth: 0 }}>
                                         <LabelList dataKey="value" position="top" offset={10} fontSize={12} fill="#6b7280" />
                                     </Line>
                                 </LineChart>
                             ) : formData.chartType === 'area' ? (
-                                <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 0 }}>
-                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
+                                <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 28 }}>
+                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} padding={{ left: 10, right: 10 }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ stroke: '#e5e7eb' }} labelFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
                                     <Area type="monotone" dataKey="value" fill={seriesData[0]?.color || CHART_PALETTE[0]} stroke={seriesData[0]?.color || CHART_PALETTE[0]} strokeWidth={2} fillOpacity={0.6}>
                                         <LabelList dataKey="value" position="top" offset={10} fontSize={12} fill="#6b7280" />
@@ -680,8 +680,8 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess }) => {
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value, name) => [value, name]} />
                                 </PieChart>
                             ) : (
-                                <BarChart data={seriesData} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
-                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
+                                <BarChart data={seriesData} margin={{ top: 20, right: 0, left: 0, bottom: 28 }}>
+                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9ca3af', fontSize: 12 }} dy={10} tickFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} padding={{ left: 10, right: 10 }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: '#f3f4f6' }} labelFormatter={(l) => formatSeriesLabel(l, formData.seriesLabelFormat, locale)} />
                                     <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                                         {seriesData.map((entry, i) => (
