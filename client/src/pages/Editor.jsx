@@ -46,6 +46,18 @@ import { parseMapData } from '../utils/parseMapData'
 // Fallback to localhost:5005 if env var is missing
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
+function getScrollParent(node) {
+  if (!node) return null;
+  let p = node.parentElement;
+  while (p) {
+    const { overflow, overflowY } = getComputedStyle(p);
+    if (/auto|scroll|overlay/.test(overflow) || /auto|scroll|overlay/.test(overflowY)) return p;
+    if (p.scrollHeight > p.clientHeight || p.scrollWidth > p.clientWidth) return p;
+    p = p.parentElement;
+  }
+  return null;
+}
+
 const PRINT_STYLES = `
   /* Clean Print Mode (is-exporting used by legacy flow only) */
   .is-exporting { background: white !important; height: auto !important; overflow: visible !important; }
@@ -123,6 +135,18 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const location = useLocation();
   const journeyId = id;
   const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(64);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const measure = () => {
+      if (el) setHeaderHeight(el.getBoundingClientRect().height);
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
   const [gridColumns, setGridColumns] = useState(Array.from({ length: 5 }, (_, i) => ({ id: `col-${i + 1}` })))
   const [elevatedLaneId, setElevatedLaneId] = useState(null)
   const [activeDragItem, setActiveDragItem] = useState(null);
@@ -314,6 +338,28 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     const timer = setTimeout(() => setIsMinLoadComplete(true), 1500); // 1.5s delay
     return () => clearTimeout(timer);
   }, []);
+
+  // Close all toolbars and lane/column menus on scroll (same as content picker in TextLane).
+  // Editor is rendered full-page (not inside MainLayout), so there is no <main> — scroll happens on window/document.
+  // Subscribe to the element that actually scrolls: main if present (nested layout), otherwise window.
+  const isEditorContentShown = isDataLoaded && !isQueryLoading && !isQueryError && !!journeyId;
+  useEffect(() => {
+    if (!isEditorContentShown) return;
+    const handleScroll = () => {
+      setSelectedCardId(null);
+      setElevatedLaneId(null);
+      setActivePickerId(null);
+      setActiveColMenu(null);
+      setIsAddLaneMenuOpen(false);
+    };
+    const scrollEl = document.querySelector('main');
+    if (scrollEl) {
+      scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+      return () => scrollEl.removeEventListener('scroll', handleScroll);
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+    return () => window.removeEventListener('scroll', handleScroll, { capture: true });
+  }, [isEditorContentShown]);
 
   // Handle Auth Errors
   useEffect(() => {
@@ -969,14 +1015,12 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     );
   }
 
-  // Calculate dynamic sticky offsets based on zoom
-  // 64px is the height of the fixed main header
-  // 48px is the height of the column header row
-  const stickyColHeaderTop = `${64 / zoom}px`;
-  const stickyLaneTop = `${(64 / zoom) + 48}px`;
+  // Sticky offsets: use measured header height so toolbar row stays below header
+  const stickyColHeaderTop = `${headerHeight / zoom}px`;
+  const stickyLaneTop = `${headerHeight / zoom + 48}px`;
 
   return (
-    <div className="journey-print-root flex flex-col min-h-screen bg-white pt-16">
+    <div className="journey-print-root flex flex-col min-h-screen bg-white" style={{ paddingTop: headerHeight }}>
       {isGeneratingPdf && (
         <div className="fixed inset-0 z-[9999] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-200">
             <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center">
@@ -1160,7 +1204,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
                   <SortableLaneItem 
                     key={lane.id} 
                     id={lane.id}
-                    zIndexOverride={elevatedLaneId === lane.id || activeLaneId === lane.id ? 80 : 1}
+                    zIndexOverride={elevatedLaneId === lane.id || activeLaneId === lane.id ? 109 : 1}
                     isPinned={lane.isPinned}
                     stickyTop={stickyLaneTop}
                   >

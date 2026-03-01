@@ -214,7 +214,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
         {!readOnly && isActive && (
           <div 
             onMouseDown={(e) => e.preventDefault()}
-            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
              <button 
                ref={buttonRef}
@@ -304,7 +304,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
          onClick={readOnly ? undefined : handleCardClick}
        >
         {!readOnly && isActive && (
-          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200">
              <button onClick={() => onDelete && onDelete(card.id)} className="p-1 hover:bg-red-900/50 text-red-400 rounded transition" title={t('common.deleteImage')}>
                 <Trash2 size={14} />
              </button>
@@ -339,7 +339,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
         {!readOnly && isActive && (
           <div
             onMouseDown={(e) => e.preventDefault()}
-            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+            className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
             <button onClick={() => editorRef.current?.toggleBold()} className="p-1 hover:bg-gray-700 rounded transition" title={t('common.bold')}>
               <Bold size={14} strokeWidth={2.5} />
@@ -360,7 +360,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                 <ChevronDown size={12} className="text-gray-400 shrink-0" />
               </button>
               {showFontSizeMenu && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[90]">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[115]">
                   {FONT_SIZE_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
@@ -431,7 +431,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       {!readOnly && isActive && (
         <div 
           onMouseDown={(e) => e.preventDefault()}
-          className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+          className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1 bg-gray-900 text-white rounded-full px-3 py-1.5 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
            {['text', 'pain_point', 'opportunity', 'solution'].includes(card.type) && (
              <>
@@ -454,7 +454,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
                    <ChevronDown size={12} className="text-gray-400 shrink-0" />
                  </button>
                  {showFontSizeMenu && (
-                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[90]">
+                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 py-1 bg-gray-800 rounded-lg shadow-xl border border-gray-700 min-w-[56px] z-[115]">
                      {FONT_SIZE_OPTIONS.map((opt) => (
                        <button
                          key={opt.value}
