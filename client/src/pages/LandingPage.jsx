@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { setLocale } from '../i18n';
@@ -17,6 +17,7 @@ import {
   Meh,
   ChevronDown,
 } from 'lucide-react';
+import MetricsIntegrationSection from '../components/common/MetricsIntegrationSection';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
@@ -33,6 +34,8 @@ export default function LandingPage() {
   const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [plansError, setPlansError] = useState(null);
+  const pricingListRef = useRef(null);
+  const langDropdownRef = useRef(null);
 
   useEffect(() => {
     setPlansLoading(true);
@@ -52,6 +55,50 @@ export default function LandingPage() {
       })
       .finally(() => setPlansLoading(false));
   }, [currentLang]);
+
+  useEffect(() => {
+    if (!langDropdownOpen) return;
+    if (typeof window === 'undefined') return;
+
+    const handleScroll = () => {
+      setLangDropdownOpen(false);
+    };
+
+    const handleClick = (event) => {
+      if (!langDropdownRef.current) return;
+      if (!langDropdownRef.current.contains(event.target)) {
+        setLangDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('click', handleClick);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('click', handleClick);
+    };
+  }, [langDropdownOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth >= 640) return; // only adjust on mobile
+
+    const container = pricingListRef.current;
+    if (!container) return;
+
+    const children = container.children;
+    if (!children || children.length < 2) return;
+
+    const middleCard = children[1];
+    if (!middleCard || typeof middleCard.scrollIntoView !== 'function') return;
+
+    middleCard.scrollIntoView({
+      behavior: 'auto',
+      block: 'nearest',
+      inline: 'center',
+    });
+  }, [plansLoading, plansError, plans]);
 
   const formatPrice = (plan, cycle) => {
     const currency = plan.currency || 'USD';
@@ -76,8 +123,8 @@ export default function LandingPage() {
   };
 
   const langOptions = [
-    { code: 'uk', label: 'Українська' },
-    { code: 'en', label: 'English' },
+    { code: 'uk', label: 'UA' },
+    { code: 'en', label: 'EN' },
   ];
   const currentLangLabel = langOptions.find((o) => o.code === currentLang)?.label ?? currentLang;
 
@@ -106,12 +153,12 @@ export default function LandingPage() {
               {t('landing.pricing')}
             </button>
           </nav>
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="relative" ref={langDropdownRef}>
               <button
                 type="button"
                 onClick={() => setLangDropdownOpen((o) => !o)}
-                className="flex min-w-[8.5rem] items-center justify-between rounded-lg bg-slate-100/80 px-3 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-200/50 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-slate-900"
+                className="flex min-w-[3.75rem] items-center justify-between rounded-lg bg-slate-100/80 px-2 py-2 text-xs sm:text-sm font-medium text-slate-700 ring-1 ring-slate-200/50 transition-all duration-200 ease-in-out hover:bg-slate-100 hover:text-slate-900"
                 aria-expanded={langDropdownOpen}
                 aria-haspopup="listbox"
                 aria-label="Оберіть мову"
@@ -157,13 +204,13 @@ export default function LandingPage() {
             </div>
             <Link
               to="/auth"
-              className="min-w-[5.5rem] rounded-lg px-4 py-2 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-200/80 hover:text-slate-900"
+              className="min-w-[4.5rem] sm:min-w-[5.5rem] rounded-lg px-3 sm:px-4 py-2 text-center text-xs sm:text-sm font-medium text-slate-700 transition hover:bg-slate-200/80 hover:text-slate-900"
             >
               {t('landing.logIn')}
             </Link>
             <Link
               to="/auth"
-              className="min-w-[11rem] rounded-lg bg-violet-600 px-4 py-2 text-center text-sm font-medium text-white shadow-sm transition hover:bg-violet-700"
+              className="hidden min-w-[11rem] rounded-lg bg-violet-600 px-4 py-2 text-center text-sm font-medium text-white shadow-sm transition hover:bg-violet-700 sm:inline-flex sm:items-center sm:justify-center"
             >
               {t('landing.getStartedFree')}
             </Link>
@@ -173,15 +220,15 @@ export default function LandingPage() {
 
       <main>
         {/* ─── Hero ─── */}
-        <section className="relative overflow-hidden px-4 pt-16 pb-24 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8">
+        <section className="relative overflow-hidden px-4 pt-10 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8">
           <div className="mx-auto max-w-6xl text-center">
             <h1 className="text-4xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-slate-900 via-slate-800 to-slate-500 sm:text-5xl lg:text-6xl">
               {t('landing.heroTitle')}
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-600 sm:text-xl">
+            <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600 sm:mt-6 sm:text-xl">
               {t('landing.heroSubtitle')}
             </p>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4 sm:mt-10">
               <Link
                 to="/auth"
                 className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-6 py-3 text-base font-medium text-white shadow-lg shadow-violet-500/25 transition hover:bg-violet-700"
@@ -197,8 +244,8 @@ export default function LandingPage() {
                 {t('landing.ctaPricing')}
               </button>
             </div>
-            {/* App preview — wide layout with glow */}
-            <div className="relative mx-auto mt-16 max-w-5xl">
+            {/* App preview — wide layout with glow (hidden on mobile) */}
+            <div className="relative mx-auto mt-12 hidden max-w-5xl sm:mt-16 sm:block">
               <div className="absolute inset-0 -top-1/4 flex justify-center pointer-events-none" aria-hidden>
                 <div className="h-[280px] w-[120%] max-w-4xl rounded-full bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 blur-3xl" />
               </div>
@@ -343,7 +390,7 @@ export default function LandingPage() {
         </section>
 
         {/* ─── Features ─── */}
-        <section id="features" className="border-t border-slate-200/60 bg-white px-4 py-20 sm:px-6 lg:px-8">
+        <section id="features" className="border-t border-slate-200/60 bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <div className="mx-auto max-w-6xl">
             <div className="text-center">
               <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
@@ -353,8 +400,8 @@ export default function LandingPage() {
                 {t('landing.featuresSubtitle')}
               </p>
             </div>
-            <div className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
+            <div className="mt-10 flex gap-4 overflow-x-auto snap-x snap-mandatory sm:mt-16 sm:grid sm:grid-cols-2 sm:gap-10 sm:overflow-visible lg:grid-cols-3">
+              <div className="min-w-[80%] snap-start rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:min-w-0">
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
                   <Map className="h-6 w-6" strokeWidth={2} />
                 </div>
@@ -365,7 +412,7 @@ export default function LandingPage() {
                   {t('landing.feature1Desc')}
                 </p>
               </div>
-              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50">
+              <div className="min-w-[80%] snap-start rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:min-w-0">
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
                   <Users className="h-6 w-6" strokeWidth={2} />
                 </div>
@@ -376,7 +423,7 @@ export default function LandingPage() {
                   {t('landing.feature2Desc')}
                 </p>
               </div>
-              <div className="rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:col-span-2 lg:col-span-1">
+              <div className="min-w-[80%] snap-start rounded-lg border border-slate-200/60 bg-slate-50/40 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 sm:min-w-0 sm:col-span-2 lg:col-span-1">
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
                   <UsersRound className="h-6 w-6" strokeWidth={2} />
                 </div>
@@ -391,8 +438,10 @@ export default function LandingPage() {
           </div>
         </section>
 
+        <MetricsIntegrationSection />
+
         {/* ─── Pricing ─── */}
-        <section id="pricing" className="border-t border-slate-200/60 bg-slate-50/80 px-4 py-20 sm:px-6 lg:px-8">
+        <section id="pricing" className="border-t border-slate-200/60 bg-slate-50/80 px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
           <div className="mx-auto max-w-6xl">
             <div className="text-center">
               <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
@@ -429,10 +478,13 @@ export default function LandingPage() {
                 </button>
               </div>
             </div>
-            <div className="mt-14 grid gap-8 lg:grid-cols-3">
+            <div
+              ref={pricingListRef}
+              className="mt-10 flex gap-4 overflow-x-auto snap-x snap-mandatory sm:mt-14 sm:grid sm:gap-8 sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3"
+            >
               {plansLoading ? (
                 [1, 2, 3].map((i) => (
-                  <div key={i} className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div key={i} className="flex min-w-[80%] snap-center flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm sm:min-w-0">
                     <div className="h-5 w-5 rounded bg-slate-200" />
                     <div className="mt-6 h-9 w-24 rounded bg-slate-200" />
                     <div className="mt-2 h-4 w-full rounded bg-slate-100" />
@@ -447,7 +499,7 @@ export default function LandingPage() {
               ) : plansError || plans.length === 0 ? (
                 /* Fallback: static content when API fails or returns no plans */
                 <>
-                  <div className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div className="flex min-w-[80%] snap-center flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm sm:min-w-0">
                     <div className="flex items-center gap-2">
                       <Zap className="h-5 w-5 text-slate-500" />
                       <h3 className="text-lg font-semibold text-slate-900">{t('landing.free')}</h3>
@@ -469,8 +521,8 @@ export default function LandingPage() {
                       {t('landing.signUpFree')}
                     </Link>
                   </div>
-                  <div className="relative flex flex-col rounded-lg border-2 border-violet-500 bg-white p-8 shadow-xl shadow-violet-500/10">
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-500 px-3 py-1 text-xs font-semibold text-white">
+                  <div className="relative flex min-w-[80%] snap-center flex-col rounded-lg border-2 border-violet-500 bg-white p-8 shadow-xl shadow-violet-500/10 sm:min-w-0">
+                    <div className="absolute top-1 left-1/2 -translate-x-1/2 sm:top-0 sm:-translate-y-1/2 rounded-full bg-violet-500 px-3 py-0.5 text-[10px] sm:text-xs font-semibold text-white whitespace-nowrap">
                       {t('landing.mostPopular')}
                     </div>
                     <div className="flex items-center gap-2">
@@ -494,7 +546,7 @@ export default function LandingPage() {
                       {t('landing.upgradeToPro')}
                     </Link>
                   </div>
-                  <div className="flex flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm">
+                  <div className="flex min-w-[80%] snap-center flex-col rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm sm:min-w-0">
                     <div className="flex items-center gap-2">
                       <Shield className="h-5 w-5 text-slate-500" />
                       <h3 className="text-lg font-semibold text-slate-900">{t('landing.enterprise')}</h3>
@@ -526,12 +578,12 @@ export default function LandingPage() {
                   return (
                     <div
                       key={plan.id}
-                      className={`relative flex flex-col rounded-lg bg-white p-8 shadow-sm ${
+                      className={`relative flex min-w-[80%] snap-center flex-col rounded-lg bg-white p-8 shadow-sm sm:min-w-0 ${
                         isPro ? 'border-2 border-violet-500 shadow-xl shadow-violet-500/10' : 'border border-slate-200/60'
                       }`}
                     >
                       {isPro && (
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-500 px-3 py-1 text-xs font-semibold text-white">
+                        <div className="absolute top-1 left-1/2 -translate-x-1/2 sm:top-0 sm:-translate-y-1/2 rounded-full bg-violet-500 px-3 py-0.5 text-[10px] sm:text-xs font-semibold text-white whitespace-nowrap">
                           {t('landing.mostPopular')}
                         </div>
                       )}

@@ -282,7 +282,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   }
 
   // --- STANDARD CARDS ---
-  const commonClasses = "bg-white p-3 rounded-md shadow-sm border border-gray-200 text-sm text-gray-700 mb-2 relative group mx-3 hover:shadow-md transition-shadow"
+  const commonClasses = "bg-white p-3 rounded-md shadow-sm border border-gray-200 text-sm text-gray-700 mb-2 relative group hover:shadow-md transition-shadow"
   
   const configMap = {
     text: { icon: AlignLeft, color: 'text-gray-400', bg: 'bg-gray-50', label: t('editor.cardText'), border: 'border-gray-200', bar: 'bg-gray-300' },
@@ -333,7 +333,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       <div
         ref={setNodeRef}
         style={style}
-        className={`flex rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''} ${config.bg}`}
+        className={`flex rounded-md shadow-sm border ${config.border} mb-2 group hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''} ${config.bg}`}
         onClick={readOnly ? undefined : handleCardClick}
       >
         {!readOnly && isActive && (
@@ -424,7 +424,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
     <div 
       ref={setNodeRef} 
       style={style} 
-      className={`bg-white rounded-md shadow-sm border ${config.border} mb-2 group mx-3 hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''}`}
+      className={`bg-white rounded-md shadow-sm border ${config.border} mb-2 group hover:shadow-md transition-all relative ${!readOnly && isActive ? 'ring-2 ring-blue-500/20' : ''}`}
       onClick={readOnly ? undefined : handleCardClick}
     >
       {/* Toolbar for non-text cards (Channels, Metrics) */}

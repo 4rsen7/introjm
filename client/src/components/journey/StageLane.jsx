@@ -1,10 +1,8 @@
-import { useState } from 'react'
 import { GripVertical, MoreHorizontal, Plus } from 'lucide-react'
 
 const COL_WIDTH = 288 // 18rem
 
 export default function StageLane({ lane, laneStages = [], onAddStage, onUpdateStage, onResizeStage, dragHandleProps, gridColumns, onUpdate }) {
-  
   const handleResizeMouseDown = (e, stage) => {
     e.stopPropagation()
     const startX = e.clientX
@@ -14,7 +12,7 @@ export default function StageLane({ lane, laneStages = [], onAddStage, onUpdateS
       const deltaX = moveEvent.clientX - startX
       const deltaCols = Math.round(deltaX / COL_WIDTH)
       const newSpan = Math.max(1, startSpan + deltaCols)
-      
+
       if (newSpan !== stage.span) {
         onResizeStage(lane.id, stage.id, newSpan)
       }
@@ -67,9 +65,9 @@ export default function StageLane({ lane, laneStages = [], onAddStage, onUpdateS
             return (
               <div 
                 key={stage.id}
-                className={`h-12 flex items-center justify-between pr-6 pl-8 relative group shrink-0 ${isFirst ? 'ml-0' : '-ml-5'}`}
+                className={`h-12 flex items-center justify-between pr-6 pl-8 relative group shrink-0 transition-[width] duration-150 ease-out ${isFirst ? 'ml-0' : '-ml-5'}`}
                 style={{ 
-                  width: `${stage.span * 18}rem`,
+                  width: `${stage.span * COL_WIDTH}px`,
                   // zIndex стрілок залишається локальним для цього контейнера
                   zIndex: laneStages.length - index,
                   filter: 'drop-shadow(0 1px 2px rgb(0 0 0 / 0.05))'

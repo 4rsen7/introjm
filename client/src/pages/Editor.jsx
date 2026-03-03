@@ -111,7 +111,7 @@ function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop })
     // Only apply transform if dragging to prevent breaking 'position: sticky'
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
-    zIndex: isDragging ? 110 : (isPinned ? 100 : (zIndexOverride || 'auto')),
+    zIndex: isDragging ? 110 : (isPinned ? 106 : (zIndexOverride || 'auto')),
     position: isPinned ? 'sticky' : 'relative',
     top: isPinned ? stickyTop : 'auto', 
   };

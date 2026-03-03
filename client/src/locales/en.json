@@ -491,6 +491,25 @@
     "feature2Desc": "Keep goals, pain points, and customer data in one place. Attach personas to journey maps so the whole team stays aligned.",
     "feature3Title": "Team collaboration",
     "feature3Desc": "Workspaces, roles, and shared maps. Work together in real time and keep everyone on the same page.",
+    "metricsSection": {
+      "title": "Track performance at every step",
+      "subtitle": "Connect your key metrics to journey maps and make decisions based on real data.",
+      "description": "Attach conversions, NPS, churn, and other KPIs to each stage of the customer journey. See where you create value and where you lose customers, so you can prioritize the most impactful improvements.",
+      "cards": {
+        "googleSheets": {
+          "title": "Google Sheets",
+          "text": "Sync spreadsheet data with your journey maps: automatically pull in conversions, NPS, churn, and other metrics and keep them updated almost in real time."
+        },
+        "excel": {
+          "title": "Microsoft Excel",
+          "text": "Connect familiar Excel reports and aggregated tables. Reuse your existing formulas and report structure without changing internal processes."
+        },
+        "powerBi": {
+          "title": "Power BI",
+          "text": "Integrate Power BI dashboards to visualize the performance of every step of the journey and track how changes impact your business outcomes."
+        }
+      }
+    },
     "pricingTitle": "Simple, transparent pricing",
     "pricingSubtitle": "Start free. Upgrade when you need more maps, personas, or seats.",
     "monthly": "Monthly",
