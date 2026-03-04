@@ -13,9 +13,9 @@ import {
   Shield,
   Mail,
   MapPin,
+  ChevronDown,
   Smile,
   Meh,
-  ChevronDown,
 } from 'lucide-react';
 import MetricsIntegrationSection from '../components/common/MetricsIntegrationSection';
 
@@ -222,10 +222,10 @@ export default function LandingPage() {
         {/* ─── Hero ─── */}
         <section className="relative overflow-hidden px-4 pt-10 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8">
           <div className="mx-auto max-w-6xl text-center">
-            <h1 className="text-4xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-slate-900 via-slate-800 to-slate-500 sm:text-5xl lg:text-6xl">
+            <h1 className="relative z-10 pb-2 text-4xl font-bold leading-tight tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-slate-900 via-slate-800 to-slate-500 sm:text-5xl lg:text-6xl">
               {t('landing.heroTitle')}
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600 sm:mt-6 sm:text-xl">
+            <p className="relative z-0 mx-auto mt-8 max-w-2xl text-lg text-slate-600 sm:mt-10 sm:text-xl">
               {t('landing.heroSubtitle')}
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4 sm:mt-10">
@@ -249,7 +249,7 @@ export default function LandingPage() {
               <div className="absolute inset-0 -top-1/4 flex justify-center pointer-events-none" aria-hidden>
                 <div className="h-[280px] w-[120%] max-w-4xl rounded-full bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 blur-3xl" />
               </div>
-              <div className="relative overflow-hidden rounded-lg border border-slate-200/60 bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-200/40">
+              <div className="relative overflow-hidden rounded-lg border border-slate-200/60 bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-200/40 transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-2xl hover:shadow-slate-300/50">
                 {/* Browser chrome */}
                 <div className="flex items-center gap-2 border-b border-slate-200/60 bg-slate-100/80 px-4 py-2.5">
                   <div className="flex gap-1.5">
@@ -298,7 +298,7 @@ export default function LandingPage() {
                         <div className="h-8 w-20 shrink-0 rounded-lg bg-violet-600 shadow-sm" />
                       </div>
                     </div>
-                    {/* Colored stages row — same lane layout as auth */}
+                    {/* Colored stages row */}
                     <div className="mb-4 flex gap-4">
                       <div className="w-20 shrink-0 pt-2">
                         <div className="h-2.5 w-12 rounded bg-slate-400" />
@@ -315,7 +315,7 @@ export default function LandingPage() {
                         </div>
                       </div>
                     </div>
-                    {/* Cards row — aligned with same left column */}
+                    {/* Cards row */}
                     <div className="mb-4 flex gap-4">
                       <div className="w-20 shrink-0 pt-2">
                         <div className="h-2.5 w-16 rounded bg-slate-400" />
@@ -333,7 +333,7 @@ export default function LandingPage() {
                         ))}
                       </div>
                     </div>
-                    {/* Journey / emotion block — same lane layout */}
+                    {/* Journey / emotion block */}
                     <div className="flex gap-4">
                       <div className="w-20 shrink-0 pt-2">
                         <div className="h-2.5 w-14 rounded bg-slate-400" />
@@ -344,8 +344,6 @@ export default function LandingPage() {
                           <div />
                           <div />
                         </div>
-                        
-                        {/* SVG Лінія + Крапки */}
                         <div className="absolute inset-0 h-full w-full">
                           <svg
                             className="absolute inset-0 h-full w-full"
@@ -360,23 +358,13 @@ export default function LandingPage() {
                               strokeLinecap="round"
                               vectorEffect="non-scaling-stroke"
                             />
-                            {/* Зайву лінію знизу видалено! */}
                           </svg>
-
-                          {/* Точка 1 (Smile): x=140 (46.66%), y=30 (30%) */}
                           <div className="absolute left-[46.66%] top-[30%] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f97316] bg-white shadow-sm" />
-
-                          {/* Точка 2 (Meh): x=250 (83.33%), y=60 (60%) */}
                           <div className="absolute left-[83.33%] top-[60%] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f97316] bg-white shadow-sm" />
                         </div>
-                        
-                        {/* Смайлик Smile: ідеально над Точкою 1 */}
                         <div className="absolute left-[46.66%] top-[12%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-100 bg-white p-0.5 shadow-sm">
                           <Smile size={14} className="text-green-500" />
                         </div>
-                        
-                        {/* Смайлик Meh: ідеально під Точкою 2 */}
-                        {/* Meh: у правій третині (83.33%), не на краю — як на референсі */}
                         <div className="absolute left-[83.33%] top-[58%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-100 bg-white p-0.5 shadow-sm">
                           <Meh size={14} className="text-yellow-500" />
                         </div>
