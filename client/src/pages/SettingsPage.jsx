@@ -547,7 +547,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   )}
                 </div>
                 <div className={`flex items-center justify-between py-2 border-b border-gray-100 ${MS_EXCEL_DISABLED ? 'opacity-60' : ''}`}>
-                  <span className="text-gray-700">{t('metrics.microsoftExcel')}{MS_EXCEL_DISABLED ? ` (${t('common.soon')})` : ''}</span>
+                  <span className="text-gray-700">{t('metrics.microsoftExcel')}</span>
                   {integrationStatus.microsoft_excel ? (
                     <button type="button" onClick={() => setDisconnectConfirm({ provider: 'microsoft_excel', label: t('metrics.microsoftExcel') })} disabled={disconnectLoading !== null} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50">
                       {disconnectLoading === 'microsoft_excel' ? <Loader2 size={16} className="animate-spin" /> : null} {t('settings.disconnect')}
