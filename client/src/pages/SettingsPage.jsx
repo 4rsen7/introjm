@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock, ChevronDown, Link2, X } from 'lucide-react';
+import { User, Users, Building, Trash2, Mail, Plus, ShieldAlert, CreditCard, Zap, Loader2, Clock, ChevronDown, Link2, X, Settings } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import InfoModal from '../components/common/InfoModal';
 import { getAuthToken } from '../services/auth';
@@ -83,6 +83,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   const maxJ = limits?.maxJourneys ?? null;
   const maxP = limits?.maxPersonas ?? null;
   const maxM = limits?.maxMetrics ?? null;
+  const maxI = limits?.maxInterviews ?? null;
 
   // Fetch Team Data
   useEffect(() => {
@@ -249,7 +250,9 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">{t('settings.settings')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+           <Settings className="text-gray-400" /> {t('settings.settings')}
+        </h1>
       </header>
 
       {/* Tabs Navigation */}
@@ -335,6 +338,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                             { labelKey: 'settings.journeys', used: usage.journeys, max: maxJ },
                             { labelKey: 'settings.personas', used: usage.personas, max: maxP },
                             { labelKey: 'settings.metrics', used: usage.metrics, max: maxM },
+                            { labelKey: 'settings.interviews', used: usage.interviews || 0, max: maxI },
                         ].map(({ labelKey, used, max }) => (
                             <div key={labelKey}>
                                 <div className="flex justify-between text-xs text-gray-600 mb-1">

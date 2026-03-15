@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Copy, Trash2, Plus, User, X, Archive } from 'lucide-react';
+import { Search, Filter, Copy, Trash2, Plus, User, X, Archive, Users } from 'lucide-react';
 import ConfirmModal from '../ConfirmModal';
 import Tooltip from '../components/common/Tooltip';
 import LinkedMapsModal from '../components/common/LinkedMapsModal';
@@ -42,7 +42,9 @@ const Personas = ({ personas = [], currentUserId, isWorkspaceOwner, onCreate, on
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('personas.title')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+            <Users className="text-gray-400" /> {t('personas.title')}
+        </h1>
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
@@ -114,11 +116,11 @@ const Personas = ({ personas = [], currentUserId, isWorkspaceOwner, onCreate, on
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Used In</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Updated</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">Created By</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.name')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.usedIn')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.updated')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.createdBy')}</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

@@ -278,13 +278,14 @@ async function getWorkspacePlanAndLimits(workspaceId) {
         .limit(1)
         .maybeSingle();
     if (!sub) return null;
-    const { data: plan } = await supabaseAdmin.from('plans').select('id, name, max_members, max_journeys, max_personas, max_metrics').eq('id', sub.plan_id).maybeSingle();
+    const { data: plan } = await supabaseAdmin.from('plans').select('id, name, max_members, max_journeys, max_personas, max_metrics, max_interviews').eq('id', sub.plan_id).maybeSingle();
     if (!plan) return null;
-    const [membersRes, journeysRes, personasRes, metricsRes] = await Promise.all([
+    const [membersRes, journeysRes, personasRes, metricsRes, interviewsRes] = await Promise.all([
         supabaseAdmin.from('workspace_members').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
         supabaseAdmin.from('journeys').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
         supabaseAdmin.from('personas').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
         supabaseAdmin.from('metrics').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
+        supabaseAdmin.from('interviews').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
     ]);
     return {
         planName: plan.name,
@@ -294,11 +295,13 @@ async function getWorkspacePlanAndLimits(workspaceId) {
         maxJourneys: plan.max_journeys ?? null,
         maxPersonas: plan.max_personas ?? null,
         maxMetrics: plan.max_metrics ?? null,
+        maxInterviews: plan.max_interviews ?? null,
         usage: {
             members: membersRes.count ?? 0,
             journeys: journeysRes.count ?? 0,
             personas: personasRes.count ?? 0,
             metrics: metricsRes.count ?? 0,
+            interviews: interviewsRes.count ?? 0,
         },
     };
 }
@@ -1879,7 +1882,7 @@ app.get('/api/workspace/limits', async (req, res) => {
       data: {
         workspaceId: workspace.id,
         role: workspace.role,
-        limits: limits || { planName: null, planId: null, currentPeriodEnd: null, maxMembers: null, maxJourneys: null, maxPersonas: null, maxMetrics: null, usage: { members: 0, journeys: 0, personas: 0, metrics: 0 } },
+        limits: limits || { planName: null, planId: null, currentPeriodEnd: null, maxMembers: null, maxJourneys: null, maxPersonas: null, maxMetrics: null, maxInterviews: null, usage: { members: 0, journeys: 0, personas: 0, metrics: 0, interviews: 0 } },
       },
     });
   } catch (err) {
@@ -2889,6 +2892,17 @@ app.post('/api/interviews', async (req, res) => {
         }
         if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
         if (!workspace) return res.status(403).json({ status: 'error', message: 'Create or join a workspace first' });
+
+        // PLAN LIMIT CHECK
+        const planLimits = await getWorkspacePlanAndLimits(workspace.id);
+        if (planLimits && planLimits.maxInterviews != null && (planLimits.usage.interviews >= planLimits.maxInterviews)) {
+            return res.status(403).json({
+                status: 'error',
+                code: 'LIMIT_REACHED',
+                limit: 'interviews',
+                message: `Your current plan allows up to ${planLimits.maxInterviews} interviews.`
+            });
+        }
 
         const { data, error } = await supabaseAdmin.from('interviews').insert([{
             title: title || 'New Interview',

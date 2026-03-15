@@ -227,15 +227,21 @@ function App() {
     setIsNavigating(true);
     setLoadingProgress(20);
 
-    const t1 = setTimeout(() => setLoadingProgress(70), 200);
-    const t2 = setTimeout(() => setLoadingProgress(100), 500);
-    const t3 = setTimeout(() => {
+    const timers = [];
+
+    timers.push(setTimeout(() => setLoadingProgress(70), 200));
+    timers.push(setTimeout(() => setLoadingProgress(100), 500));
+    
+    // Complete navigation immediately after full width
+    timers.push(setTimeout(() => {
       setIsNavigating(false);
-      setTimeout(() => setLoadingProgress(0), 150);
-    }, 300);
+      // Reset width slightly after fading out
+      timers.push(setTimeout(() => setLoadingProgress(0), 150));
+    }, 550));
 
     return () => {
-      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+      timers.forEach(clearTimeout);
+      setIsNavigating(false);
     };
   }, [location.pathname]);
 
@@ -741,7 +747,7 @@ function App() {
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
-            <Route path="/interviews" element={<InterviewsList userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
+            <Route path="/interviews" element={<InterviewsList userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
@@ -773,8 +779,8 @@ function App() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Limit reached</h3>
             <p className="text-gray-600 mb-4">
               {currentWorkspace?.role === 'owner'
-                ? `You've reached the limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit}. Upgrade your plan to add more.`
-                : `You've reached the workspace limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit}. Contact the workspace owner to upgrade the plan.`}
+                ? `You've reached the limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit === 'interviews' ? 'interviews' : limitReached.limit}. Upgrade your plan to add more.`
+                : `You've reached the workspace limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit === 'interviews' ? 'interviews' : limitReached.limit}. Contact the workspace owner to upgrade the plan.`}
             </p>
             <div className="flex gap-2 justify-end">
               {currentWorkspace?.role === 'owner' ? (

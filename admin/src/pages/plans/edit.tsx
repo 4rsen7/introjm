@@ -157,6 +157,9 @@ export const PlanEdit: React.FC = () => {
           <Form.Item label="Max Metrics (per workspace)" name="max_metrics" help="Leave empty for unlimited">
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
+          <Form.Item label="Max Interviews (per workspace)" name="max_interviews" help="Leave empty for unlimited">
+            <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
+          </Form.Item>
         </div>
         <Form.Item name="is_active" valuePropName="checked">
           <Checkbox>Active Plan</Checkbox>

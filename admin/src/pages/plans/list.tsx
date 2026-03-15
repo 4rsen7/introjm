@@ -27,6 +27,7 @@ export const PlanList: React.FC = () => {
         <Table.Column dataIndex="max_journeys" title="Max Journeys" render={(v: number | null) => v ?? "—"} />
         <Table.Column dataIndex="max_personas" title="Max Personas" render={(v: number | null) => v ?? "—"} />
         <Table.Column dataIndex="max_metrics" title="Max Metrics" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_interviews" title="Max Interviews" render={(v: number | null) => v ?? "—"} />
         <Table.Column
           title="Actions"
           dataIndex="actions"

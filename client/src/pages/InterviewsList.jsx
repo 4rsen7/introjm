@@ -10,7 +10,7 @@ import ConfirmModal from '../ConfirmModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
 
-export default function InterviewsList({ userProfile, currentWorkspace }) {
+export default function InterviewsList({ userProfile, currentWorkspace, onLimitReached }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -44,6 +44,12 @@ export default function InterviewsList({ userProfile, currentWorkspace }) {
       });
       
       const json = await res.json();
+
+      if (res.status === 403 && json.code === 'LIMIT_REACHED') {
+        onLimitReached?.('interviews');
+        return;
+      }
+
       if (res.ok && json.data) {
         queryClient.invalidateQueries(['interviews']);
         setShowCreationModal(false);
@@ -110,7 +116,9 @@ export default function InterviewsList({ userProfile, currentWorkspace }) {
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('interviews.title')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+           <Mic className="text-gray-400" /> {t('interviews.title')}
+        </h1>
         <button 
           onClick={openCreationModal}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
@@ -139,11 +147,11 @@ export default function InterviewsList({ userProfile, currentWorkspace }) {
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('interviews.name')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('interviews.type')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('interviews.updated')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('interviews.createdBy')}</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('interviews.actions')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.name')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.type')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.updated')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.createdBy')}</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -179,7 +187,7 @@ export default function InterviewsList({ userProfile, currentWorkspace }) {
                       <div>
                         <div className="font-bold text-gray-900">{interview.title}</div>
                         <div className="text-sm text-gray-500">
-                          {interview.transcript_data?.length || 0} transcript lines
+                          {interview.transcript_data?.length || 0} {t('interviews.transcriptLines')}
                         </div>
                       </div>
                     </div>

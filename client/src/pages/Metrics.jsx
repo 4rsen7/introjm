@@ -62,7 +62,9 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
         </div>
       )}
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{t('metrics.title')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
+           <BarChart3 className="text-gray-400" /> {t('metrics.title')}
+        </h1>
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
@@ -125,11 +127,11 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('journeys.name')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.type')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.lastUpdated')}</th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('metrics.linkedMaps')}</th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('journeys.actions')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.name')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.type')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.updated')}</th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500">{t('common.usedIn')}</th>
+              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

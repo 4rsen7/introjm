@@ -9,7 +9,8 @@
     "metrics": "Metrics",
     "archive": "Archive",
     "settings": "Settings",
-    "profile": "Profile"
+    "profile": "Profile",
+    "interviews": "Interviews"
   },
   "interviews": {
     "title": "Interviews",
@@ -23,6 +24,7 @@
     "updated": "Updated",
     "createdBy": "Created By",
     "actions": "Actions",
+    "transcriptLines": "transcript lines",
     "typeLive": "Live",
     "typeUpload": "Upload",
     "selectTypeModalTitle": "Select Interview Type",
@@ -165,6 +167,7 @@
     "journeys": "Journeys",
     "personas": "Personas",
     "metrics": "Metrics",
+    "interviews": "Interviews",
     "personalProfile": "Personal Profile",
     "avatar": "Avatar",
     "displayName": "Name",
@@ -204,6 +207,13 @@
     "planManagedByOwner": "Plan is managed by the workspace owner. Contact the owner to change the plan."
   },
   "common": {
+    "name": "Name",
+    "type": "Type",
+    "status": "Status",
+    "updated": "Updated",
+    "createdBy": "Created By",
+    "actions": "Actions",
+    "usedIn": "Used In",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
