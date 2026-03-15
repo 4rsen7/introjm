@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Routes, Route, useNavigate, useLocation, Navigate, Outlet, useParams } from 'react-router-dom'
-import { LayoutGrid, Map, Users, BarChart3, Settings, Archive as ArchiveIcon, ChevronDown, LogOut } from 'lucide-react'
+import { LayoutGrid, Map, Users, BarChart3, Settings, Archive as ArchiveIcon, ChevronDown, LogOut, Mic } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Editor from './pages/Editor'
 import Personas from './pages/Personas'
@@ -9,6 +9,8 @@ import PersonaModal from './components/personas/PersonaModal'
 import JourneyMaps from './pages/JourneyMaps'
 import Metrics from './pages/Metrics'
 import MetricBuilder from './pages/MetricBuilder'
+import InterviewsList from './pages/InterviewsList'
+import InterviewRoom from './pages/InterviewRoom'
 import SettingsPage from './pages/SettingsPage'
 import ArchivePage from './pages/ArchivePage'
 import AuthPage from './pages/AuthPage'
@@ -140,6 +142,7 @@ const MainLayout = ({
                   <MenuItem icon={Map} label={t('nav.journeyMaps')} isActive={location.pathname === '/journeys'} onClick={() => navigate('/journeys')} />
                   <MenuItem icon={Users} label={t('nav.personas')} isActive={location.pathname === '/personas'} onClick={() => navigate('/personas')} />
                   <MenuItem icon={BarChart3} label={t('nav.metrics')} isActive={location.pathname.startsWith('/metrics')} onClick={() => navigate('/metrics')} />
+                  <MenuItem icon={Mic} label={t('nav.interviews') || 'Interviews'} isActive={location.pathname.startsWith('/interviews')} onClick={() => navigate('/interviews')} />
                   <MenuItem icon={ArchiveIcon} label={t('nav.archive')} isActive={location.pathname === '/archive'} onClick={() => navigate('/archive')} />
                   <MenuItem icon={Settings} label={t('nav.settings')} isActive={location.pathname === '/settings'} onClick={() => { setSettingsTab('workspace'); navigate('/settings'); }} />
                 </div>
@@ -738,6 +741,8 @@ function App() {
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
+            <Route path="/interviews" element={<InterviewsList userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
+            <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
                 archivedJourneys={filteredJourneys.filter(j => j.status === 'archived')}

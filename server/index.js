@@ -3,6 +3,10 @@ const cors = require('cors');
 const crypto = require('crypto');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleAIFileManager } = require('@google/generative-ai/server');
+const multer = require('multer');
+const fs = require('fs');
 const { encrypt, decrypt } = require('./integrations/encrypt');
 const googleSheets = require('./integrations/googleSheets');
 const microsoftExcel = require('./integrations/microsoftExcel');
@@ -2801,7 +2805,380 @@ app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], asyn
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- РОУТИ ДЛЯ ІНТЕРВ'Ю (INTERVIEWS) ---
+
+// 1. Отримати всі інтерв'ю робочого простору
+app.get('/api/interviews', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        
+        let query = supabaseAdmin.from('interviews').select('*');
+        if (workspaceIds.length > 0) {
+            query = query.in('workspace_id', workspaceIds);
+        } else {
+            query = query.eq('user_id', user.id);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (error) throw error;
+
+        // Fetch owner names
+        const userIds = [...new Set(data.map(i => i.user_id).filter(Boolean))];
+        let profilesMap = {};
+        if (userIds.length > 0) {
+            const { data: profiles } = await supabaseAdmin.from('profiles').select('id, full_name, email').in('id', userIds);
+            if (profiles) profiles.forEach(p => { profilesMap[p.id] = p.full_name || p.email; });
+        }
+
+        const interviewsWithOwners = data.map(i => ({
+            ...i,
+            owner: profilesMap[i.user_id] || 'Unknown'
+        }));
+        res.json({ status: 'success', data: interviewsWithOwners });
+    } catch (err) {
+        logSystemError(err, 'GET /api/interviews');
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2. Отримати одне інтерв'ю
+app.get('/api/interviews/:id', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: interview, error } = await supabaseAdmin.from('interviews').select('*').eq('id', id).single();
+        if (error) throw error;
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (interview.workspace_id && !workspaceIds.includes(interview.workspace_id)) {
+            return res.status(404).json({ status: 'error', message: 'Interview not found or access denied' });
+        }
+
+        res.json({ status: 'success', data: interview });
+    } catch (err) {
+        logSystemError(err, `GET /api/interviews/${id}`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+// 3. Створити інтерв'ю
+app.post('/api/interviews', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { title, status, transcript_data, workspace_id: bodyWorkspaceId, type } = req.body;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        let workspace = null;
+        if (bodyWorkspaceId) {
+            const allowed = await getAccessibleWorkspaceIds(user.id);
+            if (allowed.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId };
+        }
+        if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
+        if (!workspace) return res.status(403).json({ status: 'error', message: 'Create or join a workspace first' });
+
+        const { data, error } = await supabaseAdmin.from('interviews').insert([{
+            title: title || 'New Interview',
+            status: status || 'draft',
+            type: type || 'live',
+            transcript_data: transcript_data || [],
+            workspace_id: workspace.id,
+            user_id: user.id
+        }]).select().single();
+
+        if (error) throw error;
+        res.status(201).json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, 'POST /api/interviews');
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+// 4. Оновити інтерв'ю
+app.put('/api/interviews/:id', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    const { title, status, transcript_data, summary_data, type } = req.body;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews').select('id, workspace_id').eq('id', id).single();
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+        
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const updates = { updated_at: new Date().toISOString() };
+        if (title !== undefined) updates.title = title;
+        if (status !== undefined) updates.status = status;
+        if (type !== undefined) updates.type = type;
+        if (transcript_data !== undefined) updates.transcript_data = transcript_data;
+        if (summary_data !== undefined) updates.summary_data = summary_data;
+
+        const { data, error } = await supabaseAdmin.from('interviews').update(updates).eq('id', existing.id).select().single();
+        if (error) throw error;
+        res.json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, `PUT /api/interviews/${id}`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+// 5. Видалити інтерв'ю
+app.delete('/api/interviews/:id', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews').select('id, workspace_id, user_id').eq('id', id).single();
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const isCreator = existing.user_id === user.id;
+        const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', existing.workspace_id).maybeSingle();
+        const isOwner = ws && ws.owner_id === user.id;
+        console.log(`Delete Int. Check: isCreator=${isCreator}, isOwner=${isOwner}, user_id=${existing.user_id}, currentUser=${user.id}`);
+        if (!isCreator && !isOwner) {
+            console.log(`Delete Int. Error: 403 Access Denied. User is not owner or creator.`);
+            return res.status(403).json({ status: 'error', message: 'Only creator or owner can delete' });
+        }
+
+        const { error } = await supabaseAdmin.from('interviews').delete().eq('id', id);
+        if (error) {
+            console.error("Supabase delete returned error:", error);
+            throw error;
+        }
+        res.json({ status: 'success', message: 'Interview deleted successfully' });
+    } catch (err) {
+        logSystemError(err, `DELETE /api/interviews/${id}`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+// 6. Згенерувати AI Саммарі (Заглушка/Mock)
+app.post('/api/interviews/:id/generate-summary', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews').select('id, workspace_id, transcript_data').eq('id', id).single();
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        if (!existing.transcript_data || existing.transcript_data.length === 0) {
+            return res.status(400).json({ status: 'error', message: 'No transcript data found for this interview.' });
+        }
+
+        // 1. Initialize Gemini API
+        if (!process.env.GEMINI_API_KEY) {
+             throw new Error("GEMINI_API_KEY is not configured on the server.");
+        }
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        // We use gemini-using-pro for complex reasoning and json output
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+
+        // 2. Format the transcript for the prompt
+        const conversationText = existing.transcript_data.map(
+             line => `[${line.timestamp}] ${line.speaker}: ${line.text}`
+        ).join('\n');
+
+        // 3. Construct the prompt
+        const prompt = `You are an expert UX Researcher and Business Analyst. 
+Below is a transcript of a user interview.
+Analyze the conversation and extract the following information.
+
+CRITICAL INSTRUCTION: First, detect the dominant language spoken in the transcript. You MUST write your analysis, including all painPoints, quotes, and generalInsights, entirely in that exact same language.
+
+1. "painPoints": An array of strings describing the specific problems, frustrations, or difficulties the user mentioned. Extract at most 5 key pain points.
+2. "quotes": An array of strings containing the most impactful, direct quotes from the respondent that highlight their needs or struggles. Extract at most 3 quotes.
+3. "generalInsights": A single string summarizing the overall sentiment, main takeaways, and what the user is trying to achieve (TL;DR).
+
+Format your response EXACTLY as a valid JSON object with the keys "painPoints", "quotes", and "generalInsights". Do not include markdown blocks like \`\`\`json.
+
+Transcript:
+"""
+${conversationText}
+"""`;
+
+        // 4. Call Gemini
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+
+        // 5. Parse the JSON response
+        let aiSummaryData;
+        try {
+            // Remove markdown formatting if Gemini included it accidentally
+            const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+            aiSummaryData = JSON.parse(cleanJsonString);
+        } catch (parseError) {
+            console.error("Failed to parse Gemini response as JSON:", responseText);
+            throw new Error("AI returned an invalid response format.");
+        }
+
+        const { data, error } = await supabaseAdmin.from('interviews')
+            .update({ summary_data: aiSummaryData, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        
+        res.json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, `POST /api/interviews/${id}/generate-summary`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+const upload = multer({ dest: 'uploads/' });
+
+// 7. Upload Audio and Transcribe
+app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    if (!req.file) return res.status(400).json({ status: 'error', message: 'No audio file uploaded.' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews')
+            .select('id, workspace_id, type')
+            .eq('id', id).single();
+            
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        if (!process.env.GEMINI_API_KEY) {
+             throw new Error("GEMINI_API_KEY is not configured.");
+        }
+        
+        const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+
+        // Step 1: Upload to Google AI
+        const uploadResponse = await fileManager.uploadFile(req.file.path, {
+            mimeType: req.file.mimetype,
+            displayName: req.file.originalname,
+        });
+        const geminiFileId = uploadResponse.file.name;
+        
+        // Step 2: Wait for processing (Files typically need a few seconds to process if they are large)
+        let fileStatus = await fileManager.getFile(geminiFileId);
+        while (fileStatus.state === "PROCESSING") {
+             process.stdout.write(".");
+             await new Promise((resolve) => setTimeout(resolve, 5000)); // sleep 5s
+             fileStatus = await fileManager.getFile(geminiFileId);
+        }
+        
+        if (fileStatus.state === "FAILED") {
+            throw new Error("Audio processing failed on Gemini servers.");
+        }
+
+        // Step 3: Prompt for Transcription
+        const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
+        Estimate the general speaker roles (e.g. "Interviewer" vs "Respondent"). 
+        Estimate the local timestamp of each message starting from "00:00" relative to the start of the audio.
+        
+        You MUST return your response as a valid JSON array of objects, where each object has the keys: 
+        "id" (generate a unique string id), "speaker" (string), "text" (string), "timestamp" (string).
+        
+        Do not include any markdown format blocks around the JSON array, just output the raw JSON array.`;
+
+        const result = await model.generateContent([
+            {
+                fileData: {
+                    mimeType: uploadResponse.file.mimeType,
+                    fileUri: uploadResponse.file.uri
+                }
+            },
+            { text: prompt },
+        ]);
+        
+        const responseText = result.response.text();
+        
+        let newTranscriptData;
+        try {
+            const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+            newTranscriptData = JSON.parse(cleanJsonString);
+            
+            if (!Array.isArray(newTranscriptData)) {
+                throw new Error("Parsed data is not an array");
+            }
+        } catch (e) {
+            console.error("Transcription parse error:", e);
+            console.error("Raw response:", responseText);
+            throw new Error("AI returned an invalid transcript format.");
+        }
+
+        // Clean up locally
+        fs.unlinkSync(req.file.path);
+        
+        // Update database with transcript and set status to completed
+        const { data, error } = await supabaseAdmin.from('interviews')
+            .update({ 
+                transcript_data: newTranscriptData, 
+                status: 'completed',
+                updated_at: new Date().toISOString() 
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        
+        // Try to clean up from Google AI servers
+        try {
+            await fileManager.deleteFile(geminiFileId);
+        } catch (cleanupErr) {
+            console.warn("Could not delete file from Google AI Studio:", cleanupErr.message);
+        }
+
+        res.json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, `POST /api/interviews/${id}/upload-audio`);
+        if (req.file && fs.existsSync(req.file.path)) {
+             fs.unlinkSync(req.file.path); // cleanup on error
+        }
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
 // Усі незбіги маршрутів — JSON 404 (щоб клієнт завжди отримував JSON)
+
 app.use((req, res) => {
     res.status(404).json({
         error: 'Route not found',

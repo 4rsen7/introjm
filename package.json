@@ -1,0 +1,17 @@
+{
+  "name": "iterojm-root",
+  "private": true,
+  "workspaces": [
+    "admin",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\" \"npm run dev -w admin\"",
+    "start": "npm run dev",
+    "install:all": "npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

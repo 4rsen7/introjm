@@ -44,6 +44,11 @@ export const mapJourneyToClient = (j) => ({
   updatedAt: formatDate(j.updated_at || j.created_at),
 });
 
+export const mapInterviewToClient = (i) => ({
+  ...i,
+  updatedAt: formatDate(i.updated_at || i.created_at),
+});
+
 // Generic fetcher
 const fetchData = async (endpoint) => {
   const token = await getAuthToken();
@@ -67,6 +72,17 @@ export const useJourneys = () => {
       return data.map(mapJourneyToClient);
     },
     refetchOnWindowFocus: true, // щоб інші учасники воркспейсу бачили нові мапи після перемикання на вкладку
+  });
+};
+
+export const useInterviews = () => {
+  return useQuery({
+    queryKey: ['interviews'],
+    queryFn: async () => {
+      const data = await fetchData('/interviews');
+      return data.map(mapInterviewToClient);
+    },
+    refetchOnWindowFocus: true,
   });
 };
 
