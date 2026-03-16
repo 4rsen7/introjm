@@ -31,14 +31,15 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
     return allowedTabs.find(t => t.id === initialTab) ? initialTab : allowedTabs[0]?.id;
   });
 
-  // Sync if prop changes (e.g. re-navigation)
+  // Sync only when navigation intent or role changes.
+  // This keeps manual tab switching responsive instead of snapping back on every re-render.
   useEffect(() => {
     if (allowedTabs.find(t => t.id === initialTab)) {
       setActiveTab(initialTab);
     } else if (allowedTabs.length > 0) {
       setActiveTab(allowedTabs[0].id);
     }
-  }, [allowedTabs, initialTab]);
+  }, [initialTab, isOwner]);
 
   // Mock Data
   const [workspaceName, setWorkspaceName] = useState(workspace?.name || '');
