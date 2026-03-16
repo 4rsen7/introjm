@@ -3191,8 +3191,31 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
     }
 });
 
-// Усі незбіги маршрутів — JSON 404 (щоб клієнт завжди отримував JSON)
+// Налаштування для роздачі статики в продакшені (Клієнт і Адмінка)
+if (process.env.NODE_ENV === 'production') {
+    const path = require('path');
+    
+    // 1. Статика Клієнта (головний домен)
+    app.use(express.static(path.join(__dirname, 'public/client')));
+    
+    // 2. Статика Адмінки (шлях /admin)
+    app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 
+    // 3. Fallback для React Router Адмінки
+    app.get('/admin/*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public/admin/index.html'));
+    });
+
+    // 4. Fallback для React Router Клієнта (ВИКЛЮЧАЮЧИ /api)
+    app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api/')) {
+            return next(); // Передає управління наступному middleware (404 для API)
+        }
+        res.sendFile(path.join(__dirname, 'public/client/index.html'));
+    });
+}
+
+// Усі незбіги маршрутів (для API, або якщо не продакшен) — JSON 404 (щоб клієнт отримував JSON)
 app.use((req, res) => {
     res.status(404).json({
         error: 'Route not found',
