@@ -54,7 +54,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="metrics-page">
       {integrationBanner && (
         <div className={`mb-4 px-4 py-3 rounded-lg flex items-center justify-between ${integrationBanner.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
           <span>{integrationBanner.text}</span>
@@ -68,6 +68,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
+            data-testid="new-metric-button"
         >
           <Plus size={18} />
           {t('metrics.newMetric')}
@@ -151,6 +152,9 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
                 key={metric.id} 
                 className="hover:bg-gray-50/80 transition-colors group cursor-pointer"
                 onClick={() => onEdit && onEdit(metric)}
+                data-testid="metric-row"
+                data-metric-id={metric.id}
+                data-metric-name={metric.name}
               >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">

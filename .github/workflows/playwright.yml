@@ -1,0 +1,69 @@
+name: Playwright E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+      CI: true
+      PORT: 5005
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:5173
+      PLAYWRIGHT_ADMIN_URL: http://127.0.0.1:3000
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      E2E_AUTH_EMAIL: ${{ secrets.E2E_AUTH_EMAIL }}
+      E2E_AUTH_PASSWORD: ${{ secrets.E2E_AUTH_PASSWORD }}
+      E2E_OWNER_EMAIL: ${{ secrets.E2E_OWNER_EMAIL }}
+      E2E_OWNER_PASSWORD: ${{ secrets.E2E_OWNER_PASSWORD }}
+      E2E_OWNER_WORKSPACE: ${{ secrets.E2E_OWNER_WORKSPACE }}
+      E2E_OWNER_JOURNEY_TITLE: ${{ secrets.E2E_OWNER_JOURNEY_TITLE }}
+      E2E_OWNER_PERSONA_NAME: ${{ secrets.E2E_OWNER_PERSONA_NAME }}
+      E2E_OWNER_METRIC_NAME: ${{ secrets.E2E_OWNER_METRIC_NAME }}
+      E2E_MEMBER_EMAIL: ${{ secrets.E2E_MEMBER_EMAIL }}
+      E2E_MEMBER_PASSWORD: ${{ secrets.E2E_MEMBER_PASSWORD }}
+      E2E_MEMBER_PERSONAL_WORKSPACE: ${{ secrets.E2E_MEMBER_PERSONAL_WORKSPACE }}
+      E2E_MEMBER_SHARED_WORKSPACE: ${{ secrets.E2E_MEMBER_SHARED_WORKSPACE }}
+      E2E_SHARED_INTERVIEW_TITLE: ${{ secrets.E2E_SHARED_INTERVIEW_TITLE }}
+      E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Seed E2E fixtures
+        run: npm run seed:e2e
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results

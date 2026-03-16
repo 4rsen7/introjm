@@ -1,6 +1,41 @@
 import { AuthProvider } from "@refinedev/core";
 import { supabaseClient } from "./supabase-client";
 
+const ADMIN_ROLE = "admin";
+const ADMIN_ACCESS_ERROR = {
+  message: "Only admin users can access the admin panel.",
+  name: "Access denied",
+};
+
+async function getProfileRole(userId: string) {
+  const { data: profile, error } = await supabaseClient
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return profile?.role ?? null;
+}
+
+async function ensureAdminAccess() {
+  const { data, error } = await supabaseClient.auth.getUser();
+  if (error) throw error;
+
+  const user = data.user;
+  if (!user) {
+    return { authenticated: false as const, role: null };
+  }
+
+  const role = await getProfileRole(user.id);
+  if (role !== ADMIN_ROLE) {
+    await supabaseClient.auth.signOut();
+    return { authenticated: false as const, role };
+  }
+
+  return { authenticated: true as const, role };
+}
+
 const authProvider: AuthProvider = {
   login: async ({ email, password, providerName }) => {
     // sign in with oauth
@@ -39,6 +74,15 @@ const authProvider: AuthProvider = {
       }
 
       if (data?.user) {
+        const role = await getProfileRole(data.user.id);
+        if (role !== ADMIN_ROLE) {
+          await supabaseClient.auth.signOut();
+          return {
+            success: false,
+            error: ADMIN_ACCESS_ERROR,
+          };
+        }
+
         return {
           success: true,
           redirectTo: "/",
@@ -198,6 +242,16 @@ const authProvider: AuthProvider = {
           redirectTo: "/login",
         };
       }
+
+      const access = await ensureAdminAccess();
+      if (!access.authenticated) {
+        return {
+          authenticated: false,
+          error: ADMIN_ACCESS_ERROR,
+          logout: true,
+          redirectTo: "/login",
+        };
+      }
     } catch (error: any) {
       return {
         authenticated: false,
@@ -215,13 +269,9 @@ const authProvider: AuthProvider = {
     };
   },
   getPermissions: async () => {
-    const user = await supabaseClient.auth.getUser();
-
-    if (user) {
-      return user.data.user?.role;
-    }
-
-    return null;
+    const { data, error } = await supabaseClient.auth.getUser();
+    if (error || !data.user) return null;
+    return getProfileRole(data.user.id);
   },
   getIdentity: async () => {
     const { data } = await supabaseClient.auth.getUser();

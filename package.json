@@ -11,9 +11,18 @@
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\" \"npm run dev -w admin\"",
     "start": "npm start --workspace=server",
     "build": "npm install --include=dev && rm -rf server/public/client server/public/admin && npm run build --workspace=client && npm run build --workspace=admin",
-    "install:all": "npm install"
+    "install:all": "npm install",
+    "seed:e2e": "node scripts/seed-e2e.js",
+    "seed:e2e:local": "bash ./scripts/run-e2e-local.sh seed",
+    "test:e2e": "playwright test",
+    "test:e2e:local": "bash ./scripts/run-e2e-local.sh test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:smoke": "playwright test --grep @smoke --workers=1",
+    "test:e2e:smoke:local": "bash ./scripts/run-e2e-local.sh smoke"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
     "concurrently": "^8.2.2"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Eye, EyeOff, Check, Smile, Meh } from 'lucide-react';
@@ -31,40 +31,20 @@ const AuthPage = ({ onLogin }) => {
   // Use relative path '/api' in production (All-in-One architecture) or injected env var locally
   const apiUrl = '/api';
   const oauthProcessingRef = useRef(false);
+  const processedAccessTokenRef = useRef(null);
 
-  // Listen for password recovery redirect from email link
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setShowSetPassword(true);
-        setShowForgotPassword(false);
-      }
-    });
-    return () => subscription?.unsubscribe();
-  }, []);
-
-  // Handle return from OAuth (Google/Microsoft): hash contains tokens, Supabase parses it; sync session and redirect
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const errorDesc = params.get('error_description');
-    if (errorDesc) {
-      setServerError(errorDesc);
-      window.history.replaceState(null, '', window.location.pathname);
-      return;
-    }
-    const hash = window.location.hash;
-    if (!hash) return;
-    if (hash.includes('type=recovery')) return;
+  const finishSignedInUser = useCallback(async (sessionOverride = null) => {
     if (oauthProcessingRef.current) return;
-    oauthProcessingRef.current = true;
 
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data?.session) return;
-      window.history.replaceState(null, '', window.location.pathname);
-      const { session } = data;
+    oauthProcessingRef.current = true;
+    try {
+      const session = sessionOverride || (await supabase.auth.getSession()).data.session;
       const user = session?.user;
-      if (!user) return;
+      if (!session || !user) return;
+      if (processedAccessTokenRef.current === session.access_token) return;
+
+      processedAccessTokenRef.current = session.access_token;
+
       const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '';
 
       const { error: profileError } = await supabase.from('profiles').upsert({
@@ -91,9 +71,54 @@ const AuthPage = ({ onLogin }) => {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
+
+      if (window.location.search || window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+
+      setLoadingOAuth(null);
       if (onLogin) onLogin(user);
-    })();
-  }, [apiUrl, queryClient, onLogin]);
+    } finally {
+      oauthProcessingRef.current = false;
+    }
+  }, [apiUrl, onLogin, queryClient]);
+
+  // Listen for password recovery redirect from email link
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowSetPassword(true);
+        setShowForgotPassword(false);
+        return;
+      }
+      if (event === 'SIGNED_IN') {
+        void finishSignedInUser(session || null);
+      }
+    });
+    return () => subscription?.unsubscribe();
+  }, [finishSignedInUser]);
+
+  // Handle return from OAuth (Google/Microsoft): support both hash and query-string auth responses.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorDesc = params.get('error_description');
+    if (errorDesc) {
+      setServerError(errorDesc);
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+    const hash = window.location.hash;
+    if (hash.includes('type=recovery')) return;
+
+    const hasOAuthParams = Boolean(hash) || params.has('code') || params.has('access_token') || params.has('refresh_token');
+    if (!hasOAuthParams) {
+      if (!localStorage.getItem('token')) return;
+      void finishSignedInUser();
+      return;
+    }
+
+    void finishSignedInUser();
+  }, [finishSignedInUser]);
 
 
   const validateForm = () => {
@@ -467,7 +492,7 @@ const AuthPage = ({ onLogin }) => {
                 </div>
               )}
 
-              <form className="space-y-4" onSubmit={handleSubmit}>
+              <form className="space-y-4" onSubmit={handleSubmit} data-testid="auth-form">
             {!isLogin && (
               <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
                 <div>
@@ -506,6 +531,7 @@ const AuthPage = ({ onLogin }) => {
                 onChange={handleChange}
                 className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50 focus:bg-white ${errors.email ? 'border-red-500' : 'border-gray-300'}`} 
                 placeholder={t('auth.emailPlaceholder')} 
+                data-testid="auth-email"
               />
               {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
             </div>
@@ -520,6 +546,7 @@ const AuthPage = ({ onLogin }) => {
                   onChange={handleChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10 bg-gray-50 focus:bg-white ${errors.password ? 'border-red-500' : 'border-gray-300'}`} 
                   placeholder={t('auth.passwordPlaceholder')} 
+                  data-testid="auth-password"
                 />
                 <button 
                   type="button"
@@ -546,6 +573,7 @@ const AuthPage = ({ onLogin }) => {
               type="submit" 
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all transform active:scale-[0.98] shadow-md hover:shadow-lg mt-2 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center"
+              data-testid="auth-submit"
             >
               {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : (isLogin ? t('auth.signIn') : t('auth.createAccountButton'))}
             </button>
@@ -570,6 +598,7 @@ const AuthPage = ({ onLogin }) => {
               onClick={handleGoogleSignIn}
               disabled={loadingOAuth !== null || isLoading}
               className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors font-medium text-gray-700 text-sm shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+              data-testid="auth-google"
             >
               {loadingOAuth === 'google' ? (
                 <div className="w-5 h-5 border-2 border-gray-200 border-t-gray-600 rounded-full animate-spin" />
@@ -611,6 +640,7 @@ const AuthPage = ({ onLogin }) => {
             <button 
               onClick={() => { setIsLogin(!isLogin); setErrors({}); setServerError(''); }}
               className="text-blue-600 hover:text-blue-700 font-bold hover:underline transition-colors"
+              data-testid="auth-mode-toggle"
             >
               {isLogin ? t('auth.signUp') : t('auth.signInLink')}
             </button>

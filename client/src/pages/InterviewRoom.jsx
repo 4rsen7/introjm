@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio } from 'lucide-react';
@@ -8,6 +8,120 @@ import { useQueryClient } from '@tanstack/react-query';
 const API_URL = '/api';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const cleanString = (value) => typeof value === 'string' ? value.trim() : '';
+
+const normalizeInterviewSummary = (raw) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const summary = raw.summary && typeof raw.summary === 'object' && !Array.isArray(raw.summary) ? raw.summary : {};
+  const painPoints = Array.isArray(raw.painPoints)
+    ? raw.painPoints
+        .map((item) => {
+          if (typeof item === 'string') {
+            const description = cleanString(item);
+            return description ? { title: '', description, rootCause: '', impact: '', severity: '', evidenceQuote: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const title = cleanString(item.title);
+          const description = cleanString(item.description || item.problem || item.painPoint);
+          if (!title && !description) return null;
+          return {
+            title,
+            description,
+            rootCause: cleanString(item.rootCause),
+            impact: cleanString(item.impact),
+            severity: cleanString(item.severity),
+            evidenceQuote: cleanString(item.evidenceQuote || item.quote),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const normalizePairList = (value, primaryKey, secondaryKey) =>
+    Array.isArray(value)
+      ? value
+          .map((item) => {
+            if (typeof item === 'string') {
+              const primary = cleanString(item);
+              return primary ? { [primaryKey]: primary, [secondaryKey]: '' } : null;
+            }
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+            const primary = cleanString(item[primaryKey]);
+            const secondary = cleanString(item[secondaryKey]);
+            if (!primary && !secondary) return null;
+            return { [primaryKey]: primary, [secondaryKey]: secondary };
+          })
+          .filter(Boolean)
+      : [];
+
+  const momentsOfFriction = Array.isArray(raw.momentsOfFriction)
+    ? raw.momentsOfFriction
+        .map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const stage = cleanString(item.stage);
+          const situation = cleanString(item.situation);
+          const breakdown = cleanString(item.breakdown);
+          const customerReaction = cleanString(item.customerReaction);
+          if (!stage && !situation && !breakdown && !customerReaction) return null;
+          return { stage, situation, breakdown, customerReaction };
+        })
+        .filter(Boolean)
+    : [];
+
+  const normalized = {
+    summary: {
+      jobToBeDone: cleanString(summary.jobToBeDone || raw.jobToBeDone),
+      generalInsight: cleanString(summary.generalInsight || raw.generalInsight || raw.generalInsights),
+      overallSentiment: cleanString(summary.overallSentiment || raw.overallSentiment),
+    },
+    painPoints,
+    momentsOfFriction,
+    unmetNeeds: normalizePairList(raw.unmetNeeds, 'need', 'whyItMatters'),
+    workarounds: normalizePairList(raw.workarounds, 'workaround', 'whatItSignals'),
+    opportunityAreas: normalizePairList(raw.opportunityAreas, 'area', 'rationale'),
+    quotes: Array.isArray(raw.quotes) ? raw.quotes.map((q) => cleanString(q)).filter(Boolean) : [],
+  };
+
+  const hasContent =
+    normalized.summary.jobToBeDone ||
+    normalized.summary.generalInsight ||
+    normalized.summary.overallSentiment ||
+    normalized.painPoints.length > 0 ||
+    normalized.momentsOfFriction.length > 0 ||
+    normalized.unmetNeeds.length > 0 ||
+    normalized.workarounds.length > 0 ||
+    normalized.opportunityAreas.length > 0 ||
+    normalized.quotes.length > 0;
+
+  return hasContent ? normalized : null;
+};
+
+const sentimentBadgeClass = (sentiment) => {
+  switch (sentiment) {
+    case 'positive':
+      return 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+    case 'negative':
+      return 'bg-rose-50 text-rose-700 border border-rose-100';
+    case 'mixed':
+      return 'bg-amber-50 text-amber-700 border border-amber-100';
+    default:
+      return 'bg-gray-100 text-gray-600 border border-gray-200';
+  }
+};
+
+const sentimentLabel = (sentiment, t) => {
+  switch (sentiment) {
+    case 'positive':
+      return t('interviews.sentimentPositive');
+    case 'negative':
+      return t('interviews.sentimentNegative');
+    case 'mixed':
+      return t('interviews.sentimentMixed');
+    default:
+      return sentiment;
+  }
+};
 
 export default function InterviewRoom({ userProfile, currentWorkspace }) {
   const { t } = useTranslation();
@@ -49,6 +163,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState('');
+  const normalizedSummary = useMemo(() => normalizeInterviewSummary(interview?.summary_data), [interview?.summary_data]);
 
   const handleTitleSave = () => {
     if (editedTitle.trim() !== interview.title && editedTitle.trim() !== '') {
@@ -611,43 +726,143 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                   {insightStage === 3 && t('interviews.insightStage3Desc')}
                 </p>
               </div>
-            ) : (interview.summary_data && Object.keys(interview.summary_data).length > 0) ? (
+            ) : normalizedSummary ? (
               <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                {/* General Insights */}
+                {/* Overview */}
                 <div className="space-y-3">
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.tldr')}</h3>
-                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl text-sm text-indigo-900 leading-relaxed border border-indigo-100">
-                    {interview.summary_data.generalInsights}
+                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.overview')}</h3>
+                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 space-y-3">
+                    {normalizedSummary.summary.jobToBeDone && (
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500 mb-1">{t('interviews.jobToBeDone')}</div>
+                        <div className="text-sm text-indigo-900 leading-relaxed">{normalizedSummary.summary.jobToBeDone}</div>
+                      </div>
+                    )}
+                    {normalizedSummary.summary.generalInsight && (
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500 mb-1">{t('interviews.tldr')}</div>
+                        <div className="text-sm text-indigo-900 leading-relaxed">{normalizedSummary.summary.generalInsight}</div>
+                      </div>
+                    )}
+                    {normalizedSummary.summary.overallSentiment && (
+                      <div className="pt-1">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${sentimentBadgeClass(normalizedSummary.summary.overallSentiment)}`}>
+                          {t('interviews.overallSentiment')}: {sentimentLabel(normalizedSummary.summary.overallSentiment, t)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Pain Points */}
-                {interview.summary_data.painPoints?.length > 0 && (
+                {normalizedSummary.painPoints.length > 0 && (
                   <div className="space-y-3">
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                       <AlertCircle size={16} className="text-rose-500" />
                       {t('interviews.painPoints')}
                     </h3>
-                    <ul className="space-y-3">
-                      {interview.summary_data.painPoints.map((point, i) => (
-                        <li key={i} className="flex gap-3 text-sm text-gray-700 bg-white border border-gray-100 shadow-sm p-3 rounded-lg">
-                          <span className="flex-none mt-0.5 w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-                          <span>{point}</span>
-                        </li>
+                    <div className="space-y-3">
+                      {normalizedSummary.painPoints.map((point, i) => (
+                        <div key={i} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold text-gray-900">{point.title || point.description}</div>
+                            {point.severity && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(point.severity === 'high' ? 'negative' : point.severity === 'medium' ? 'mixed' : 'positive')}`}>
+                                {point.severity}
+                              </span>
+                            )}
+                          </div>
+                          {point.title && point.description && (
+                            <p className="text-sm text-gray-700 leading-relaxed">{point.description}</p>
+                          )}
+                          {(point.rootCause || point.impact) && (
+                            <div className="grid gap-2">
+                              {point.rootCause && (
+                                <div className="text-xs text-gray-600"><span className="font-semibold text-gray-800">{t('interviews.rootCause')}:</span> {point.rootCause}</div>
+                              )}
+                              {point.impact && (
+                                <div className="text-xs text-gray-600"><span className="font-semibold text-gray-800">{t('interviews.customerImpact')}:</span> {point.impact}</div>
+                              )}
+                            </div>
+                          )}
+                          {point.evidenceQuote && (
+                            <blockquote className="text-sm italic text-gray-600 border-l-4 border-rose-300 bg-rose-50/70 pl-4 py-2 rounded-r-lg">
+                              "{point.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
                       ))}
-                    </ul>
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.momentsOfFriction.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.momentsOfFriction')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.momentsOfFriction.map((item, i) => (
+                        <div key={i} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-2">
+                          {item.stage && <div className="text-xs font-bold uppercase tracking-wider text-gray-400">{item.stage}</div>}
+                          {item.situation && <div className="text-sm text-gray-800"><span className="font-semibold">{t('interviews.situation')}:</span> {item.situation}</div>}
+                          {item.breakdown && <div className="text-sm text-gray-800"><span className="font-semibold">{t('interviews.breakdown')}:</span> {item.breakdown}</div>}
+                          {item.customerReaction && <div className="text-sm text-gray-800"><span className="font-semibold">{t('interviews.customerReaction')}:</span> {item.customerReaction}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.unmetNeeds.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.unmetNeeds')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.unmetNeeds.map((item, i) => (
+                        <div key={i} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-1">
+                          <div className="text-sm font-semibold text-gray-900">{item.need}</div>
+                          {item.whyItMatters && <div className="text-sm text-gray-700 leading-relaxed">{item.whyItMatters}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.workarounds.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.workarounds')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.workarounds.map((item, i) => (
+                        <div key={i} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-1">
+                          <div className="text-sm font-semibold text-gray-900">{item.workaround}</div>
+                          {item.whatItSignals && <div className="text-sm text-gray-700 leading-relaxed">{item.whatItSignals}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.opportunityAreas.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.opportunityAreas')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.opportunityAreas.map((item, i) => (
+                        <div key={i} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-1">
+                          <div className="text-sm font-semibold text-gray-900">{item.area}</div>
+                          {item.rationale && <div className="text-sm text-gray-700 leading-relaxed">{item.rationale}</div>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
                 {/* Key Quotes */}
-                {interview.summary_data.quotes?.length > 0 && (
+                {normalizedSummary.quotes.length > 0 && (
                   <div className="space-y-3">
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
                       <Mic size={16} className="text-emerald-500" />
                       {t('interviews.keyQuotes')}
                     </h3>
                     <div className="space-y-3">
-                      {interview.summary_data.quotes.map((quote, i) => (
+                      {normalizedSummary.quotes.map((quote, i) => (
                         <blockquote key={i} className="text-sm italic text-gray-600 border-l-4 border-emerald-400 bg-emerald-50/50 pl-4 py-2 rounded-r-lg">
                           "{quote}"
                         </blockquote>

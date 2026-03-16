@@ -38,7 +38,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
     } else if (allowedTabs.length > 0) {
       setActiveTab(allowedTabs[0].id);
     }
-  }, [initialTab]);
+  }, [allowedTabs, initialTab]);
 
   // Mock Data
   const [workspaceName, setWorkspaceName] = useState(workspace?.name || '');
@@ -248,7 +248,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="settings-page">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
            <Settings className="text-gray-400" /> {t('settings.settings')}
@@ -266,6 +266,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 ? 'text-blue-600' 
                 : 'text-gray-500 hover:text-gray-700'
             }`}
+            data-testid={`settings-tab-${tab.id}`}
           >
             {t(tab.labelKey)}
             {activeTab === tab.id && (
@@ -316,7 +317,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 </h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100" data-testid="current-plan-card">
                         <div className="text-xs font-bold text-gray-500 mb-1">{t('settings.currentPlan')}</div>
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-lg font-bold text-gray-900">{limits?.planName ?? '—'}</span>

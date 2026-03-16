@@ -19,14 +19,21 @@ import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
-import { getAuthToken } from './services/auth'
+import { clearStoredAuthState, getAuthToken, getStoredAuthToken } from './services/auth'
+import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, useMetrics, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
 // Fallback to localhost:5005 if env var is missing
 const API_URL = '/api';
+
+const ProtectedOutlet = () => {
+  const token = getStoredAuthToken();
+  if (!token) return <Navigate to="/auth" replace />;
+  return <Outlet />;
+};
 
 // Helper wrapper for editing metrics
 const MetricEditorWrapper = ({ metrics, onSave, onBack, onSyncSuccess, currentUserId }) => {
@@ -77,8 +84,9 @@ const MainLayout = ({
               <div 
                 className="px-3 mb-2 text-xs font-semibold text-gray-400 flex justify-between items-center cursor-pointer hover:text-gray-600 select-none"
                 onClick={() => workspaces.length > 1 ? setSwitcherOpen((o) => !o) : setIsWorkspaceExpanded(!isWorkspaceExpanded)}
+                data-testid="workspace-switcher-toggle"
               >
-                <span className="truncate flex-1">{currentWorkspace?.name || t('nav.workspace')}</span>
+                <span className="truncate flex-1" data-testid="current-workspace-label">{currentWorkspace?.name || t('nav.workspace')}</span>
                 <ChevronDown 
                   size={14} 
                   className={`flex-shrink-0 ml-1 transition-transform duration-500 ${(workspaces.length > 1 ? switcherOpen : isWorkspaceExpanded) ? '' : '-rotate-90'}`} 
@@ -112,6 +120,8 @@ const MainLayout = ({
                           type="button"
                           onClick={() => { onSwitchWorkspace(ws.id); setSwitcherOpen(false); }}
                           className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex justify-between items-center ${currentWorkspace?.id === ws.id ? 'bg-orange-50 text-orange-700 font-medium' : 'text-gray-700'}`}
+                          data-testid="workspace-option"
+                          data-workspace-name={ws.name}
                         >
                           <span className="truncate">{ws.name}</span>
                           <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{ws.role === 'owner' ? t('nav.owner') : t('nav.member')}</span>
@@ -165,13 +175,15 @@ const MainLayout = ({
             </div>
           </div>
           <button 
-            onClick={() => {
-              localStorage.removeItem('token');
-              localStorage.removeItem('user');
-              queryClient.removeQueries(); // Clear all cached data on logout
+            onClick={async () => {
+              localStorage.removeItem(SELECTED_WORKSPACE_KEY);
+              queryClient.clear();
+              await supabase.auth.signOut();
+              clearStoredAuthState();
               navigate('/auth');
             }}
             className="w-full flex items-center gap-3 px-2 py-2 mt-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600 transition text-sm font-medium"
+            data-testid="signout-button"
           >
             <LogOut size={18} />
             <span>{t('common.signOut')}</span>
@@ -209,6 +221,20 @@ function App() {
       navigate('/auth');
     }
   }, [location, navigate]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_OUT') return;
+      localStorage.removeItem(SELECTED_WORKSPACE_KEY);
+      clearStoredAuthState();
+      queryClient.clear();
+      if (location.pathname !== '/auth') {
+        navigate('/auth');
+      }
+    });
+
+    return () => subscription?.unsubscribe();
+  }, [location.pathname, navigate, queryClient]);
 
   // Ensure logged-in user has Starter subscription (e.g. after email confirmation)
   const ensureStarterCalledRef = useRef(false);
@@ -264,6 +290,10 @@ function App() {
   // On full page load (F5) invalidate list queries so data refetches instead of using stale persisted cache
   useEffect(() => {
     if (localStorage.getItem('token')) {
+      queryClient.invalidateQueries({ queryKey: ['workspace'] });
+      queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
@@ -328,6 +358,11 @@ function App() {
   const filteredMetrics = useMemo(() =>
     currentWorkspace ? globalMetrics.filter((m) => m.workspace_id === currentWorkspace.id) : globalMetrics,
     [globalMetrics, currentWorkspace]
+  );
+  const { data: globalInterviews = [] } = useInterviews();
+  const filteredInterviews = useMemo(() =>
+    currentWorkspace ? globalInterviews.filter((i) => i.workspace_id === currentWorkspace.id) : globalInterviews,
+    [globalInterviews, currentWorkspace]
   );
 
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
@@ -686,30 +721,31 @@ function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
 
-        <Route path="/journey/:id" element={
-            <Editor 
-              onBack={() => navigate('/dashboard')} 
-              globalPersonas={filteredPersonas}
-              globalMetrics={filteredMetrics}
-              globalJourneys={filteredJourneys}
-              onSaveGlobalPersona={handleSaveGlobalPersona}
-              onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
-            />
-        } />
+        <Route element={<ProtectedOutlet />}>
+          <Route path="/journey/:id" element={
+              <Editor 
+                onBack={() => navigate('/dashboard')} 
+                globalPersonas={filteredPersonas}
+                globalMetrics={filteredMetrics}
+                globalJourneys={filteredJourneys}
+                onSaveGlobalPersona={handleSaveGlobalPersona}
+                onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
+              />
+          } />
 
-        <Route element={
-          <MainLayout 
-             isWorkspaceExpanded={isWorkspaceExpanded}
-             setIsWorkspaceExpanded={setIsWorkspaceExpanded}
-             currentWorkspace={currentWorkspace}
-             workspaces={workspaces}
-             onSwitchWorkspace={handleSwitchWorkspace}
-             userProfile={userProfile}
-             planName={planName}
-             isNavigating={isNavigating}
-             setSettingsTab={setSettingsTab}
-          />
-        }>
+          <Route element={
+            <MainLayout 
+               isWorkspaceExpanded={isWorkspaceExpanded}
+               setIsWorkspaceExpanded={setIsWorkspaceExpanded}
+               currentWorkspace={currentWorkspace}
+               workspaces={workspaces}
+               onSwitchWorkspace={handleSwitchWorkspace}
+               userProfile={userProfile}
+               planName={planName}
+               isNavigating={isNavigating}
+               setSettingsTab={setSettingsTab}
+            />
+          }>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard 
                 journeys={filteredJourneys}
@@ -747,7 +783,7 @@ function App() {
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
-            <Route path="/interviews" element={<InterviewsList userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
+            <Route path="/interviews" element={<InterviewsList interviews={filteredInterviews} userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
@@ -760,6 +796,7 @@ function App() {
                 onRestorePersona={handleRestorePersona}
                 onDeletePersona={handleDeletePersona}
             />} />
+          </Route>
         </Route>
       </Routes>
 

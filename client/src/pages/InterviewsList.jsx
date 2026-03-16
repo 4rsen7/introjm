@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Search, Filter, Copy, Trash2, Plus, Mic, X, UploadCloud, Video } from 'lucide-react';
-import { useInterviews } from '../hooks/useQueries';
 import { getAuthToken } from '../services/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import Tooltip from '../components/common/Tooltip';
@@ -10,11 +9,10 @@ import ConfirmModal from '../ConfirmModal';
 
 const API_URL = '/api';
 
-export default function InterviewsList({ userProfile, currentWorkspace, onLimitReached }) {
+export default function InterviewsList({ interviews = [], userProfile, currentWorkspace, onLimitReached }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: interviews = [], isLoading, isError } = useInterviews();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -97,24 +95,8 @@ export default function InterviewsList({ userProfile, currentWorkspace, onLimitR
     setConfirmConfig({ isOpen: true, action, item });
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="w-8 h-8 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-red-500">
-        <p>Error loading interviews. Please try again.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="interviews-page">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
            <Mic className="text-gray-400" /> {t('interviews.title')}
@@ -122,6 +104,7 @@ export default function InterviewsList({ userProfile, currentWorkspace, onLimitR
         <button 
           onClick={openCreationModal}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
+          data-testid="new-interview-button"
         >
           <Plus size={18} />
           {t('interviews.newInterview')}
@@ -178,6 +161,9 @@ export default function InterviewsList({ userProfile, currentWorkspace, onLimitR
                   key={interview.id} 
                   className="hover:bg-gray-50/80 transition-colors group cursor-pointer"
                   onClick={() => navigate(`/interviews/${interview.id}`)}
+                  data-testid="interview-row"
+                  data-interview-id={interview.id}
+                  data-interview-title={interview.title}
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-4">
@@ -212,7 +198,7 @@ export default function InterviewsList({ userProfile, currentWorkspace, onLimitR
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right flex items-center justify-end gap-2">
-                    {userProfile != null && (interview.user_id === userProfile.id || currentWorkspace?.role === 'owner') && (
+                    {userProfile != null && (interview.user_id === userProfile.id || (currentWorkspace?.role === 'owner' && interview.workspace_id === currentWorkspace?.id)) && (
                       <Tooltip content={t('common.delete') || 'Delete'}>
                         <button 
                           onClick={(e) => { e.stopPropagation(); openConfirm('delete', interview); }}

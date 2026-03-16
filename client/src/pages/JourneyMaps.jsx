@@ -99,7 +99,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="journeys-page">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
            <Map className="text-gray-400" /> {t('journeys.title')}
@@ -107,6 +107,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
         <button 
             onClick={onCreate}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm transition-colors"
+            data-testid="new-journey-button"
         >
           <Plus size={18} />
           {t('journeys.createMap')}
@@ -198,6 +199,9 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
                 key={journey.id} 
                 className="hover:bg-gray-50/80 transition-colors group cursor-pointer"
                 onClick={() => onEdit && onEdit(journey)}
+                data-testid="journey-row"
+                data-journey-id={journey.id}
+                data-journey-title={journey.title}
               >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-4">

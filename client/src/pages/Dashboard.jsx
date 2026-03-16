@@ -70,7 +70,7 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
   };
 
   return (
-    <div className="p-8 h-full overflow-auto bg-gray-50/30">
+    <div className="p-8 h-full overflow-auto bg-gray-50/30" data-testid="dashboard-page">
       <header className="mb-8 flex items-center justify-between">
         <div>
             <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{t('dashboard.title')}</h2>

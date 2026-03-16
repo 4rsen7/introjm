@@ -18,6 +18,26 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
+const CANONICAL_ORIGIN = (process.env.CANONICAL_ORIGIN || 'https://iterojm.com').replace(/\/$/, '');
+const CANONICAL_HOST = (() => {
+  try {
+    return new URL(CANONICAL_ORIGIN).host;
+  } catch {
+    return 'iterojm.com';
+  }
+})();
+const API_PUBLIC_ORIGIN = (process.env.API_URL || CANONICAL_ORIGIN).replace(/\/$/, '');
+const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || CANONICAL_ORIGIN).replace(/\/$/, '');
+
+const hostRedirects = {
+  'www.iterojm.com': (path) => path,
+  'iterojm.vercel.app': (path) => path,
+  'iterojm-app.vercel.app': (path) => path,
+  'iterojm-admin.vercel.app': (path) => {
+    if (path.startsWith('/api') || path.startsWith('/admin')) return path;
+    return path === '/' ? '/admin/' : `/admin${path}`;
+  },
+};
 
 // Required when running behind a proxy (e.g. Render, Vercel) so rate-limit and IP detection work
 app.set('trust proxy', 1);
@@ -26,6 +46,21 @@ app.set('trust proxy', 1);
 app.use((req, res, next) => {
     console.log(`📡 [INCOMING] ${req.method} ${req.url}`);
     next();
+});
+
+// Canonical host redirect for browser traffic after moving to Hostinger.
+app.use((req, res, next) => {
+    if (process.env.NODE_ENV !== 'production') return next();
+
+    const hostname = String(req.hostname || '').toLowerCase();
+    const redirectPathBuilder = hostRedirects[hostname];
+    if (!redirectPathBuilder) return next();
+    if (!['GET', 'HEAD'].includes(req.method)) return next();
+
+    const redirectPath = redirectPathBuilder(req.path || '/');
+    const queryIndex = req.originalUrl.indexOf('?');
+    const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+    return res.redirect(301, `${CANONICAL_ORIGIN}${redirectPath}${query}`);
 });
 
 // Initialize Storage Bucket
@@ -56,11 +91,13 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:5174',
-  
-  // Продакшн (Vercel) - ДОДАЙ СВОЇ РЕАЛЬНІ ПОСИЛАННЯ
-  'https://iterojm.vercel.app',        // Основне посилання (якщо є)
-  'https://iterojm-app.vercel.app',    // Твій Клієнт
-  'https://iterojm-admin.vercel.app'   // Твоя Адмінка
+
+  // Канонічний домен + тимчасово legacy-домени для м'якого переходу
+  CANONICAL_ORIGIN,
+  'https://www.iterojm.com',
+  'https://iterojm.vercel.app',
+  'https://iterojm-app.vercel.app',
+  'https://iterojm-admin.vercel.app',
 ];
 
 app.use(cors({
@@ -1523,7 +1560,158 @@ async function getOrRefreshIntegrationTokens(userId, provider) {
   return accessToken;
 }
 
-const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+function cleanModelJson(text) {
+  if (!text) return '';
+  const trimmed = String(text).trim();
+  const withoutFence = trimmed.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (withoutFence.startsWith('{') && withoutFence.endsWith('}')) return withoutFence;
+  const start = withoutFence.indexOf('{');
+  const end = withoutFence.lastIndexOf('}');
+  if (start >= 0 && end > start) return withoutFence.slice(start, end + 1);
+  return withoutFence;
+}
+
+function cleanString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeEnum(value, allowed) {
+  const normalized = cleanString(value).toLowerCase();
+  return allowed.includes(normalized) ? normalized : '';
+}
+
+function normalizeStringArray(value, maxItems) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => cleanString(item))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function normalizeObjectArray(value, mapper, maxItems) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(mapper)
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function normalizeInterviewSummaryData(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const summary = raw.summary && typeof raw.summary === 'object' && !Array.isArray(raw.summary) ? raw.summary : {};
+  const normalized = {
+    summary: {
+      jobToBeDone: cleanString(summary.jobToBeDone || raw.jobToBeDone),
+      generalInsight: cleanString(summary.generalInsight || raw.generalInsight || raw.generalInsights),
+      overallSentiment: normalizeEnum(summary.overallSentiment || raw.overallSentiment, ['positive', 'mixed', 'negative']),
+    },
+    painPoints: normalizeObjectArray(
+      raw.painPoints,
+      (item) => {
+        if (typeof item === 'string') {
+          const description = cleanString(item);
+          if (!description) return null;
+          return {
+            title: '',
+            description,
+            rootCause: '',
+            impact: '',
+            severity: '',
+            evidenceQuote: '',
+          };
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const description = cleanString(item.description || item.problem || item.painPoint);
+        const title = cleanString(item.title);
+        if (!title && !description) return null;
+        return {
+          title,
+          description,
+          rootCause: cleanString(item.rootCause),
+          impact: cleanString(item.impact),
+          severity: normalizeEnum(item.severity, ['low', 'medium', 'high']),
+          evidenceQuote: cleanString(item.evidenceQuote || item.quote),
+        };
+      },
+      5
+    ),
+    momentsOfFriction: normalizeObjectArray(
+      raw.momentsOfFriction,
+      (item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const stage = cleanString(item.stage);
+        const situation = cleanString(item.situation);
+        const breakdown = cleanString(item.breakdown);
+        const customerReaction = cleanString(item.customerReaction);
+        if (!stage && !situation && !breakdown && !customerReaction) return null;
+        return { stage, situation, breakdown, customerReaction };
+      },
+      5
+    ),
+    unmetNeeds: normalizeObjectArray(
+      raw.unmetNeeds,
+      (item) => {
+        if (typeof item === 'string') {
+          const need = cleanString(item);
+          return need ? { need, whyItMatters: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const need = cleanString(item.need);
+        const whyItMatters = cleanString(item.whyItMatters);
+        if (!need && !whyItMatters) return null;
+        return { need, whyItMatters };
+      },
+      5
+    ),
+    workarounds: normalizeObjectArray(
+      raw.workarounds,
+      (item) => {
+        if (typeof item === 'string') {
+          const workaround = cleanString(item);
+          return workaround ? { workaround, whatItSignals: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const workaround = cleanString(item.workaround);
+        const whatItSignals = cleanString(item.whatItSignals);
+        if (!workaround && !whatItSignals) return null;
+        return { workaround, whatItSignals };
+      },
+      3
+    ),
+    opportunityAreas: normalizeObjectArray(
+      raw.opportunityAreas,
+      (item) => {
+        if (typeof item === 'string') {
+          const area = cleanString(item);
+          return area ? { area, rationale: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const area = cleanString(item.area);
+        const rationale = cleanString(item.rationale);
+        if (!area && !rationale) return null;
+        return { area, rationale };
+      },
+      5
+    ),
+    quotes: normalizeStringArray(raw.quotes, 3),
+  };
+
+  const hasContent =
+    normalized.summary.jobToBeDone ||
+    normalized.summary.generalInsight ||
+    normalized.summary.overallSentiment ||
+    normalized.painPoints.length > 0 ||
+    normalized.momentsOfFriction.length > 0 ||
+    normalized.unmetNeeds.length > 0 ||
+    normalized.workarounds.length > 0 ||
+    normalized.opportunityAreas.length > 0 ||
+    normalized.quotes.length > 0;
+
+  return hasContent ? normalized : null;
+}
+
+const clientOrigin = CLIENT_ORIGIN;
 
 app.get('/api/integrations/:provider/authorize', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -1535,7 +1723,7 @@ app.get('/api/integrations/:provider/authorize', async (req, res) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const state = createIntegrationState(user.id, returnPath);
-    const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
+    const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${API_PUBLIC_ORIGIN}/api/integrations/${provider}/callback`;
     const url = provider === 'google_sheets'
       ? googleSheets.getAuthorizeUrl(redirectUri, state)
       : microsoftExcel.getAuthorizeUrl(redirectUri, state);
@@ -1555,7 +1743,7 @@ app.get('/api/integrations/:provider/callback', async (req, res) => {
   if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(redirectBase + '?integration=error&message=Invalid+provider');
   if (!verified || !verified.userId || !code) return res.redirect(redirectBase + '?integration=error&message=Invalid+state');
   const userId = verified.userId;
-  const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${process.env.API_URL || 'http://localhost:5005'}/api/integrations/${provider}/callback`;
+  const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${API_PUBLIC_ORIGIN}/api/integrations/${provider}/callback`;
   try {
     const tokens = provider === 'google_sheets'
       ? await googleSheets.exchangeCodeForTokens(code, redirectUri)
@@ -3025,17 +3213,84 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
         ).join('\n');
 
         // 3. Construct the prompt
-        const prompt = `You are an expert UX Researcher and Business Analyst. 
-Below is a transcript of a user interview.
-Analyze the conversation and extract the following information.
+        const prompt = `You are a senior CX Researcher and Service Designer.
+Your task is to analyze this interview as evidence about the customer's lived experience across a service, not just to summarize the conversation.
 
-CRITICAL INSTRUCTION: First, detect the dominant language spoken in the transcript. You MUST write your analysis, including all painPoints, quotes, and generalInsights, entirely in that exact same language.
+Focus on:
+- what the respondent is trying to achieve
+- broken expectations
+- friction and service gaps across touchpoints
+- unmet needs
+- emotional reactions
+- workarounds
+- the likely root causes behind complaints
+- evidence-backed opportunity areas for improving the experience
 
-1. "painPoints": An array of strings describing the specific problems, frustrations, or difficulties the user mentioned. Extract at most 5 key pain points.
-2. "quotes": An array of strings containing the most impactful, direct quotes from the respondent that highlight their needs or struggles. Extract at most 3 quotes.
-3. "generalInsights": A single string summarizing the overall sentiment, main takeaways, and what the user is trying to achieve (TL;DR).
+CRITICAL RULES:
+- Detect the dominant language of the transcript and write the entire output in that exact same language.
+- Base every conclusion only on evidence from the transcript.
+- Do not invent facts, motivations, stages, or context that are not supported by the transcript.
+- Prioritize the respondent's statements over the interviewer's framing.
+- Merge duplicate observations.
+- Be specific, concise, and insight-rich.
+- If something is unclear, prefer an empty string or empty array instead of guessing.
 
-Format your response EXACTLY as a valid JSON object with the keys "painPoints", "quotes", and "generalInsights". Do not include markdown blocks like \`\`\`json.
+Return EXACTLY one valid JSON object with this schema:
+{
+  "summary": {
+    "jobToBeDone": "string",
+    "generalInsight": "string",
+    "overallSentiment": "positive|mixed|negative"
+  },
+  "painPoints": [
+    {
+      "title": "string",
+      "description": "string",
+      "rootCause": "string",
+      "impact": "string",
+      "severity": "low|medium|high",
+      "evidenceQuote": "string"
+    }
+  ],
+  "momentsOfFriction": [
+    {
+      "stage": "string",
+      "situation": "string",
+      "breakdown": "string",
+      "customerReaction": "string"
+    }
+  ],
+  "unmetNeeds": [
+    {
+      "need": "string",
+      "whyItMatters": "string"
+    }
+  ],
+  "workarounds": [
+    {
+      "workaround": "string",
+      "whatItSignals": "string"
+    }
+  ],
+  "opportunityAreas": [
+    {
+      "area": "string",
+      "rationale": "string"
+    }
+  ],
+  "quotes": ["string"]
+}
+
+LIMITS:
+- painPoints: up to 5
+- momentsOfFriction: up to 5
+- unmetNeeds: up to 5
+- workarounds: up to 3
+- opportunityAreas: up to 5
+- quotes: up to 3
+
+Do not include markdown fences.
+Return only JSON.
 
 Transcript:
 """
@@ -3049,12 +3304,15 @@ ${conversationText}
         // 5. Parse the JSON response
         let aiSummaryData;
         try {
-            // Remove markdown formatting if Gemini included it accidentally
-            const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-            aiSummaryData = JSON.parse(cleanJsonString);
+            const cleanJsonString = cleanModelJson(responseText);
+            aiSummaryData = normalizeInterviewSummaryData(JSON.parse(cleanJsonString));
         } catch (parseError) {
             console.error("Failed to parse Gemini response as JSON:", responseText);
             throw new Error("AI returned an invalid response format.");
+        }
+
+        if (!aiSummaryData) {
+            throw new Error("AI returned an empty or unsupported summary format.");
         }
 
         const { data, error } = await supabaseAdmin.from('interviews')
