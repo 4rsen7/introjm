@@ -127,9 +127,10 @@ export const useWorkspaceLimits = (workspaceId) => {
     queryFn: async () => {
       const token = await getAuthToken();
       if (!token) throw new Error('No token');
-      const url = new URL(`${API_URL}/workspace/limits`);
-      if (workspaceId) url.searchParams.set('workspaceId', workspaceId);
-      const res = await fetch(url.toString(), {
+      const params = new URLSearchParams();
+      if (workspaceId) params.set('workspaceId', workspaceId);
+      const endpoint = `${API_URL}/workspace/limits${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
