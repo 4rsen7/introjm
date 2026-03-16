@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Badge } from "antd";
 import { supabaseClient } from "../providers/supabase-client";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5005/api";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 export const SupportMenuLabel: React.FC = () => {
   const [count, setCount] = useState<{ total: number; open: number } | null>(null);
