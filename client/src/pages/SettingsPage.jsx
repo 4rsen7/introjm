@@ -10,7 +10,7 @@ import i18n, { setLocale } from '../i18n';
 import { MS_EXCEL_DISABLED } from '../config/features';
 
 // Fallback API URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
   const { t } = useTranslation();

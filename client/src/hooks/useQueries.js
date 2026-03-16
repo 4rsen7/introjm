@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../services/auth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5005/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Helper for consistent date formatting
 const formatDate = (dateString) => {

@@ -28,7 +28,8 @@ const AuthPage = ({ onLogin }) => {
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [resetPasswordForm, setResetPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
 
-  const apiUrl = import.meta.env.VITE_API_URL || '';
+  // Use relative path '/api' in production (All-in-One architecture) or injected env var locally
+  const apiUrl = import.meta.env.VITE_API_URL || '/api';
   const oauthProcessingRef = useRef(false);
 
   // Listen for password recovery redirect from email link
