@@ -128,7 +128,7 @@ const AuthPage = ({ onLogin }) => {
     if (validateForm()) {
       setIsLoading(true);
       try {
-        const apiUrl = import.meta.env.VITE_API_URL;
+        const apiUrlPath = import.meta.env.VITE_API_URL || '/api';
 
         if (!isLogin) {
            // Use Supabase SDK directly for registration to avoid race conditions 
@@ -157,7 +157,7 @@ const AuthPage = ({ onLogin }) => {
 
              // Assign Starter subscription to new user
              try {
-               await fetch(`${apiUrl}/subscriptions/ensure-starter`, {
+               await fetch(`${apiUrlPath}/subscriptions/ensure-starter`, {
                  method: 'POST',
                  headers: { 'Authorization': `Bearer ${data.session.access_token}` }
                });
@@ -185,7 +185,7 @@ const AuthPage = ({ onLogin }) => {
           })
         };
 
-        const response = await fetch(`${apiUrl}${endpoint}`, {
+        const response = await fetch(`${apiUrlPath}${endpoint}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
