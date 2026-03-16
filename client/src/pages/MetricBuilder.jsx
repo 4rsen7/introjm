@@ -7,7 +7,7 @@ import { getAuthToken } from '../services/auth';
 import { mapMetricToClient } from '../hooks/useQueries';
 import { MS_EXCEL_DISABLED } from '../config/features';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const defaultSeriesData = () => [
   { label: 'Jan', value: 400, color: CHART_PALETTE[0] },

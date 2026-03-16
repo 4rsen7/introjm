@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 export default function InterviewsList({ userProfile, currentWorkspace, onLimitReached }) {
   const { t } = useTranslation();

@@ -6,7 +6,7 @@ import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
 
 // Fallback to localhost:5005 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const { t } = useTranslation();

@@ -4,7 +4,7 @@ import { MessageOutlined, BugOutlined, BulbOutlined, UserOutlined, CustomerServi
 import { supabaseClient } from "../../providers/supabase-client";
 import { ColorModeContext } from "../../contexts/color-mode";
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL = '/api';
 const { Text } = Typography;
 
 export const SupportList: React.FC = () => {

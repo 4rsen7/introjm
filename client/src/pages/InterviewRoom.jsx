@@ -5,7 +5,7 @@ import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Spar
 import { getAuthToken } from '../services/auth';
 import { useQueryClient } from '@tanstack/react-query';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 

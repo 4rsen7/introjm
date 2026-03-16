@@ -29,7 +29,7 @@ const AuthPage = ({ onLogin }) => {
   const [resetPasswordForm, setResetPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
 
   // Use relative path '/api' in production (All-in-One architecture) or injected env var locally
-  const apiUrl = import.meta.env.VITE_API_URL || '/api';
+  const apiUrl = '/api';
   const oauthProcessingRef = useRef(false);
 
   // Listen for password recovery redirect from email link
@@ -128,7 +128,7 @@ const AuthPage = ({ onLogin }) => {
     if (validateForm()) {
       setIsLoading(true);
       try {
-        const apiUrlPath = import.meta.env.VITE_API_URL || '/api';
+        const apiUrlPath = '/api';
 
         if (!isLogin) {
            // Use Supabase SDK directly for registration to avoid race conditions 

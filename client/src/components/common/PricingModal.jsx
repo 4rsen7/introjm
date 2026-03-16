@@ -4,7 +4,7 @@ import { X, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 
 // Fallback API URL
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', UAH: '₴' };
 function getCurrencySymbol(currency) {

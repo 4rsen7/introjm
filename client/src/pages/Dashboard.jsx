@@ -7,7 +7,7 @@ import { getAuthToken } from '../services/auth'
 import { useQueryClient } from '@tanstack/react-query'
 
 // Fallback to localhost:5005 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
 export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {

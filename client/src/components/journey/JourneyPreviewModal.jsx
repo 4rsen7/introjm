@@ -7,7 +7,7 @@ import { parseMapData } from '../../utils/parseMapData';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import JourneyMapView from './JourneyMapView';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const fetchJourney = async ({ queryKey }) => {
   const [_key, id] = queryKey;

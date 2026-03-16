@@ -26,7 +26,7 @@ import { useJourneys, usePersonas, useMetrics, useWorkspace, useWorkspaceList, u
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
 // Fallback to localhost:5005 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 // Helper wrapper for editing metrics
 const MetricEditorWrapper = ({ metrics, onSave, onBack, onSyncSuccess, currentUserId }) => {

@@ -44,7 +44,7 @@ import { getAuthToken } from '../services/auth'
 import { parseMapData } from '../utils/parseMapData'
 
 // Fallback to localhost:5005 if env var is missing
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 function getScrollParent(node) {
   if (!node) return null;

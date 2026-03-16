@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import MetricsIntegrationSection from '../components/common/MetricsIntegrationSection';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 const scrollTo = (id) => {
   const el = document.getElementById(id);

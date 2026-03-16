@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MessageCircle, X, Send, AlertCircle, Lightbulb, ChevronRight, Loader2, Trash2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 export default function SupportFeedback() {
   const { t } = useTranslation();
