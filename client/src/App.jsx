@@ -178,9 +178,13 @@ const MainLayout = ({
             onClick={async () => {
               localStorage.removeItem(SELECTED_WORKSPACE_KEY);
               queryClient.clear();
-              await supabase.auth.signOut();
               clearStoredAuthState();
-              navigate('/auth');
+              navigate('/auth', { replace: true });
+              try {
+                await supabase.auth.signOut();
+              } catch (error) {
+                console.error('Error signing out:', error);
+              }
             }}
             className="w-full flex items-center gap-3 px-2 py-2 mt-2 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600 transition text-sm font-medium"
             data-testid="signout-button"
@@ -229,7 +233,7 @@ function App() {
       clearStoredAuthState();
       queryClient.clear();
       if (location.pathname !== '/auth') {
-        navigate('/auth');
+        navigate('/auth', { replace: true });
       }
     });
 

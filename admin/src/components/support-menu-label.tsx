@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Badge } from "antd";
 import { supabaseClient } from "../providers/supabase-client";
-
-const API_URL = '/api';
+import { API_BASE_URL } from "../providers/constants";
 
 export const SupportMenuLabel: React.FC = () => {
   const [count, setCount] = useState<{ total: number; open: number } | null>(null);
@@ -13,7 +12,7 @@ export const SupportMenuLabel: React.FC = () => {
       const { data: { session } } = await supabaseClient.auth.getSession();
       if (!session?.access_token) return;
       try {
-        const res = await fetch(`${API_URL}/admin/feedback/count`, {
+        const res = await fetch(`${API_BASE_URL}/admin/feedback/count`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const json = await res.json();

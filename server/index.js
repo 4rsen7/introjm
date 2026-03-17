@@ -28,6 +28,7 @@ const CANONICAL_HOST = (() => {
 })();
 const API_PUBLIC_ORIGIN = (process.env.API_URL || CANONICAL_ORIGIN).replace(/\/$/, '');
 const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || CANONICAL_ORIGIN).replace(/\/$/, '');
+const ADMIN_ORIGIN = (process.env.ADMIN_ORIGIN || 'https://admin.iterojm.com').replace(/\/$/, '');
 
 const hostRedirects = {
   'www.iterojm.com': (path) => path,
@@ -63,6 +64,18 @@ app.use((req, res, next) => {
     return res.redirect(301, `${CANONICAL_ORIGIN}${redirectPath}${query}`);
 });
 
+app.use((req, res, next) => {
+    if (process.env.NODE_ENV !== 'production') return next();
+    if (!['GET', 'HEAD'].includes(req.method)) return next();
+    if (String(req.hostname || '').toLowerCase() !== CANONICAL_HOST) return next();
+    if (!(req.path === '/admin' || req.path.startsWith('/admin/'))) return next();
+
+    const targetPath = req.path === '/admin' ? '/' : req.path.replace(/^\/admin/, '') || '/';
+    const queryIndex = req.originalUrl.indexOf('?');
+    const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+    return res.redirect(301, `${ADMIN_ORIGIN}${targetPath}${query}`);
+});
+
 // Initialize Storage Bucket
 (async () => {
     try {
@@ -94,6 +107,7 @@ const allowedOrigins = [
 
   // Канонічний домен + тимчасово legacy-домени для м'якого переходу
   CANONICAL_ORIGIN,
+  ADMIN_ORIGIN,
   'https://www.iterojm.com',
   'https://iterojm.vercel.app',
   'https://iterojm-app.vercel.app',

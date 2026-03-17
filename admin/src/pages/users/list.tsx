@@ -4,9 +4,7 @@ import { Table, Space, Tag, Button, Dropdown, Drawer, Descriptions, Divider, Spi
 import { MoreOutlined, StopOutlined, KeyOutlined, EyeOutlined } from "@ant-design/icons";
 import { supabaseClient } from "../../providers/supabase-client";
 import dayjs from "dayjs";
-
-// Завжди ходимо на бекенд напряму (CORS на сервері дозволяє localhost:3000)
-const API_URL = '/api';
+import { API_BASE_URL } from "../../providers/constants";
 
 // Sub-component to fix "useForm not connected" warning
 const PlanAssignmentForm: React.FC<{ 
@@ -91,9 +89,9 @@ export const UserList: React.FC = () => {
             }
 
             try {
-                console.log(`Fetching user details from: ${API_URL}/users-manage/${selectedUserId}`);
+                console.log(`Fetching user details from: ${API_BASE_URL}/users-manage/${selectedUserId}`);
                 
-                const res = await fetch(`${API_URL}/users-manage/${selectedUserId}`, {
+                const res = await fetch(`${API_BASE_URL}/users-manage/${selectedUserId}`, {
                     headers: { Authorization: `Bearer ${session.access_token}` }
                 });
 
@@ -123,7 +121,7 @@ export const UserList: React.FC = () => {
       setAssigning(true);
       const { data: { session } } = await supabaseClient.auth.getSession();
       try {
-          const res = await fetch(`${API_URL}/users-manage/assign-plan`, {
+          const res = await fetch(`${API_BASE_URL}/users-manage/assign-plan`, {
               method: 'POST',
               headers: { 
                   'Content-Type': 'application/json',

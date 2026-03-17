@@ -5,11 +5,11 @@ function getAdminUrl() {
 }
 
 async function loginAdmin(page, { email, password }) {
-  await page.goto(`${getAdminUrl()}/admin/login`);
+  await page.goto(`${getAdminUrl()}/login`);
   await page.getByRole('textbox', { name: /email/i }).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in|log in/i }).click();
-  await expect(page).not.toHaveURL(/\/admin\/login$/);
+  await expect(page).not.toHaveURL(/\/login$/);
 }
 
 module.exports = {

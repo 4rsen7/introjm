@@ -3,8 +3,7 @@ import { List, Card, Table, Drawer, Button, Form, Input, Spin, Tag, App, Typogra
 import { MessageOutlined, BugOutlined, BulbOutlined, UserOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 import { supabaseClient } from "../../providers/supabase-client";
 import { ColorModeContext } from "../../contexts/color-mode";
-
-const API_URL = '/api';
+import { API_BASE_URL } from "../../providers/constants";
 const { Text } = Typography;
 
 export const SupportList: React.FC = () => {
@@ -30,7 +29,7 @@ export const SupportList: React.FC = () => {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/admin/feedback`, {
+      const res = await fetch(`${API_BASE_URL}/admin/feedback`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -56,7 +55,7 @@ export const SupportList: React.FC = () => {
     const token = await getToken();
     if (!token) return;
     try {
-      const res = await fetch(`${API_URL}/admin/feedback/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/admin/feedback/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -76,7 +75,7 @@ export const SupportList: React.FC = () => {
     if (!token) return;
     setReplySubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/admin/feedback/${selectedId}/reply`, {
+      const res = await fetch(`${API_BASE_URL}/admin/feedback/${selectedId}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ body: values.body }),
