@@ -366,6 +366,38 @@ function createSupabaseClientWithUserToken(token) {
     return supabase;
 }
 
+async function getAuthenticatedUserFromToken(token) {
+    if (!token) {
+        return { user: null, error: new Error('Unauthorized') };
+    }
+
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    if (anonKey) {
+        const authClient = createSupabaseClientWithUserToken(token);
+        const { data, error } = await authClient.auth.getUser();
+        return { user: data?.user ?? null, error };
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+    return { user: data?.user ?? null, error };
+}
+
+async function getAdminUserFromToken(token) {
+    const { user, error } = await getAuthenticatedUserFromToken(token);
+    if (error || !user) return { user: null, profile: null, error: error || new Error('Invalid token') };
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+    if (profileError) return { user: null, profile: null, error: profileError };
+    if (profile?.role !== 'admin') return { user, profile, error: new Error('Access denied') };
+
+    return { user, profile, error: null };
+}
+
 /** Ensure user has an active Starter subscription (idempotent). Uses admin client so RLS does not block. Call after creating default workspace for new users. */
 async function ensureStarterSubscriptionForUser(userId) {
     const { data: existing } = await supabaseAdmin.from('subscriptions').select('id').eq('user_id', userId).eq('status', 'active').limit(1).maybeSingle();
@@ -2691,10 +2723,9 @@ app.get('/api/admin/feedback', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { data, error } = await supabase
       .from('feedback')
       .select('id, user_id, type, subject, status, created_at, updated_at')
@@ -2713,10 +2744,9 @@ app.get('/api/admin/feedback/count', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { count: total, error: totalErr } = await supabaseAdmin.from('feedback').select('*', { count: 'exact', head: true });
     if (totalErr) throw totalErr;
     const { count: open, error: openErr } = await supabaseAdmin.from('feedback').select('*', { count: 'exact', head: true }).eq('status', 'open');
@@ -2734,10 +2764,9 @@ app.get('/api/admin/feedback/:id', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { id } = req.params;
     const { data: feedback, error: feedError } = await supabaseAdmin.from('feedback').select('*').eq('id', id).single();
     if (feedError || !feedback) return res.status(404).json({ status: 'error', message: 'Not found' });
@@ -2758,10 +2787,9 @@ app.post('/api/admin/feedback/:id/reply', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'admin') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const { id } = req.params;
     const { body } = req.body;
     if (!body || !String(body).trim()) return res.status(400).json({ status: 'error', message: 'body required' });
@@ -2911,20 +2939,17 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
     }
 
     try {
-        // Check Admin
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) {
-             console.log('❌ Auth error:', authError);
-             return res.status(401).json({ error: 'Invalid token' });
-        }
-
-        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-        if (profile?.role !== 'admin') {
-            console.log(`❌ Access denied for user ${user.id} (role: ${profile?.role})`);
+        const { error: adminAuthError } = await getAdminUserFromToken(token);
+        if (adminAuthError?.message === 'Access denied') {
+            console.log('❌ Access denied for non-admin user');
             return res.status(403).json({
                 error: 'Access denied',
                 message: "Your account needs role 'admin' in the profiles table to view user details.",
             });
+        }
+        if (adminAuthError) {
+             console.log('❌ Auth error:', adminAuthError);
+             return res.status(401).json({ error: 'Invalid token' });
         }
 
         // 1. Profile
@@ -2987,9 +3012,9 @@ app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], asyn
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
     try {
-        const { data: { user } } = await supabase.auth.getUser(token);
-        const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-        if (profile?.role !== 'admin') return res.status(403).json({ error: 'Access denied' });
+        const { error: adminAuthError } = await getAdminUserFromToken(token);
+        if (adminAuthError?.message === 'Access denied') return res.status(403).json({ error: 'Access denied' });
+        if (adminAuthError) return res.status(401).json({ error: 'Invalid token' });
 
         let endDate = new Date();
         if (customEndDate) {
