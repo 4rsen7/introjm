@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getAuthToken, getStoredAuthToken } from '../services/auth';
+import { getAuthToken } from '../services/auth';
 
 const API_URL = '/api';
 
@@ -64,62 +64,57 @@ const fetchData = async (endpoint) => {
 };
 
 // Hooks
-export const useJourneys = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useJourneys = (enabled = true) => {
   return useQuery({
     queryKey: ['journeys'],
     queryFn: async () => {
       const data = await fetchData('/journeys');
       return data.map(mapJourneyToClient);
     },
-    enabled: hasToken,
+    enabled,
     refetchOnWindowFocus: true, // щоб інші учасники воркспейсу бачили нові мапи після перемикання на вкладку
   });
 };
 
-export const useInterviews = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useInterviews = (enabled = true) => {
   return useQuery({
     queryKey: ['interviews'],
     queryFn: async () => {
       const data = await fetchData('/interviews');
       return data.map(mapInterviewToClient);
     },
-    enabled: hasToken,
+    enabled,
     refetchOnWindowFocus: true,
   });
 };
 
-export const usePersonas = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const usePersonas = (enabled = true) => {
   return useQuery({
     queryKey: ['personas'],
     queryFn: async () => {
       const data = await fetchData('/personas');
       return data.map(mapPersonaToClient);
     },
-    enabled: hasToken,
+    enabled,
   });
 };
 
-export const useMetrics = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useMetrics = (enabled = true) => {
   return useQuery({
     queryKey: ['metrics'],
     queryFn: async () => {
       const data = await fetchData('/metrics');
       return data.map(mapMetricToClient);
     },
-    enabled: hasToken,
+    enabled,
   });
 };
 
-export const useWorkspace = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useWorkspace = (enabled = true) => {
   return useQuery({
     queryKey: ['workspace'],
     queryFn: () => fetchData('/workspace'),
-    enabled: hasToken,
+    enabled,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     staleTime: 0,
@@ -127,20 +122,18 @@ export const useWorkspace = () => {
 };
 
 const WORKSPACE_LIST_KEY = 'workspace_list';
-export const useWorkspaceList = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useWorkspaceList = (enabled = true) => {
   return useQuery({
     queryKey: [WORKSPACE_LIST_KEY],
     queryFn: () => fetchData('/workspace/list'),
-    enabled: hasToken,
+    enabled,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
 };
 
-export const useWorkspaceLimits = (workspaceId) => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useWorkspaceLimits = (workspaceId, enabled = true) => {
   return useQuery({
     queryKey: ['workspace', 'limits', workspaceId ?? 'current'],
     queryFn: async () => {
@@ -156,18 +149,17 @@ export const useWorkspaceLimits = (workspaceId) => {
       if (!res.ok) throw new Error(json.error || json.message || 'Failed to fetch limits');
       return json.data || null;
     },
-    enabled: hasToken,
+    enabled,
     refetchOnWindowFocus: true,
     staleTime: 15 * 1000,
   });
 };
 
-export const useProfile = () => {
-  const hasToken = Boolean(getStoredAuthToken());
+export const useProfile = (enabled = true) => {
   return useQuery({
     queryKey: ['profile'],
     queryFn: () => fetchData('/profile'),
-    enabled: hasToken,
+    enabled,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     staleTime: 0,

@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
 import InfoModal from '../components/common/InfoModal';
 import { MS_EXCEL_DISABLED } from '../config/features';
+import { getActiveSession, persistStoredAuthState } from '../services/auth';
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
@@ -61,8 +62,7 @@ const AuthPage = ({ onLogin }) => {
         });
       } catch (e) { /* non-blocking */ }
 
-      localStorage.setItem('token', session.access_token);
-      localStorage.setItem('user', JSON.stringify(user));
+      persistStoredAuthState(session);
       queryClient.removeQueries();
       queryClient.invalidateQueries({ queryKey: ['workspace'] });
       queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
@@ -112,8 +112,10 @@ const AuthPage = ({ onLogin }) => {
 
     const hasOAuthParams = Boolean(hash) || params.has('code') || params.has('access_token') || params.has('refresh_token');
     if (!hasOAuthParams) {
-      if (!localStorage.getItem('token')) return;
-      void finishSignedInUser();
+      void getActiveSession().then((session) => {
+        if (!session) return;
+        void finishSignedInUser(session);
+      });
       return;
     }
 
@@ -188,8 +190,7 @@ const AuthPage = ({ onLogin }) => {
                });
              } catch (e) { /* non-blocking */ }
 
-             localStorage.setItem('token', data.session.access_token);
-             localStorage.setItem('user', JSON.stringify(data.user));
+             persistStoredAuthState(data.session);
              queryClient.removeQueries(); // Clear cache for new user
              if (onLogin) onLogin(data.user);
            } else {
@@ -223,8 +224,9 @@ const AuthPage = ({ onLogin }) => {
         }
 
         // Login Success
-        localStorage.setItem('token', data.session?.access_token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.session) {
+          persistStoredAuthState(data.session);
+        }
         queryClient.removeQueries(); // Clear cache for new user
         // Ensure workspace/journeys refetch so invited users see the inviter's workspace
         queryClient.invalidateQueries({ queryKey: ['workspace'] });
@@ -348,8 +350,7 @@ const AuthPage = ({ onLogin }) => {
       const session = data?.session;
       const user = session?.user;
       if (session && user) {
-        localStorage.setItem('token', session.access_token);
-        localStorage.setItem('user', JSON.stringify(user));
+        persistStoredAuthState(session);
         queryClient.removeQueries();
         queryClient.invalidateQueries({ queryKey: ['workspace'] });
         queryClient.invalidateQueries({ queryKey: ['workspace_list'] });

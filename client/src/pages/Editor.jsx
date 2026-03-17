@@ -40,7 +40,7 @@ import JourneyPreviewModal from '../components/journey/JourneyPreviewModal'
 import JourneyMapView from '../components/journey/JourneyMapView'
 import ConfirmModal from '../ConfirmModal'
 import { supabase } from '../supabaseClient'
-import { getAuthToken } from '../services/auth'
+import { clearStoredAuthState, getAuthToken } from '../services/auth'
 import { parseMapData } from '../utils/parseMapData'
 
 // Fallback to localhost:5005 if env var is missing
@@ -364,13 +364,12 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   // Handle Auth Errors
   useEffect(() => {
     if (queryError?.message === 'Unauthorized') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearStoredAuthState();
       supabase.auth.signOut();
       queryClient.removeQueries(); // Clear cache on unauthorized
-      navigate('/');
+      navigate('/auth', { replace: true });
     }
-  }, [queryError, navigate]);
+  }, [queryError, navigate, queryClient]);
 
   // Auto-save Effect
   useEffect(() => {

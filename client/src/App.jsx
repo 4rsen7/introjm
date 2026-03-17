@@ -19,7 +19,7 @@ import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
-import { clearStoredAuthState, getAuthToken, getStoredAuthToken } from './services/auth'
+import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuthState } from './services/auth'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
 import { useJourneys, usePersonas, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
@@ -29,9 +29,20 @@ const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 // Fallback to localhost:5005 if env var is missing
 const API_URL = '/api';
 
-const ProtectedOutlet = () => {
-  const token = getStoredAuthToken();
-  if (!token) return <Navigate to="/auth" replace />;
+const PUBLIC_PATHS = new Set(['/landing', '/auth', '/terms', '/privacy']);
+
+const isPublicPath = (path) => PUBLIC_PATHS.has(path);
+
+const ProtectedOutlet = ({ authReady, isAuthenticated }) => {
+  if (!authReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-orange-600 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
   return <Outlet />;
 };
 
@@ -216,41 +227,78 @@ function App() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const locationPathRef = useRef(location.pathname);
+  const [authReady, setAuthReady] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const path = location.pathname;
-    const isPublicPath = path === '/landing' || path === '/auth' || path === '/terms' || path === '/privacy';
-    if (!token && !isPublicPath) {
-      navigate('/auth');
-    }
-  }, [location, navigate]);
+    locationPathRef.current = location.pathname;
+  }, [location.pathname]);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== 'SIGNED_OUT') return;
+    let active = true;
+
+    const applySession = (session, event = 'INITIAL_SESSION') => {
+      if (!active) return;
+
+      if (session?.access_token) {
+        persistStoredAuthState(session);
+        setIsAuthenticated(true);
+        setAuthReady(true);
+        return;
+      }
+
       localStorage.removeItem(SELECTED_WORKSPACE_KEY);
       clearStoredAuthState();
-      queryClient.clear();
-      if (location.pathname !== '/auth') {
+      setIsAuthenticated(false);
+      setAuthReady(true);
+
+      if (event === 'SIGNED_OUT') {
+        queryClient.clear();
+      }
+
+      const currentPath = locationPathRef.current;
+      if (!isPublicPath(currentPath)) {
         navigate('/auth', { replace: true });
+      }
+    };
+
+    void getActiveSession().then((session) => {
+      applySession(session, 'INITIAL_SESSION');
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
+        applySession(session, event);
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        applySession(null, event);
       }
     });
 
-    return () => subscription?.unsubscribe();
-  }, [location.pathname, navigate, queryClient]);
+    return () => {
+      active = false;
+      subscription?.unsubscribe();
+    };
+  }, [navigate, queryClient]);
 
   // Ensure logged-in user has Starter subscription (e.g. after email confirmation)
   const ensureStarterCalledRef = useRef(false);
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token || ensureStarterCalledRef.current) return;
-    ensureStarterCalledRef.current = true;
-    fetch(`${API_URL}/subscriptions/ensure-starter`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    }).catch(() => {});
-  }, []);
+    if (!authReady || !isAuthenticated || ensureStarterCalledRef.current) return;
+
+    void (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      ensureStarterCalledRef.current = true;
+      fetch(`${API_URL}/subscriptions/ensure-starter`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).catch(() => {});
+    })();
+  }, [authReady, isAuthenticated]);
 
   // Navigation Loading Animation
   useLayoutEffect(() => {
@@ -293,7 +341,7 @@ function App() {
 
   // On full page load (F5) invalidate list queries so data refetches instead of using stale persisted cache
   useEffect(() => {
-    if (localStorage.getItem('token')) {
+    if (authReady && isAuthenticated) {
       queryClient.invalidateQueries({ queryKey: ['workspace'] });
       queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
       queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
@@ -302,18 +350,19 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['personas'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     }
-  }, [queryClient]);
+  }, [authReady, isAuthenticated, queryClient]);
 
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(true);
 
   // Global Personas State
   // REPLACED WITH REACT QUERY HOOKS
-  const { data: globalJourneys = [], isFetched: journeysFetched } = useJourneys();
-  const { data: globalPersonas = [] } = usePersonas();
-  const { data: globalMetrics = [] } = useMetrics();
+  const queriesEnabled = authReady && isAuthenticated;
+  const { data: globalJourneys = [], isFetched: journeysFetched } = useJourneys(queriesEnabled);
+  const { data: globalPersonas = [] } = usePersonas(queriesEnabled);
+  const { data: globalMetrics = [] } = useMetrics(queriesEnabled);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
-  const workspaces = useWorkspaceList().data ?? [];
+  const workspaces = useWorkspaceList(queriesEnabled).data ?? [];
   const workspaceListInvalidatedRef = useRef(false);
 
   // If journeys loaded but workspace list is still empty (e.g. GET /api/journeys created workspace after list), refetch list once
@@ -330,8 +379,8 @@ function App() {
     return found || workspaces[0];
   }, [workspaces, selectedWorkspaceId]);
 
-  const { data: userProfile } = useProfile();
-  const { data: workspaceLimits } = useWorkspaceLimits(currentWorkspace?.id);
+  const { data: userProfile } = useProfile(queriesEnabled);
+  const { data: workspaceLimits } = useWorkspaceLimits(currentWorkspace?.id, queriesEnabled);
   const planName = workspaceLimits?.limits?.planName ?? null;
 
   useEffect(() => {
@@ -363,7 +412,7 @@ function App() {
     currentWorkspace ? globalMetrics.filter((m) => m.workspace_id === currentWorkspace.id) : globalMetrics,
     [globalMetrics, currentWorkspace]
   );
-  const { data: globalInterviews = [] } = useInterviews();
+  const { data: globalInterviews = [] } = useInterviews(queriesEnabled);
   const filteredInterviews = useMemo(() =>
     currentWorkspace ? globalInterviews.filter((i) => i.workspace_id === currentWorkspace.id) : globalInterviews,
     [globalInterviews, currentWorkspace]
@@ -725,7 +774,7 @@ function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
 
-        <Route element={<ProtectedOutlet />}>
+        <Route element={<ProtectedOutlet authReady={authReady} isAuthenticated={isAuthenticated} />}>
           <Route path="/journey/:id" element={
               <Editor 
                 onBack={() => navigate('/dashboard')} 
