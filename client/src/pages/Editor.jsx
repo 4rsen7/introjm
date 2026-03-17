@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2 } from 'lucide-react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { MemoryRouter, useParams, useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -45,6 +45,17 @@ import { parseMapData } from '../utils/parseMapData'
 
 // Fallback to localhost:5005 if env var is missing
 const API_URL = '/api';
+
+function downloadBlob(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = blobUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(blobUrl);
+}
 
 function getScrollParent(node) {
   if (!node) return null;
@@ -701,12 +712,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       setConfirmConfig({ isOpen: false, type: null, data: null });
   }
 
-  const handleExport = async () => {
-    setSelectedCardId(null);
-    setIsHeaderMenuOpen(false);
-    setIsExporting(true);
-    setIsGeneratingPdf(true);
-
+  const handleLegacyExport = async () => {
     const pad = 32;
     let wrap = null;
     let root = null;
@@ -735,22 +741,24 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       root = createRoot(wrap);
       flushSync(() => {
         root.render(
-          <div className="flex flex-col bg-white w-max">
-            <div className="px-6 py-4 border-b border-gray-100 shrink-0">
-              <h2 className="text-lg font-bold text-gray-900 truncate">{journeyMeta.title || 'Journey'}</h2>
+          <MemoryRouter>
+            <div className="flex flex-col bg-white w-max">
+              <div className="px-6 py-4 border-b border-gray-100 shrink-0">
+                <h2 className="text-lg font-bold text-gray-900 truncate">{journeyMeta.title || 'Journey'}</h2>
+              </div>
+              <div style={{ zoom: 0.7 }} className="origin-top-left w-max">
+                <JourneyMapView
+                  lanes={lanes}
+                  gridColumns={gridColumns}
+                  cells={cells}
+                  emotionValues={emotionValues}
+                  globalMetrics={globalMetrics || []}
+                  globalJourneys={globalJourneys || []}
+                  onOpenLinkedJourneyPreview={() => {}}
+                />
+              </div>
             </div>
-            <div style={{ zoom: 0.7 }} className="origin-top-left w-max">
-              <JourneyMapView
-                lanes={lanes}
-                gridColumns={gridColumns}
-                cells={cells}
-                emotionValues={emotionValues}
-                globalMetrics={globalMetrics || []}
-                globalJourneys={globalJourneys || []}
-                onOpenLinkedJourneyPreview={() => {}}
-              />
-            </div>
-          </div>
+          </MemoryRouter>
         );
       });
 
@@ -803,6 +811,38 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         } catch (_) {}
       }
       if (wrap?.parentNode) wrap.parentNode.removeChild(wrap);
+    }
+  }
+
+  const handleExport = async () => {
+    setSelectedCardId(null);
+    setIsHeaderMenuOpen(false);
+    setIsExporting(true);
+    setIsGeneratingPdf(true);
+
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Unauthorized');
+
+      const response = await fetch(`${API_URL}/export/journeys/${journeyId}/pdf`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.message || 'Server-side export failed');
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+      const filename = filenameMatch?.[1] || `${journeyMeta.title || 'journey-map'}.pdf`;
+      downloadBlob(blob, filename);
+    } catch (error) {
+      console.error('Server-side export failed, falling back to legacy export:', error);
+      await handleLegacyExport();
+    } finally {
       setIsExporting(false);
       setIsGeneratingPdf(false);
     }
