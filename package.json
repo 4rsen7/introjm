@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\" \"npm run dev -w admin\"",
     "start": "npm start --workspace=server",
-    "build": "npm install --include=dev && rm -rf server/public/client server/public/admin && npm run build --workspace=client && npm run build --workspace=admin",
+    "install:playwright:chromium": "PLAYWRIGHT_BROWSERS_PATH=0 npm exec playwright install chromium",
+    "build": "npm install --include=dev && npm run install:playwright:chromium && rm -rf server/public/client server/public/admin && npm run build --workspace=client && npm run build --workspace=admin",
     "install:all": "npm install",
     "seed:e2e": "node scripts/seed-e2e.js",
     "seed:e2e:local": "bash ./scripts/run-e2e-local.sh seed",

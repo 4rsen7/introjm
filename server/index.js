@@ -827,6 +827,7 @@ app.post('/api/export/journeys/:id/pdf', async (req, res) => {
         const renderOrigin = (process.env.EXPORT_RENDER_ORIGIN || req.headers.origin || (process.env.NODE_ENV === 'production' ? CLIENT_ORIGIN : 'http://localhost:5173')).replace(/\/$/, '');
         const exportUrl = `${renderOrigin}/export/journey/${id}?token=${encodeURIComponent(exportToken)}`;
 
+        process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
         const { chromium } = require('playwright');
         browser = await chromium.launch({
             headless: true,
