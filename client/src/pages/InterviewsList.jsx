@@ -6,8 +6,9 @@ import { getAuthToken } from '../services/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import Tooltip from '../components/common/Tooltip';
 import ConfirmModal from '../ConfirmModal';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 export default function InterviewsList({ interviews = [], userProfile, currentWorkspace, onLimitReached }) {
   const { t } = useTranslation();

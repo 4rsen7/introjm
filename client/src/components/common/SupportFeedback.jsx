@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageCircle, X, Send, AlertCircle, Lightbulb, ChevronRight, Loader2, Trash2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
+import { API_BASE_URL } from '../../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 export default function SupportFeedback() {
   const { t } = useTranslation();

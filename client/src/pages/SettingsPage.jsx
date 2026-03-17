@@ -8,9 +8,9 @@ import { getAuthToken } from '../services/auth';
 import { useWorkspaceLimits } from '../hooks/useQueries';
 import i18n, { setLocale } from '../i18n';
 import { MS_EXCEL_DISABLED } from '../config/features';
+import { API_BASE_URL } from '../config/api';
 
-// Fallback API URL
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
   const { t } = useTranslation();

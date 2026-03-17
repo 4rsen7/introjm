@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
+import { API_BASE_URL } from '../../config/api';
 
-// Fallback API URL
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', UAH: '₴' };
 function getCurrencySymbol(currency) {

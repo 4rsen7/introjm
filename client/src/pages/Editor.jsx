@@ -38,13 +38,14 @@ import MetricModal from '../components/metrics/MetricModal'
 import JourneyPicker from '../components/journey/JourneyPicker'
 import JourneyPreviewModal from '../components/journey/JourneyPreviewModal'
 import JourneyMapView from '../components/journey/JourneyMapView'
+import { API_BASE_URL } from '../config/api'
 import ConfirmModal from '../ConfirmModal'
 import { supabase } from '../supabaseClient'
 import { clearStoredAuthState, getAuthToken } from '../services/auth'
 import { parseMapData } from '../utils/parseMapData'
 
 // Fallback to localhost:5005 if env var is missing
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 function downloadBlob(blob, filename) {
   const blobUrl = URL.createObjectURL(blob);

@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../services/auth';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 // Helper for consistent date formatting
 const formatDate = (dateString) => {

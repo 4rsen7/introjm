@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Search, RotateCcw, Trash2, Map, User, Archive as ArchiveIcon } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
+import { API_BASE_URL } from '../config/api';
 
-// Fallback to localhost:5005 if env var is missing
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const ArchivePage = ({ 
   archivedJourneys = [], 

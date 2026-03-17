@@ -19,8 +19,9 @@ import {
   WandSparkles,
   Zap,
 } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 const BROWSER_HOSTNAME = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
 const IS_LOCAL_BROWSER = BROWSER_HOSTNAME === 'localhost' || BROWSER_HOSTNAME === '127.0.0.1';
 const LANDING_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_LANDING_ORIGIN) || 'https://iterojm.com').replace(/\/$/, '');

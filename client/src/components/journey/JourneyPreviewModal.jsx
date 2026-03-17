@@ -6,8 +6,9 @@ import { getAuthToken } from '../../services/auth';
 import { parseMapData } from '../../utils/parseMapData';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import JourneyMapView from './JourneyMapView';
+import { API_BASE_URL } from '../../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const fetchJourney = async ({ queryKey }) => {
   const [_key, id] = queryKey;

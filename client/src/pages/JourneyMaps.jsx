@@ -4,9 +4,9 @@ import { Search, Filter, Copy, Trash2, Plus, Map, ArrowRight, X, Archive, Rotate
 import ConfirmModal from '../ConfirmModal';
 import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
+import { API_BASE_URL } from '../config/api';
 
-// Fallback to localhost:5005 if env var is missing
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate, onEdit, onDelete, onDuplicate, onArchive }) => {
   const { t } = useTranslation();

@@ -6,8 +6,9 @@ import { CHART_PALETTE, DEFAULT_BAR_COLOR, formatSeriesLabel } from '../utils/me
 import { getAuthToken } from '../services/auth';
 import { mapMetricToClient } from '../hooks/useQueries';
 import { MS_EXCEL_DISABLED } from '../config/features';
+import { API_BASE_URL } from '../config/api';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const defaultSeriesData = () => [
   { label: 'Jan', value: 400, color: CHART_PALETTE[0] },

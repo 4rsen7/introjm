@@ -4,10 +4,10 @@ import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Ar
 import { Link } from 'react-router-dom'
 import ConfirmModal from '../ConfirmModal'
 import { getAuthToken } from '../services/auth'
+import { API_BASE_URL } from '../config/api'
 import { useQueryClient } from '@tanstack/react-query'
 
-// Fallback to localhost:5005 if env var is missing
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
 export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {

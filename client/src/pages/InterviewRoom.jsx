@@ -3,9 +3,10 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
+import { API_BASE_URL } from '../config/api';
 import { useQueryClient } from '@tanstack/react-query';
 
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 

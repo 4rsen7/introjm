@@ -21,14 +21,14 @@ import JourneyExportPage from './pages/JourneyExportPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
 import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuthState } from './services/auth'
+import { API_BASE_URL } from './config/api'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
 import { useJourneys, usePersonas, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
-// Fallback to localhost:5005 if env var is missing
-const API_URL = '/api';
+const API_URL = API_BASE_URL;
 
 const HOSTNAME = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
 const IS_LOCAL_HOST = HOSTNAME === 'localhost' || HOSTNAME === '127.0.0.1';

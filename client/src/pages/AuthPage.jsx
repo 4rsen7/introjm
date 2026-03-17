@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
 import InfoModal from '../components/common/InfoModal';
 import { MS_EXCEL_DISABLED } from '../config/features';
+import { API_BASE_URL } from '../config/api';
 import { getActiveSession, persistStoredAuthState } from '../services/auth';
 
 const AuthPage = ({ onLogin }) => {
@@ -29,8 +30,7 @@ const AuthPage = ({ onLogin }) => {
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [resetPasswordForm, setResetPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
 
-  // Use relative path '/api' in production (All-in-One architecture) or injected env var locally
-  const apiUrl = '/api';
+  const apiUrl = API_BASE_URL;
   const oauthProcessingRef = useRef(false);
   const processedAccessTokenRef = useRef(null);
 
@@ -155,7 +155,7 @@ const AuthPage = ({ onLogin }) => {
     if (validateForm()) {
       setIsLoading(true);
       try {
-        const apiUrlPath = '/api';
+        const apiUrlPath = API_BASE_URL;
 
         if (!isLogin) {
            // Use Supabase SDK directly for registration to avoid race conditions 
