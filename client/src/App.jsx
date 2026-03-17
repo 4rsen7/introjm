@@ -17,6 +17,7 @@ import AuthPage from './pages/AuthPage'
 import LandingPage from './pages/LandingPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
+import JourneyExportPage from './pages/JourneyExportPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
 import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuthState } from './services/auth'
@@ -29,9 +30,26 @@ const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 // Fallback to localhost:5005 if env var is missing
 const API_URL = '/api';
 
-const PUBLIC_PATHS = new Set(['/landing', '/auth', '/terms', '/privacy']);
+const HOSTNAME = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+const IS_LOCAL_HOST = HOSTNAME === 'localhost' || HOSTNAME === '127.0.0.1';
+const LANDING_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LANDING_ORIGIN) || 'https://iterojm.com';
+const APP_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_ORIGIN) || 'https://app.iterojm.com';
+const LANDING_HOSTS = new Set(['iterojm.com', 'www.iterojm.com']);
+const IS_LANDING_HOST = !IS_LOCAL_HOST && LANDING_HOSTS.has(HOSTNAME);
 
-const isPublicPath = (path) => PUBLIC_PATHS.has(path);
+const PUBLIC_PATHS = new Set([...(IS_LANDING_HOST ? ['/'] : []), '/landing', '/auth', '/terms', '/privacy']);
+
+const isPublicPath = (path) => PUBLIC_PATHS.has(path) || path.startsWith('/export/');
+
+const ExternalRedirect = ({ to }) => {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.location.replace(to);
+    }
+  }, [to]);
+
+  return null;
+};
 
 const ProtectedOutlet = ({ authReady, isAuthenticated }) => {
   if (!authReady) {
@@ -768,9 +786,10 @@ function App() {
     <>
       <div className={`fixed top-0 left-0 h-1 bg-orange-600 z-[9999] transition-all duration-300 ease-out ${isNavigating ? 'opacity-100' : 'opacity-0'}`} style={{ width: `${loadingProgress}%` }}></div>
       <Routes>
-        <Route path="/" element={<Navigate to="/auth" replace />} />
-        <Route path="/landing" element={<LandingPage />} />
-        <Route path="/auth" element={<AuthPage onLogin={() => navigate('/dashboard')} />} />
+        <Route path="/" element={IS_LANDING_HOST ? <LandingPage /> : <Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
+        <Route path="/landing" element={IS_LOCAL_HOST ? <LandingPage /> : IS_LANDING_HOST ? <Navigate to="/" replace /> : <ExternalRedirect to={LANDING_ORIGIN} />} />
+        <Route path="/auth" element={IS_LANDING_HOST ? <ExternalRedirect to={`${APP_ORIGIN}/auth`} /> : <AuthPage onLogin={() => navigate('/dashboard')} />} />
+        <Route path="/export/journey/:id" element={<JourneyExportPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
 

@@ -12,6 +12,7 @@ const googleSheets = require('./integrations/googleSheets');
 const microsoftExcel = require('./integrations/microsoftExcel');
 const { mapRowsToMetric } = require('./integrations/mapRowsToMetric');
 const { normalizeRangeA1 } = require('./integrations/normalizeRangeA1');
+const { createExportToken, verifyExportToken } = require('./exportToken');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
 const rateLimit = require('express-rate-limit');
@@ -27,16 +28,34 @@ const CANONICAL_HOST = (() => {
   }
 })();
 const API_PUBLIC_ORIGIN = (process.env.API_URL || CANONICAL_ORIGIN).replace(/\/$/, '');
-const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || CANONICAL_ORIGIN).replace(/\/$/, '');
+const APP_ORIGIN = (process.env.APP_ORIGIN || 'https://app.iterojm.com').replace(/\/$/, '');
+const APP_HOST = (() => {
+  try {
+    return new URL(APP_ORIGIN).host;
+  } catch {
+    return 'app.iterojm.com';
+  }
+})();
+const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || APP_ORIGIN).replace(/\/$/, '');
 const ADMIN_ORIGIN = (process.env.ADMIN_ORIGIN || 'https://admin.iterojm.com').replace(/\/$/, '');
+const ADMIN_HOST = (() => {
+  try {
+    return new URL(ADMIN_ORIGIN).host;
+  } catch {
+    return 'admin.iterojm.com';
+  }
+})();
+
+const APP_ROUTE_PREFIXES = ['/auth', '/dashboard', '/journeys', '/journey', '/personas', '/metrics', '/interviews', '/settings', '/archive', '/export'];
+const isAppRoutePath = (path = '/') => APP_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 const hostRedirects = {
-  'www.iterojm.com': (path) => path,
-  'iterojm.vercel.app': (path) => path,
-  'iterojm-app.vercel.app': (path) => path,
-  'iterojm-admin.vercel.app': (path) => {
-    if (path.startsWith('/api') || path.startsWith('/admin')) return path;
-    return path === '/' ? '/admin/' : `/admin${path}`;
+  'www.iterojm.com': { origin: CANONICAL_ORIGIN, buildPath: (path) => path },
+  'iterojm.vercel.app': { origin: CANONICAL_ORIGIN, buildPath: (path) => path },
+  'iterojm-app.vercel.app': { origin: APP_ORIGIN, buildPath: (path) => (path === '/landing' ? '/' : path) },
+  'iterojm-admin.vercel.app': {
+    origin: ADMIN_ORIGIN,
+    buildPath: (path) => (path.startsWith('/admin') ? path.replace(/^\/admin/, '') || '/' : path),
   },
 };
 
@@ -54,14 +73,14 @@ app.use((req, res, next) => {
     if (process.env.NODE_ENV !== 'production') return next();
 
     const hostname = String(req.hostname || '').toLowerCase();
-    const redirectPathBuilder = hostRedirects[hostname];
-    if (!redirectPathBuilder) return next();
+    const redirectTarget = hostRedirects[hostname];
+    if (!redirectTarget) return next();
     if (!['GET', 'HEAD'].includes(req.method)) return next();
 
-    const redirectPath = redirectPathBuilder(req.path || '/');
+    const redirectPath = redirectTarget.buildPath(req.path || '/');
     const queryIndex = req.originalUrl.indexOf('?');
     const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
-    return res.redirect(301, `${CANONICAL_ORIGIN}${redirectPath}${query}`);
+    return res.redirect(301, `${redirectTarget.origin}${redirectPath}${query}`);
 });
 
 app.use((req, res, next) => {
@@ -74,6 +93,36 @@ app.use((req, res, next) => {
     const queryIndex = req.originalUrl.indexOf('?');
     const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
     return res.redirect(301, `${ADMIN_ORIGIN}${targetPath}${query}`);
+});
+
+app.use((req, res, next) => {
+    if (process.env.NODE_ENV !== 'production') return next();
+    if (!['GET', 'HEAD'].includes(req.method)) return next();
+
+    const hostname = String(req.hostname || '').toLowerCase();
+    const path = req.path || '/';
+    const queryIndex = req.originalUrl.indexOf('?');
+    const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+
+    if (hostname === CANONICAL_HOST) {
+        if (path === '/landing') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/${query}`);
+        }
+
+        if (isAppRoutePath(path)) {
+            return res.redirect(301, `${APP_ORIGIN}${path}${query}`);
+        }
+    }
+
+    if (hostname === APP_HOST && path === '/landing') {
+        return res.redirect(301, `${CANONICAL_ORIGIN}/${query}`);
+    }
+
+    if (hostname === ADMIN_HOST && path === '/landing') {
+        return res.redirect(301, `${CANONICAL_ORIGIN}/${query}`);
+    }
+
+    return next();
 });
 
 // Initialize Storage Bucket
@@ -107,6 +156,7 @@ const allowedOrigins = [
 
   // Канонічний домен + тимчасово legacy-домени для м'якого переходу
   CANONICAL_ORIGIN,
+  APP_ORIGIN,
   ADMIN_ORIGIN,
   'https://www.iterojm.com',
   'https://iterojm.vercel.app',
@@ -398,6 +448,36 @@ async function getAdminUserFromToken(token) {
     return { user, profile, error: null };
 }
 
+async function getJourneyExportBundle(journeyId) {
+    const { data: journey, error: journeyError } = await supabaseAdmin
+        .from('journeys')
+        .select('id, title, map_data, workspace_id')
+        .eq('id', journeyId)
+        .single();
+
+    if (journeyError || !journey) {
+        return { journey: null, journeys: [], metrics: [], error: journeyError || new Error('Journey not found') };
+    }
+
+    const [journeysResult, metricsResult] = await Promise.all([
+        supabaseAdmin
+            .from('journeys')
+            .select('id, title')
+            .eq('workspace_id', journey.workspace_id),
+        supabaseAdmin
+            .from('metrics')
+            .select('*')
+            .eq('workspace_id', journey.workspace_id),
+    ]);
+
+    return {
+        journey,
+        journeys: journeysResult.data || [],
+        metrics: metricsResult.data || [],
+        error: journeysResult.error || metricsResult.error || null,
+    };
+}
+
 /** Ensure user has an active Starter subscription (idempotent). Uses admin client so RLS does not block. Call after creating default workspace for new users. */
 async function ensureStarterSubscriptionForUser(userId) {
     const { data: existing } = await supabaseAdmin.from('subscriptions').select('id').eq('user_id', userId).eq('status', 'active').limit(1).maybeSingle();
@@ -681,6 +761,139 @@ app.get('/api/journeys/:id', async (req, res) => {
         console.error('Error fetching journey:', error);
         logSystemError(error, `GET /api/journeys/${id}`);
         res.status(500).json({ status: 'error', error: error.message });
+    }
+});
+
+app.get('/api/export/journeys/:id/document', async (req, res) => {
+    const { id } = req.params;
+    const token = req.query.token;
+
+    try {
+        const payload = verifyExportToken(token);
+        if (String(payload?.journeyId) !== String(id)) {
+            return res.status(403).json({ status: 'error', message: 'Export token does not match journey' });
+        }
+
+        const { journey, journeys, metrics, error } = await getJourneyExportBundle(id);
+        if (error || !journey) {
+            return res.status(404).json({ status: 'error', message: 'Journey not found' });
+        }
+
+        const workspaceIds = await getAccessibleWorkspaceIds(payload.userId);
+        if (!journey.workspace_id || !workspaceIds.includes(journey.workspace_id)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
+
+        res.json({
+            status: 'success',
+            data: {
+                journey,
+                journeys,
+                metrics,
+            },
+        });
+    } catch (error) {
+        res.status(401).json({ status: 'error', message: error.message || 'Invalid export token' });
+    }
+});
+
+app.post('/api/export/journeys/:id/pdf', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+
+    if (!token) {
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+
+    let browser;
+
+    try {
+        const { user, error: authError } = await getAuthenticatedUserFromToken(token);
+        if (authError || !user) {
+            return res.status(401).json({ status: 'error', message: 'Invalid token' });
+        }
+
+        const { journey, error: bundleError } = await getJourneyExportBundle(id);
+        if (bundleError || !journey) {
+            return res.status(404).json({ status: 'error', message: 'Journey not found' });
+        }
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!journey.workspace_id || !workspaceIds.includes(journey.workspace_id)) {
+            return res.status(403).json({ status: 'error', message: 'Access denied' });
+        }
+
+        const exportToken = createExportToken({ userId: user.id, journeyId: id });
+        const renderOrigin = (process.env.EXPORT_RENDER_ORIGIN || req.headers.origin || (process.env.NODE_ENV === 'production' ? CLIENT_ORIGIN : 'http://localhost:5173')).replace(/\/$/, '');
+        const exportUrl = `${renderOrigin}/export/journey/${id}?token=${encodeURIComponent(exportToken)}`;
+
+        const { chromium } = require('playwright');
+        browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        });
+
+        const page = await browser.newPage({
+            viewport: { width: 1440, height: 900 },
+            deviceScaleFactor: 2,
+        });
+
+        await page.emulateMedia({ media: 'screen' });
+        await page.goto(exportUrl, { waitUntil: 'networkidle', timeout: 60000 });
+        await page.waitForFunction(() => document.body?.dataset?.exportReady === 'true', { timeout: 60000 });
+        await page.waitForTimeout(200);
+
+        const dimensions = await page.evaluate(() => {
+            const root = document.querySelector('[data-export-document-root]');
+            if (!root) return null;
+            return {
+                width: Math.ceil(Math.max(root.scrollWidth, root.getBoundingClientRect().width)),
+                height: Math.ceil(Math.max(root.scrollHeight, root.getBoundingClientRect().height)),
+            };
+        });
+
+        if (!dimensions?.width || !dimensions?.height) {
+            throw new Error('Export content did not render');
+        }
+
+        const width = Math.min(dimensions.width, 14400);
+        const height = Math.min(dimensions.height, 14400);
+        const filenameBase = String(journey.title || 'journey-map')
+            .replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim() || 'journey-map';
+
+        await page.addStyleTag({
+            content: `
+                @page { size: ${width}px ${height}px; margin: 0; }
+                html, body {
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    width: ${width}px !important;
+                    height: ${height}px !important;
+                    overflow: hidden !important;
+                    background: #ffffff !important;
+                }
+            `,
+        });
+
+        const pdfBuffer = await page.pdf({
+            printBackground: true,
+            preferCSSPageSize: true,
+            margin: { top: '0', right: '0', bottom: '0', left: '0' },
+        });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filenameBase}.pdf"`);
+        return res.send(Buffer.from(pdfBuffer));
+    } catch (error) {
+        console.error('Error generating journey PDF:', error);
+        logSystemError(error, `POST /api/export/journeys/${id}/pdf`);
+        return res.status(500).json({ status: 'error', message: error.message || 'Failed to generate PDF' });
+    } finally {
+        if (browser) {
+            await browser.close().catch(() => {});
+        }
     }
 });
 
