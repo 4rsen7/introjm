@@ -200,49 +200,21 @@ const AuthPage = ({ onLogin }) => {
            return;
         }
 
-        const endpoint = isLogin ? '/login' : '/register';
-        
-        const payload = {
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
-          ...(!isLogin && {
-            firstName: formData.firstName,
-            lastName: formData.lastName
-          })
-        };
-
-        const response = await fetch(`${apiUrlPath}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || data.message || 'Authentication failed');
+        if (error) {
+          throw error;
         }
 
-        // Login Success
-        if (data.session) {
-          persistStoredAuthState(data.session);
-        }
-        queryClient.removeQueries(); // Clear cache for new user
-        // Ensure workspace/journeys refetch so invited users see the inviter's workspace
-        queryClient.invalidateQueries({ queryKey: ['workspace'] });
-        queryClient.invalidateQueries({ queryKey: ['workspace_list'] });
-        queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
-        queryClient.invalidateQueries({ queryKey: ['profile'] });
-        queryClient.invalidateQueries({ queryKey: ['journeys'] });
-        queryClient.invalidateQueries({ queryKey: ['personas'] });
-        queryClient.invalidateQueries({ queryKey: ['metrics'] });
-
-        // Sync session with Supabase Client SDK
-        if (data.session) {
-            await supabase.auth.setSession(data.session);
+        if (!data?.session || !data?.user) {
+          throw new Error('Authentication failed');
         }
 
-        if (onLogin) onLogin(data.user);
+        await finishSignedInUser(data.session);
+        return;
 
       } catch (err) {
         const msg = err?.message || '';
