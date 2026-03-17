@@ -54,17 +54,17 @@ const enCopy = {
   },
   navAiInsights: 'AI Insights',
   featuresKicker: 'Product operating system',
-  featuresTitle: 'Designed to feel precise, premium, and impossible to outgrow.',
-  featureLead: 'Built to make complex journey work feel precise, collaborative, and alive.',
+  featuresTitle: 'Built to feel precise, premium, and impossible to outgrow.',
+  featureLead: 'Made for complex journey work that stays collaborative, structured, and alive.',
   featureBlocks: [
     {
       id: 'collaborate',
-      kicker: 'Collaborate in real time',
+      kicker: 'Collaborate in one shared workspace',
       title: 'One map. Multiple minds. Zero version chaos.',
       description:
         'Give product, design, research, and ops one living workspace where every change is visible, traceable, and aligned to the customer experience.',
       bullets: [
-        'Multi-user editing with shared ownership of the journey',
+        'Shared journey editing with clear ownership across the team',
         'Workspace permissions for owners and members',
         'Structured map updates instead of whiteboard drift',
       ],
@@ -84,7 +84,7 @@ const enCopy = {
     {
       id: 'intelligence',
       kicker: 'Signal, not noise',
-      title: 'See where friction lives and what the team should do next.',
+      title: 'See where friction lives and where the team should focus next.',
       description:
         'Surface pain points, moments of friction, and performance weak spots in one view so teams can prioritize action instead of debating screenshots.',
       bullets: [
@@ -97,12 +97,12 @@ const enCopy = {
   aiKicker: 'New: AI insight pipeline',
   aiTitle: 'Turn User Voice Directly into Actionable Insights',
   aiSubtitle:
-    'Upload or record interviews, generate transcripts, and transform messy qualitative input into JTBD, pain points, opportunities, and solution-ready insight cards.',
+    'Upload or record interviews, generate transcripts, and transform messy qualitative input into JTBD, pain points, opportunities, and structured insight cards.',
   collaborationMock: {
     title: 'Real-time journey workspace',
-    subtitle: '3 teammates editing the same map live',
+    subtitle: '3 teammates working in the same shared map workspace',
     stages: ['Discover', 'Evaluate', 'Adopt'],
-    liveActionsTitle: 'Live actions',
+    liveActionsTitle: 'Recent changes',
     actions: [
       ['↗', 'Maria', 'Moved a touchpoint card to “Evaluate”', 'text-sky-200'],
       ['✦', 'Alex', 'Attached a new persona insight to the shared map', 'text-violet-200'],
@@ -110,8 +110,8 @@ const enCopy = {
     ],
   },
   dynamicMock: {
-    title: 'Journey map updates as evidence changes',
-    liveSync: 'Live sync',
+    title: 'Keep the journey map connected as evidence changes',
+    liveSync: 'Always in context',
     metricsTitle: 'Connected metrics',
     conversionLabel: 'Conversion by stage',
     stages: [
@@ -120,7 +120,7 @@ const enCopy = {
         summary: 'Sync spreadsheet data with your journey map and keep research context visible.',
         items: [
           ['Pain point cluster', 'Handoff feels manual and hidden from the team.'],
-          ['Improvement cue', 'Trigger next-step context automatically after event sync.'],
+          ['Improvement cue', 'Keep the next-step context visible after each update.'],
         ],
       },
       {
@@ -136,13 +136,13 @@ const enCopy = {
         summary: 'Metrics stay attached to the journey so decisions are grounded in evidence.',
         items: [
           ['Signal', 'Connected KPIs make stage-level drop-off visible early.'],
-          ['Action', 'Push the next experiment directly from the map context.'],
+          ['Action', 'Turn map context into a clearer next action for the team.'],
         ],
       },
     ],
   },
   intelligenceMock: {
-    title: 'Decision layer',
+    title: 'Decision context',
     subtitle: 'See friction, signal, and opportunity in one place',
     badge: 'prioritize',
     cards: [
@@ -162,15 +162,14 @@ const enCopy = {
       '“The team loses context every time the journey changes, so we end up recreating the same work in Miro, docs, and spreadsheets.”',
       '“I need one place where research, metrics, and actions stay connected instead of scattered.”',
     ],
-    commandCenterTitle: 'AI command center',
+    commandCenterTitle: 'AI insight workspace',
     commandCenterSubtitle: 'Structured output generated from raw interview evidence',
     cards: [
       ['Jobs-to-be-Done', 'User wants one shared source of truth for journey decisions.', 'border-sky-300/20 bg-sky-400/10 text-sky-50'],
       ['Pain Points', 'Current sharing flow is manual, hidden, and hard to maintain.', 'border-rose-300/20 bg-rose-400/10 text-rose-50'],
       ['Opportunities', 'Sync map changes, evidence, and next steps into a common workspace.', 'border-emerald-300/20 bg-emerald-400/10 text-emerald-50'],
-      ['Solutions', 'Add automated workspace updates with stage-linked AI insight cards.', 'border-violet-300/20 bg-violet-400/10 text-violet-50'],
+      ['Recommendations', 'Surface structured recommendations with stage-linked AI insight cards.', 'border-violet-300/20 bg-violet-400/10 text-violet-50'],
     ],
-    sourceConfidence: 'Source confidence',
   },
   ctaKicker: 'Ready to move',
   ctaTitle: 'Build the journey layer your product team actually needs.',
@@ -195,17 +194,17 @@ const ukCopy = {
   },
   navAiInsights: 'AI інсайти',
   featuresKicker: 'Product operating system',
-  featuresTitle: 'Створено так, щоб продуктова система відчувалась точною, преміальною і масштабованою.',
-  featureLead: 'Створено так, щоб складна робота з journey maps відчувалась точною, спільною й живою.',
+  featuresTitle: 'Побудовано як точну, преміальну й масштабовану систему для product-команд.',
+  featureLead: 'Для складної роботи з journey maps, яка лишається структурованою, спільною й живою.',
   featureBlocks: [
     {
       id: 'collaborate',
-      kicker: 'Спільна робота в реальному часі',
+      kicker: 'Спільна робота в єдиному workspace',
       title: 'Одна мапа. Кілька спеціалістів. Жодного хаосу з версіями.',
       description:
         'Дайте product, design, research і ops одне живе робоче середовище, де кожна зміна видима, зрозуміла і прив’язана до customer experience.',
       bullets: [
-        'Спільне редагування мапи в реальному часі',
+        'Спільна робота з journey map у єдиному командному просторі',
         'Ролі owner/member для командної роботи',
         'Структуровані оновлення замість хаосу на whiteboard',
       ],
@@ -225,7 +224,7 @@ const ukCopy = {
     {
       id: 'intelligence',
       kicker: 'Менше шуму, більше сигналу',
-      title: 'Бачте, де саме виникає тертя і що команда має зробити далі.',
+      title: 'Бачте, де саме виникає тертя і на чому команді варто сфокусуватись далі.',
       description:
         'Pain points, моменти тертя та слабкі місця в performance видно в одному місці, щоб команда пріоритизувала дії, а не сперечалась про скріни.',
       bullets: [
@@ -238,12 +237,12 @@ const ukCopy = {
   aiKicker: 'Нове: AI pipeline для інсайтів',
   aiTitle: 'Перетворюйте голос користувача на готові до дії інсайти',
   aiSubtitle:
-    'Завантажуйте або записуйте інтерв’ю, отримуйте транскрипт і одразу трансформуйте хаотичний qualitative input у JTBD, pain points, opportunities і solution-ready cards.',
+    'Завантажуйте або записуйте інтерв’ю, отримуйте транскрипт і одразу трансформуйте хаотичний qualitative input у JTBD, pain points, opportunities і структуровані insight cards.',
   collaborationMock: {
-    title: 'Journey workspace у реальному часі',
-    subtitle: '3 учасники команди редагують одну мапу одночасно',
+    title: 'Спільний journey workspace',
+    subtitle: '3 учасники команди працюють в одній мапі та бачать спільний контекст',
     stages: ['Discover', 'Evaluate', 'Adopt'],
-    liveActionsTitle: 'Живі дії',
+    liveActionsTitle: 'Останні зміни',
     actions: [
       ['↗', 'Maria', 'Перемістила touchpoint-картку в етап “Evaluate”', 'text-sky-200'],
       ['✦', 'Alex', 'Додав новий persona insight до спільної мапи', 'text-violet-200'],
@@ -251,8 +250,8 @@ const ukCopy = {
     ],
   },
   dynamicMock: {
-    title: 'Journey map оновлюється, коли змінюється evidence',
-    liveSync: 'Live sync',
+    title: 'Тримайте journey map пов’язаною, коли змінюється evidence',
+    liveSync: 'Завжди в контексті',
     metricsTitle: 'Підключені метрики',
     conversionLabel: 'Конверсія по етапах',
     stages: [
@@ -261,7 +260,7 @@ const ukCopy = {
         summary: 'Синхронізуйте spreadsheet-дані з journey map і зберігайте research context видимим.',
         items: [
           ['Pain point cluster', 'Handoff відчувається ручним і прихованим від команди.'],
-          ['Improvement cue', 'Автоматично запускайте наступний контекстний крок після event sync.'],
+          ['Improvement cue', 'Тримайте наступний контекстний крок видимим після кожного оновлення.'],
         ],
       },
       {
@@ -277,13 +276,13 @@ const ukCopy = {
         summary: 'Метрики лишаються прив’язаними до journey, щоб рішення спиралися на evidence.',
         items: [
           ['Signal', 'Підключені KPI рано показують stage-level drop-off.'],
-          ['Action', 'Запускайте наступний експеримент прямо з контексту мапи.'],
+          ['Action', 'Перетворюйте контекст мапи на чіткіший наступний крок для команди.'],
         ],
       },
     ],
   },
   intelligenceMock: {
-    title: 'Decision layer',
+    title: 'Decision context',
     subtitle: 'Бачте friction, signal та opportunity в одному місці',
     badge: 'Prioritize',
     cards: [
@@ -303,15 +302,14 @@ const ukCopy = {
       '“Команда втрачає контекст щоразу, коли змінюється journey, тому ми відтворюємо ту саму роботу в Miro, docs і spreadsheets.”',
       '“Мені потрібне одне місце, де research, metrics і actions залишаються пов’язаними, а не розкиданими.”',
     ],
-    commandCenterTitle: 'AI command center',
+    commandCenterTitle: 'AI workspace для інсайтів',
     commandCenterSubtitle: 'Структурований output, згенерований із сирого interview evidence',
     cards: [
       ['Jobs-to-be-Done', 'Користувач хоче одне спільне source of truth для journey-рішень.', 'border-sky-300/20 bg-sky-400/10 text-sky-50'],
       ['Pain Points', 'Поточний sharing flow ручний, прихований і складний у підтримці.', 'border-rose-300/20 bg-rose-400/10 text-rose-50'],
       ['Opportunities', 'Синхронізуйте map changes, evidence та next steps у спільному workspace.', 'border-emerald-300/20 bg-emerald-400/10 text-emerald-50'],
-      ['Solutions', 'Додайте автоматичні workspace updates із stage-linked AI insight cards.', 'border-violet-300/20 bg-violet-400/10 text-violet-50'],
+      ['Recommendations', 'Отримуйте структуровані рекомендації через stage-linked AI insight cards.', 'border-violet-300/20 bg-violet-400/10 text-violet-50'],
     ],
-    sourceConfidence: 'Надійність джерела',
   },
   ctaKicker: 'Готові рухатись далі',
   ctaTitle: 'Побудуйте journey layer, який справді потрібен вашій product-команді.',
@@ -884,9 +882,6 @@ function AiPipelineSection({ copy }) {
                       <BrainCircuit className="h-4 w-4 text-white/60" />
                     </div>
                     <p className="mt-4 text-sm leading-7 text-white/90">{text}</p>
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/10 px-3 py-1 text-[11px] font-medium text-white/70">
-                      {copy.aiSection.sourceConfidence} {88 + index}%
-                    </div>
                   </div>
                 ))}
               </div>
@@ -1066,7 +1061,11 @@ export default function LandingPage() {
     if (!container) return;
     const children = container.children;
     if (!children || children.length < 2) return;
-    children[1]?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
+    const target = children[1];
+    if (!target) return;
+
+    const targetLeft = target.offsetLeft - (container.clientWidth - target.clientWidth) / 2;
+    container.scrollTo({ left: Math.max(0, targetLeft), behavior: 'auto' });
   }, [plansLoading, plansError, plans]);
 
   const langOptions = [
@@ -1105,7 +1104,7 @@ export default function LandingPage() {
               <button
                 type="button"
                 onClick={() => setLangDropdownOpen((open) => !open)}
-                className="flex min-w-[3.75rem] items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/[0.08] sm:text-sm"
+                className="flex min-w-[3rem] items-center justify-between gap-1 px-1.5 py-2 text-xs font-medium text-slate-200 transition hover:text-white sm:min-w-[3.75rem] sm:px-2.5 sm:text-sm"
                 aria-expanded={langDropdownOpen}
                 aria-haspopup="listbox"
               >
@@ -1146,7 +1145,7 @@ export default function LandingPage() {
             </a>
             <a
               href={APP_AUTH_HREF}
-              className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-violet-500 to-sky-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_0_30px_rgba(124,58,237,0.35)] transition hover:from-violet-400 hover:to-sky-400 sm:px-5 sm:text-sm"
+              className="hidden items-center justify-center rounded-xl bg-gradient-to-r from-violet-500 to-sky-500 px-4 py-2 text-xs font-semibold text-white shadow-[0_0_30px_rgba(124,58,237,0.35)] transition hover:from-violet-400 hover:to-sky-400 sm:inline-flex sm:px-5 sm:text-sm"
             >
               {t('landing.getStartedFree')}
             </a>
