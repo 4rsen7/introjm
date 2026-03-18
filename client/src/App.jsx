@@ -17,6 +17,11 @@ import AuthPage from './pages/AuthPage'
 import LandingPage from './pages/LandingPage'
 import TermsPage from './pages/TermsPage'
 import PrivacyPage from './pages/PrivacyPage'
+import JourneyMapSoftwarePage from './pages/JourneyMapSoftwarePage'
+import JourneyMetricsDashboardPage from './pages/JourneyMetricsDashboardPage'
+import InterviewTranscriptionInsightsPage from './pages/InterviewTranscriptionInsightsPage'
+import PersonaManagementSoftwarePage from './pages/PersonaManagementSoftwarePage'
+import CustomerResearchRepositoryPage from './pages/CustomerResearchRepositoryPage'
 import JourneyExportPage from './pages/JourneyExportPage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
@@ -50,6 +55,16 @@ const PUBLIC_PATHS = new Set([
   '/uk/terms',
   '/en/privacy',
   '/uk/privacy',
+  '/en/customer-journey-map-software',
+  '/uk/customer-journey-map-software',
+  '/en/interview-transcription-and-insights',
+  '/uk/interview-transcription-and-insights',
+  '/en/journey-metrics-dashboard',
+  '/uk/journey-metrics-dashboard',
+  '/en/persona-management-software',
+  '/uk/persona-management-software',
+  '/en/customer-research-repository',
+  '/uk/customer-research-repository',
 ]);
 
 const isPublicPath = (path) => PUBLIC_PATHS.has(path) || path.startsWith('/export/');
@@ -813,6 +828,16 @@ function App() {
         <Route path="/uk/terms" element={<TermsPage />} />
         <Route path="/en/privacy" element={<PrivacyPage />} />
         <Route path="/uk/privacy" element={<PrivacyPage />} />
+        <Route path="/en/customer-journey-map-software" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <JourneyMapSoftwarePage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en/customer-journey-map-software`} />} />
+        <Route path="/uk/customer-journey-map-software" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <JourneyMapSoftwarePage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk/customer-journey-map-software`} />} />
+        <Route path="/en/interview-transcription-and-insights" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <InterviewTranscriptionInsightsPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en/interview-transcription-and-insights`} />} />
+        <Route path="/uk/interview-transcription-and-insights" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <InterviewTranscriptionInsightsPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk/interview-transcription-and-insights`} />} />
+        <Route path="/en/journey-metrics-dashboard" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <JourneyMetricsDashboardPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en/journey-metrics-dashboard`} />} />
+        <Route path="/uk/journey-metrics-dashboard" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <JourneyMetricsDashboardPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk/journey-metrics-dashboard`} />} />
+        <Route path="/en/persona-management-software" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <PersonaManagementSoftwarePage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en/persona-management-software`} />} />
+        <Route path="/uk/persona-management-software" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <PersonaManagementSoftwarePage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk/persona-management-software`} />} />
+        <Route path="/en/customer-research-repository" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <CustomerResearchRepositoryPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en/customer-research-repository`} />} />
+        <Route path="/uk/customer-research-repository" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <CustomerResearchRepositoryPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk/customer-research-repository`} />} />
 
         <Route element={<ProtectedOutlet authReady={authReady} isAuthenticated={isAuthenticated} />}>
           <Route path="/journey/:id" element={

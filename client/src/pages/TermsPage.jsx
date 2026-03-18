@@ -20,6 +20,17 @@ const upsertHeadLink = (selector, attrs) => {
     if (value != null) el.setAttribute(key, value);
   });
 };
+const upsertHeadMeta = (selector, attrs) => {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement('meta');
+    document.head.appendChild(el);
+  }
+  Object.entries(attrs).forEach(([key, value]) => {
+    if (value != null) el.setAttribute(key, value);
+  });
+};
 
 function SectionBody({ body }) {
   const blocks = body.split(/\n\n+/);
@@ -55,6 +66,11 @@ const TermsPage = () => {
   const location = useLocation();
   const lang = location.pathname.startsWith('/uk/') ? 'uk' : 'en';
   const content = termsContent[lang] || termsContent.en;
+  const seoTitle = lang === 'uk' ? 'IteroJM | Умови використання' : 'IteroJM | Terms of Service';
+  const seoDescription =
+    lang === 'uk'
+      ? 'Ознайомтеся з умовами використання IteroJM, включно з правилами доступу, використання сервісу, білінгу та відповідальності.'
+      : 'Read the IteroJM Terms of Service, including service use, account access, billing terms, and platform responsibilities.';
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -69,6 +85,7 @@ const TermsPage = () => {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.lang = lang;
+    document.title = seoTitle;
 
     upsertHeadLink('link[rel="canonical"]', {
       rel: 'canonical',
@@ -89,7 +106,11 @@ const TermsPage = () => {
       hreflang: 'x-default',
       href: legalHref('en', 'terms'),
     });
-  }, [lang]);
+    upsertHeadMeta('meta[name="description"]', {
+      name: 'description',
+      content: seoDescription,
+    });
+  }, [lang, seoDescription, seoTitle]);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">

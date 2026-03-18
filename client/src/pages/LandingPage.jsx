@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
+import { getSeoPageCatalog, getSeoPageHref } from '../components/common/seoPageCatalog';
 
 const API_URL = API_BASE_URL;
 const BROWSER_HOSTNAME = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
@@ -49,12 +50,34 @@ const upsertHeadLink = (selector, attrs) => {
     if (value != null) el.setAttribute(key, value);
   });
 };
+const upsertHeadMeta = (selector, attrs) => {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement('meta');
+    document.head.appendChild(el);
+  }
+  Object.entries(attrs).forEach(([key, value]) => {
+    if (value != null) el.setAttribute(key, value);
+  });
+};
+const upsertJsonLd = (id, payload) => {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector(`script[data-seo-id="${id}"]`);
+  if (!el) {
+    el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.setAttribute('data-seo-id', id);
+    document.head.appendChild(el);
+  }
+  el.textContent = JSON.stringify(payload);
+};
 
 const enCopy = {
   heroEyebrow: 'Journey intelligence for modern product teams',
   heroTitle: 'From Chaos to Clarity for Every Customer Journey.',
   heroSubtitle:
-    'IteroJM turns fragmented research, scattered touchpoints, and disconnected team decisions into one operational system for journey management.',
+    'IteroJM is customer journey mapping software for product and CX teams that turns fragmented research, scattered touchpoints, personas, metrics, and team decisions into one operational system.',
   heroPrimary: 'Start free',
   heroSecondary: 'Explore pricing',
   heroStats: ['Product teams', 'CX squads', 'Service designers', 'Research ops'],
@@ -66,16 +89,16 @@ const enCopy = {
     insight: { label: 'Insight', title: 'Drop-off peaks during handoff between onboarding steps' },
   },
   navAiInsights: 'AI Insights',
-  featuresKicker: 'Product operating system',
+  featuresKicker: 'Customer journey map software',
   featuresTitle: 'Built to feel precise, premium, and impossible to outgrow.',
-  featureLead: 'Made for complex journey work that stays collaborative, structured, and alive.',
+  featureLead: 'A journey mapping tool for product, CX, and service design teams working across research, personas, and metrics.',
   featureBlocks: [
     {
       id: 'collaborate',
       kicker: 'Collaborate in one shared workspace',
       title: 'One map. Multiple minds. Zero version chaos.',
       description:
-        'Give product, design, research, and ops one living workspace where every change is visible, traceable, and aligned to the customer experience.',
+        'Give product, design, research, and ops one shared journey mapping workspace where every change is visible, traceable, and aligned to the customer experience.',
       bullets: [
         'Shared journey editing with clear ownership across the team',
         'Workspace permissions for owners and members',
@@ -87,7 +110,7 @@ const enCopy = {
       kicker: 'Dynamic journey maps',
       title: 'Move from static diagrams to an operating system for customer journeys.',
       description:
-        'IteroJM maps evolve with your product. Personas, metrics, linked maps, and journey stages stay connected as teams learn and iterate.',
+        'IteroJM connects journey maps, personas, metrics, linked maps, and stage-level context so the journey mapping process stays usable as products evolve.',
       bullets: [
         'Drag-and-drop CJM editing with structured lanes and stages',
         'Linked metrics, linked maps, and living documentation',
@@ -99,7 +122,7 @@ const enCopy = {
       kicker: 'Signal, not noise',
       title: 'See where friction lives and where the team should focus next.',
       description:
-        'Surface pain points, moments of friction, and performance weak spots in one view so teams can prioritize action instead of debating screenshots.',
+        'Bring customer research, interview insights, pain points, and performance weak spots into one view so teams can prioritize action instead of debating screenshots.',
       bullets: [
         'Map stage-level pain points and opportunities clearly',
         'Keep customer context visible through personas and evidence',
@@ -110,7 +133,7 @@ const enCopy = {
   aiKicker: 'New: AI insight pipeline',
   aiTitle: 'Turn User Voice Directly into Actionable Insights',
   aiSubtitle:
-    'Upload or record interviews, generate transcripts, and transform messy qualitative input into JTBD, pain points, opportunities, and structured insight cards.',
+    'Upload or record interviews, generate transcripts, and turn qualitative research into JTBD, pain points, opportunities, and structured insight cards for faster product decisions.',
   collaborationMock: {
     title: 'Real-time journey workspace',
     subtitle: '3 teammates working in the same shared map workspace',
@@ -187,14 +210,21 @@ const enCopy = {
   ctaKicker: 'Ready to move',
   ctaTitle: 'Build the journey layer your product team actually needs.',
   ctaSubtitle:
-    'Map touchpoints, centralize evidence, connect metrics, and move faster from insight to action.',
+    'Map touchpoints, centralize interview evidence, connect personas and metrics, and move faster from insight to action.',
+  deepDiveKicker: 'Feature deep dives',
+  deepDiveTitle: 'Explore how each part of the workflow works in practice.',
+  deepDiveSubtitle:
+    'Go deeper into journey maps, interview transcription, metrics, personas, and research workflows without overloading the home page.',
+  seoTitle: 'IteroJM | Customer Journey Mapping Software for Product Teams',
+  seoDescription:
+    'IteroJM is customer journey mapping software for product and CX teams. Map touchpoints, connect personas and metrics, centralize interview insights, and collaborate in one shared workspace.',
 };
 
 const ukCopy = {
   heroEyebrow: 'Journey intelligence для сучасних product-команд',
   heroTitle: 'Від хаосу до ясності в кожному customer journey.',
   heroSubtitle:
-    'IteroJM перетворює розрізнені дослідження, розкидані touchpoints і неузгоджені командні рішення на єдину систему керування customer journeys.',
+    'IteroJM — це customer journey mapping платформа для product і CX-команд, яка поєднує розрізнені дослідження, touchpoints, personas, metrics і командні рішення в одній системі.',
   heroPrimary: 'Почати безкоштовно',
   heroSecondary: 'Переглянути ціни',
   heroStats: ['Product-команди', 'CX-команди', 'Service design', 'Research ops'],
@@ -206,16 +236,16 @@ const ukCopy = {
     insight: { label: 'Insight', title: 'Drop-off зростає під час handoff між onboarding-етапами' },
   },
   navAiInsights: 'AI інсайти',
-  featuresKicker: 'Product operating system',
+  featuresKicker: 'Customer journey mapping platform',
   featuresTitle: 'Побудовано як точну, преміальну й масштабовану систему для product-команд.',
-  featureLead: 'Для складної роботи з journey maps, яка лишається структурованою, спільною й живою.',
+  featureLead: 'Journey mapping tool для product, CX і service design команд, які працюють із research, personas і metrics.',
   featureBlocks: [
     {
       id: 'collaborate',
       kicker: 'Спільна робота в єдиному workspace',
       title: 'Одна мапа. Кілька спеціалістів. Жодного хаосу з версіями.',
       description:
-        'Дайте product, design, research і ops одне живе робоче середовище, де кожна зміна видима, зрозуміла і прив’язана до customer experience.',
+        'Дайте product, design, research і ops один спільний workspace для journey mapping, де кожна зміна видима, зрозуміла і прив’язана до customer experience.',
       bullets: [
         'Спільна робота з journey map у єдиному командному просторі',
         'Ролі owner/member для командної роботи',
@@ -227,7 +257,7 @@ const ukCopy = {
       kicker: 'Динамічні journey maps',
       title: 'Перейдіть від статичних схем до операційної системи для customer journeys.',
       description:
-        'IteroJM допомагає мапам еволюціонувати разом із продуктом. Персони, метрики, пов’язані мапи та етапи залишаються з’єднаними в одному просторі.',
+        'IteroJM поєднує journey maps, personas, metrics, linked maps і контекст по етапах, щоб journey mapping лишався керованим навіть коли продукт ускладнюється.',
       bullets: [
         'Drag-and-drop CJM редактор зі структурованими лейнами й стадіями',
         'Пов’язані метрики, пов’язані мапи та жива документація',
@@ -239,7 +269,7 @@ const ukCopy = {
       kicker: 'Менше шуму, більше сигналу',
       title: 'Бачте, де саме виникає тертя і на чому команді варто сфокусуватись далі.',
       description:
-        'Pain points, моменти тертя та слабкі місця в performance видно в одному місці, щоб команда пріоритизувала дії, а не сперечалась про скріни.',
+        'Зводьте customer research, interview insights, pain points і слабкі місця в performance в одному місці, щоб команда пріоритизувала дії, а не сперечалась про скріни.',
       bullets: [
         'Чітко фіксуйте pain points і opportunity areas по етапах',
         'Тримайте customer context поруч через personas і evidence',
@@ -250,7 +280,7 @@ const ukCopy = {
   aiKicker: 'Нове: AI pipeline для інсайтів',
   aiTitle: 'Перетворюйте голос користувача на готові до дії інсайти',
   aiSubtitle:
-    'Завантажуйте або записуйте інтерв’ю, отримуйте транскрипт і одразу трансформуйте хаотичний qualitative input у JTBD, pain points, opportunities і структуровані insight cards.',
+    'Завантажуйте або записуйте інтерв’ю, отримуйте транскрипт і одразу перетворюйте qualitative research на JTBD, pain points, opportunities і структуровані insight cards для швидших продуктних рішень.',
   collaborationMock: {
     title: 'Спільний journey workspace',
     subtitle: '3 учасники команди працюють в одній мапі та бачать спільний контекст',
@@ -327,7 +357,14 @@ const ukCopy = {
   ctaKicker: 'Готові рухатись далі',
   ctaTitle: 'Побудуйте journey layer, який справді потрібен вашій product-команді.',
   ctaSubtitle:
-    'Мапуйте touchpoints, централізуйте evidence, підключайте метрики і рухайтесь від інсайту до дії значно швидше.',
+    'Мапуйте touchpoints, централізуйте interview evidence, поєднуйте personas і metrics та рухайтесь від інсайту до дії значно швидше.',
+  deepDiveKicker: 'Детальніше про функціонал',
+  deepDiveTitle: 'Подивіться, як окремі частини workflow працюють на практиці.',
+  deepDiveSubtitle:
+    'Розкрийте детальніше journey maps, interview transcription, metrics, personas і research workflows, не перевантажуючи home page.',
+  seoTitle: 'IteroJM | Customer journey mapping платформа для product-команд',
+  seoDescription:
+    'IteroJM допомагає product і CX-командам будувати customer journey maps, поєднувати personas, metrics та interview insights і працювати в одному спільному workspace.',
 };
 
 function Reveal({ children, className = '', delay = 0 }) {
@@ -906,6 +943,36 @@ function AiPipelineSection({ copy }) {
   );
 }
 
+function SeoDeepDiveSection({ copy, lang }) {
+  const pages = getSeoPageCatalog(lang);
+
+  return (
+    <Reveal>
+      <section className="px-4 py-20 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <SectionHeading kicker={copy.deepDiveKicker} title={copy.deepDiveTitle} description={copy.deepDiveSubtitle} />
+          <div className="mt-14 grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            {pages.map((page) => (
+              <Link
+                key={page.slug}
+                to={getSeoPageHref(lang, page.slug)}
+                className="group rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_70px_rgba(2,6,23,0.5)] backdrop-blur-2xl transition hover:border-violet-300/20 hover:bg-white/[0.06]"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-violet-200/70">{page.eyebrow}</div>
+                <div className="mt-4 flex items-start justify-between gap-4">
+                  <h3 className="text-xl font-semibold tracking-[-0.03em] text-white">{page.title}</h3>
+                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-white" />
+                </div>
+                <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base">{page.description}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+    </Reveal>
+  );
+}
+
 function PricingCard({ plan, billingCycle, t, featured = false, authHref }) {
   const price = billingCycle === 'yearly' && plan.price_yearly != null ? plan.price_yearly : plan.price_monthly;
   const currency = plan.currency || 'USD';
@@ -1100,6 +1167,7 @@ export default function LandingPage() {
     if (typeof document === 'undefined') return;
 
     document.documentElement.lang = currentLang;
+    document.title = copy.seoTitle;
 
     upsertHeadLink('link[rel="canonical"]', {
       rel: 'canonical',
@@ -1123,7 +1191,77 @@ export default function LandingPage() {
       hreflang: 'x-default',
       href: getLandingHref('en'),
     });
-  }, [currentLang]);
+
+    upsertHeadMeta('meta[name="description"]', {
+      name: 'description',
+      content: copy.seoDescription,
+    });
+    upsertHeadMeta('meta[property="og:type"]', {
+      property: 'og:type',
+      content: 'website',
+    });
+    upsertHeadMeta('meta[property="og:title"]', {
+      property: 'og:title',
+      content: copy.seoTitle,
+    });
+    upsertHeadMeta('meta[property="og:description"]', {
+      property: 'og:description',
+      content: copy.seoDescription,
+    });
+    upsertHeadMeta('meta[property="og:url"]', {
+      property: 'og:url',
+      content: getLandingHref(currentLang),
+    });
+    upsertHeadMeta('meta[property="og:image"]', {
+      property: 'og:image',
+      content: `${LANDING_ORIGIN}/promoCJM.png`,
+    });
+    upsertHeadMeta('meta[name="twitter:card"]', {
+      name: 'twitter:card',
+      content: 'summary_large_image',
+    });
+    upsertHeadMeta('meta[name="twitter:title"]', {
+      name: 'twitter:title',
+      content: copy.seoTitle,
+    });
+    upsertHeadMeta('meta[name="twitter:description"]', {
+      name: 'twitter:description',
+      content: copy.seoDescription,
+    });
+    upsertHeadMeta('meta[name="twitter:image"]', {
+      name: 'twitter:image',
+      content: `${LANDING_ORIGIN}/promoCJM.png`,
+    });
+
+    upsertJsonLd('organization', {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'IteroJM',
+      url: LANDING_ORIGIN,
+      logo: `${LANDING_ORIGIN}/logo.png`,
+    });
+    upsertJsonLd('website', {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'IteroJM',
+      url: LANDING_ORIGIN,
+      inLanguage: currentLang,
+    });
+    upsertJsonLd('software-application', {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'IteroJM',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      url: getLandingHref(currentLang),
+      description: copy.seoDescription,
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+    });
+  }, [copy.seoDescription, copy.seoTitle, currentLang]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#050816] text-white antialiased">
@@ -1261,6 +1399,7 @@ export default function LandingPage() {
         </section>
 
         <AiPipelineSection copy={copy} />
+        <SeoDeepDiveSection copy={copy} lang={currentLang} />
 
         <Reveal>
           <section id="pricing" className="px-4 py-20 sm:px-6 lg:px-8">

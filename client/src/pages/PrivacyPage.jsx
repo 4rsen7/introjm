@@ -20,6 +20,17 @@ const upsertHeadLink = (selector, attrs) => {
     if (value != null) el.setAttribute(key, value);
   });
 };
+const upsertHeadMeta = (selector, attrs) => {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement('meta');
+    document.head.appendChild(el);
+  }
+  Object.entries(attrs).forEach(([key, value]) => {
+    if (value != null) el.setAttribute(key, value);
+  });
+};
 
 function SectionBody({ body }) {
   const blocks = body.split(/\n\n+/);
@@ -55,6 +66,11 @@ const PrivacyPage = () => {
   const location = useLocation();
   const lang = location.pathname.startsWith('/uk/') ? 'uk' : 'en';
   const content = privacyContent[lang] || privacyContent.en;
+  const seoTitle = lang === 'uk' ? 'IteroJM | Політика конфіденційності' : 'IteroJM | Privacy Policy';
+  const seoDescription =
+    lang === 'uk'
+      ? 'Дізнайтеся, як IteroJM збирає, обробляє та захищає дані користувачів, а також як працює з конфіденційною інформацією.'
+      : 'Learn how IteroJM collects, processes, and protects user data, including how the platform handles privacy and confidential information.';
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -69,6 +85,7 @@ const PrivacyPage = () => {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.lang = lang;
+    document.title = seoTitle;
 
     upsertHeadLink('link[rel="canonical"]', {
       rel: 'canonical',
@@ -89,7 +106,11 @@ const PrivacyPage = () => {
       hreflang: 'x-default',
       href: legalHref('en', 'privacy'),
     });
-  }, [lang]);
+    upsertHeadMeta('meta[name="description"]', {
+      name: 'description',
+      content: seoDescription,
+    });
+  }, [lang, seoDescription, seoTitle]);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
