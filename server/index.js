@@ -109,6 +109,14 @@ app.use((req, res, next) => {
             return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
         }
 
+        if (path === '/terms') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en/terms${query}`);
+        }
+
+        if (path === '/privacy') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en/privacy${query}`);
+        }
+
         if (path === '/landing') {
             return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
         }
@@ -119,6 +127,22 @@ app.use((req, res, next) => {
 
         if (path === '/landing/uk') {
             return res.redirect(301, `${CANONICAL_ORIGIN}/uk${query}`);
+        }
+
+        if (path === '/landing/terms' || path === '/landing/en/terms') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en/terms${query}`);
+        }
+
+        if (path === '/landing/privacy' || path === '/landing/en/privacy') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en/privacy${query}`);
+        }
+
+        if (path === '/landing/uk/terms') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/uk/terms${query}`);
+        }
+
+        if (path === '/landing/uk/privacy') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/uk/privacy${query}`);
         }
 
         if (isAppRoutePath(path)) {

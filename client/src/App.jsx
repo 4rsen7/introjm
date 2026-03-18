@@ -38,7 +38,19 @@ const LANDING_HOSTS = new Set(['iterojm.com', 'www.iterojm.com']);
 const IS_LANDING_HOST = !IS_LOCAL_HOST && LANDING_HOSTS.has(HOSTNAME);
 const LANDING_LANG_PATHS = new Set(['/en', '/uk']);
 
-const PUBLIC_PATHS = new Set([...(IS_LANDING_HOST ? ['/', ...LANDING_LANG_PATHS] : [...LANDING_LANG_PATHS]), '/landing', '/landing/en', '/landing/uk', '/auth', '/terms', '/privacy']);
+const PUBLIC_PATHS = new Set([
+  ...(IS_LANDING_HOST ? ['/', ...LANDING_LANG_PATHS] : [...LANDING_LANG_PATHS]),
+  '/landing',
+  '/landing/en',
+  '/landing/uk',
+  '/auth',
+  '/terms',
+  '/privacy',
+  '/en/terms',
+  '/uk/terms',
+  '/en/privacy',
+  '/uk/privacy',
+]);
 
 const isPublicPath = (path) => PUBLIC_PATHS.has(path) || path.startsWith('/export/');
 
@@ -795,8 +807,12 @@ function App() {
         <Route path="/landing/uk" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/uk" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk`} />} />
         <Route path="/auth" element={IS_LANDING_HOST ? <ExternalRedirect to={`${APP_ORIGIN}/auth`} /> : <AuthPage onLogin={() => navigate('/dashboard')} />} />
         <Route path="/export/journey/:id" element={<JourneyExportPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<Navigate to="/en/terms" replace />} />
+        <Route path="/privacy" element={<Navigate to="/en/privacy" replace />} />
+        <Route path="/en/terms" element={<TermsPage />} />
+        <Route path="/uk/terms" element={<TermsPage />} />
+        <Route path="/en/privacy" element={<PrivacyPage />} />
+        <Route path="/uk/privacy" element={<PrivacyPage />} />
 
         <Route element={<ProtectedOutlet authReady={authReady} isAuthenticated={isAuthenticated} />}>
           <Route path="/journey/:id" element={
