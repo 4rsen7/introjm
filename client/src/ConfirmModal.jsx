@@ -1,7 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "Delete", cancelText = "Cancel", isDestructive = false }) => {
+  const { t } = useTranslation();
   useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
@@ -15,7 +17,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText 
             onClick={onClose}
             className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
           >
-            {cancelText}
+            {cancelText === "Cancel" ? t('common.cancel') : cancelText}
           </button>
           <button 
             onClick={onConfirm}

@@ -221,6 +221,18 @@
     "upgradePlan": "Upgrade Plan",
     "planManagedByOwner": "Plan is managed by the workspace owner. Contact the owner to change the plan."
   },
+  "limits": {
+    "title": "Limit reached",
+    "labels": {
+      "journeys": "journey maps",
+      "members": "team members",
+      "interviews": "interviews"
+    },
+    "ownerMessage": "You've reached the limit for {{limit}}. Upgrade your plan to add more.",
+    "memberMessage": "You've reached the workspace limit for {{limit}}. Contact the workspace owner to upgrade the plan.",
+    "close": "Close",
+    "upgradePlan": "Upgrade plan"
+  },
   "common": {
     "name": "Name",
     "type": "Type",
@@ -283,7 +295,7 @@
     "deleteThisMap": "Delete this map?",
     "duplicateMap": "Duplicate map?",
     "duplicateCopyOf": "Create a copy of \"{{title}}\"?",
-    "areYouSureDelete": "Are you sure you want to delete this journey map? This action cannot be undone.",
+    "areYouSureDelete": "Are you sure you want to delete this journey map?",
     "duplicateJourney": "Duplicate journey",
     "archiveJourney": "Archive journey",
     "deleteJourney": "Delete journey",
@@ -328,7 +340,7 @@
     "deleteThisMap": "Delete this map?",
     "duplicateMap": "Duplicate map?",
     "createCopyOf": "Create a copy of \"{{title}}\"?",
-    "deleteMapMessage": "Are you sure you want to delete this journey map? This action cannot be undone.",
+    "deleteMapMessage": "Are you sure you want to delete this journey map?",
     "createMap": "Create map",
     "searchMaps": "Search maps...",
     "name": "Name",
@@ -518,7 +530,11 @@
     "noJourneysFound": "No archived journeys found",
     "noPersonasFound": "No archived personas found",
     "subtitle": "Restore or permanently delete items.",
-    "searchPlaceholder": "Search archived {{tab}}..."
+    "searchPlaceholder": "Search archived {{tab}}...",
+    "deleteJourneyTitle": "Delete this journey?",
+    "deleteJourneyMessage": "Are you sure you want to permanently delete \"{{title}}\"?",
+    "deletePersonaTitle": "Delete this persona?",
+    "deletePersonaMessage": "Are you sure you want to permanently delete \"{{name}}\"?"
   },
   "support": {
     "button": "Support & Feedback",

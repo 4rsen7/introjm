@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Search, RotateCcw, Trash2, Map, User, Archive as ArchiveIcon } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
 import Tooltip from '../components/common/Tooltip';
+import ConfirmModal from '../ConfirmModal';
 import { API_BASE_URL } from '../config/api';
 
 const API_URL = API_BASE_URL;
@@ -20,6 +21,7 @@ const ArchivePage = ({
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('journeys');
   const [searchTerm, setSearchTerm] = useState('');
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, type: null, item: null });
 
   const filteredJourneys = archivedJourneys.filter(j => 
     j.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -53,7 +55,6 @@ const ArchivePage = ({
   };
 
   const handleDeleteJourneyClick = async (id) => {
-      if (!confirm('Are you sure you want to permanently delete this journey?')) return;
       try {
           const token = await getAuthToken();
           const response = await fetch(`${API_URL}/journeys/${id}`, {
@@ -86,7 +87,6 @@ const ArchivePage = ({
   };
 
   const handleDeletePersonaClick = async (id) => {
-      if (!confirm('Are you sure you want to permanently delete this persona?')) return;
       try {
           const token = await getAuthToken();
           const response = await fetch(`${API_URL}/personas/${id}`, {
@@ -100,6 +100,19 @@ const ArchivePage = ({
       } catch (error) {
           console.error('Error deleting persona:', error);
       }
+  };
+
+  const handleConfirmAction = async () => {
+      const { type, item } = confirmConfig;
+      if (!item) return;
+
+      if (type === 'deleteJourney') {
+        await handleDeleteJourneyClick(item.id);
+      } else if (type === 'deletePersona') {
+        await handleDeletePersonaClick(item.id);
+      }
+
+      setConfirmConfig({ isOpen: false, type: null, item: null });
   };
 
   return (
@@ -181,7 +194,7 @@ const ArchivePage = ({
                                         </Tooltip>
                                         {currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner) && (
                                             <Tooltip content={t('common.delete')}>
-                                                <button onClick={() => handleDeleteJourneyClick(journey.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                <button onClick={() => setConfirmConfig({ isOpen: true, type: 'deleteJourney', item: journey })} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={18} />
                                                 </button>
                                             </Tooltip>
@@ -224,7 +237,7 @@ const ArchivePage = ({
                                         </Tooltip>
                                         {currentUserId != null && (persona.user_id === currentUserId || isWorkspaceOwner) && (
                                             <Tooltip content={t('common.delete')}>
-                                                <button onClick={() => handleDeletePersonaClick(persona.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                                <button onClick={() => setConfirmConfig({ isOpen: true, type: 'deletePersona', item: persona })} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                                     <Trash2 size={18} />
                                                 </button>
                                             </Tooltip>
@@ -238,6 +251,24 @@ const ArchivePage = ({
             </tbody>
         </table>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig({ isOpen: false, type: null, item: null })}
+        onConfirm={handleConfirmAction}
+        title={
+          confirmConfig.type === 'deleteJourney'
+            ? t('archive.deleteJourneyTitle')
+            : t('archive.deletePersonaTitle')
+        }
+        message={
+          confirmConfig.type === 'deleteJourney'
+            ? t('archive.deleteJourneyMessage', { title: confirmConfig.item?.title })
+            : t('archive.deletePersonaMessage', { name: confirmConfig.item?.name })
+        }
+        confirmText={t('common.delete')}
+        isDestructive
+      />
     </div>
   );
 };

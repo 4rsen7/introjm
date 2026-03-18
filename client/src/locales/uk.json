@@ -221,6 +221,18 @@
     "upgradePlan": "Оновити план",
     "planManagedByOwner": "Планом керує власник робочого простору. Зв'яжіться з власником, щоб змінити план."
   },
+  "limits": {
+    "title": "Ліміт досягнуто",
+    "labels": {
+      "journeys": "journey maps",
+      "members": "учасників команди",
+      "interviews": "інтерв'ю"
+    },
+    "ownerMessage": "Ви досягли ліміту для {{limit}}. Оновіть план, щоб додати більше.",
+    "memberMessage": "Ви досягли ліміту робочого простору для {{limit}}. Зверніться до власника, щоб оновити план.",
+    "close": "Закрити",
+    "upgradePlan": "Оновити план"
+  },
   "common": {
     "name": "Назва",
     "type": "Тип",
@@ -283,7 +295,7 @@
     "deleteThisMap": "Видалити цю мапу?",
     "duplicateMap": "Дублювати мапу?",
     "duplicateCopyOf": "Створити копію «{{title}}»?",
-    "areYouSureDelete": "Ви впевнені, що хочете видалити цю джорні-мапу? Цю дію не можна скасувати.",
+    "areYouSureDelete": "Ви впевнені, що хочете видалити цю джорні-мапу?",
     "duplicateJourney": "Дублювати джорні",
     "archiveJourney": "В архів",
     "deleteJourney": "Видалити джорні",
@@ -328,7 +340,7 @@
     "deleteThisMap": "Видалити цю мапу?",
     "duplicateMap": "Дублювати мапу?",
     "createCopyOf": "Створити копію «{{title}}»?",
-    "deleteMapMessage": "Ви впевнені, що хочете видалити цю джорні-мапу? Цю дію не можна скасувати.",
+    "deleteMapMessage": "Ви впевнені, що хочете видалити цю джорні-мапу?",
     "createMap": "Створити мапу",
     "searchMaps": "Пошук мап...",
     "name": "Назва",
@@ -518,7 +530,11 @@
     "noJourneysFound": "Архівних джорні не знайдено",
     "noPersonasFound": "Архівних персон не знайдено",
     "subtitle": "Відновити або остаточно видалити.",
-    "searchPlaceholder": "Пошук в архіві {{tab}}..."
+    "searchPlaceholder": "Пошук в архіві {{tab}}...",
+    "deleteJourneyTitle": "Видалити цю джорні?",
+    "deleteJourneyMessage": "Ви впевнені, що хочете остаточно видалити «{{title}}»?",
+    "deletePersonaTitle": "Видалити цю персону?",
+    "deletePersonaMessage": "Ви впевнені, що хочете остаточно видалити «{{name}}»?"
   },
   "support": {
     "button": "Підтримка & Відгуки",

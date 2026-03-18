@@ -944,20 +944,23 @@ function App() {
         <div className="fixed inset-0 z-[99] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 cursor-pointer" onClick={() => setLimitReached({ open: false, limit: null })} />
           <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Limit reached</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('limits.title')}</h3>
             <p className="text-gray-600 mb-4">
-              {currentWorkspace?.role === 'owner'
-                ? `You've reached the limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit === 'interviews' ? 'interviews' : limitReached.limit}. Upgrade your plan to add more.`
-                : `You've reached the workspace limit for ${limitReached.limit === 'journeys' ? 'journey maps' : limitReached.limit === 'members' ? 'team members' : limitReached.limit === 'interviews' ? 'interviews' : limitReached.limit}. Contact the workspace owner to upgrade the plan.`}
+              {(() => {
+                const limitLabel = t(`limits.labels.${limitReached.limit}`, { defaultValue: limitReached.limit });
+                return currentWorkspace?.role === 'owner'
+                  ? t('limits.ownerMessage', { limit: limitLabel })
+                  : t('limits.memberMessage', { limit: limitLabel });
+              })()}
             </p>
             <div className="flex gap-2 justify-end">
               {currentWorkspace?.role === 'owner' ? (
                 <>
-                  <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Close</button>
-                  <button onClick={() => { setShowPricingModal(true); setLimitReached({ open: false, limit: null }); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Upgrade plan</button>
+                  <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('limits.close')}</button>
+                  <button onClick={() => { setShowPricingModal(true); setLimitReached({ open: false, limit: null }); }} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">{t('limits.upgradePlan')}</button>
                 </>
               ) : (
-                <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">OK</button>
+                <button onClick={() => setLimitReached({ open: false, limit: null })} className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800">{t('common.ok')}</button>
               )}
             </div>
           </div>
