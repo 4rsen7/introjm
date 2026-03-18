@@ -110,7 +110,7 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
   )
 }
 
-function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
+function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCard, onUpdateCard, onDeleteCard, zIndex, layout, onPickerToggle, selectedCardId, onSelectCard, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
   const containerId = `${laneId}::${colId}`;
   
   const { setNodeRef } = useDroppable({
@@ -168,6 +168,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
               onEditMetric={onEditMetric}
               onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview}
               readOnly={readOnly}
+              isExport={isExport}
             /> 
           )
         })}
@@ -187,7 +188,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
   const { t } = useTranslation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -328,6 +329,7 @@ export default function TextLane({ lane, gridColumns, laneData, globalMetrics, g
               onEditMetric={onEditMetric}
               onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview}
               readOnly={readOnly}
+              isExport={isExport}
             />
           )
         })}

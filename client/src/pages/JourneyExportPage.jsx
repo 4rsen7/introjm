@@ -68,9 +68,27 @@ export default function JourneyExportPage() {
   useEffect(() => {
     if (!payload || error) return undefined;
 
-    const markReady = () => {
+    const markReady = async () => {
       const el = documentRef.current;
       if (!el) return;
+
+      try {
+        if (document.fonts?.ready) {
+          await document.fonts.ready;
+        }
+
+        const images = Array.from(el.querySelectorAll('img'));
+        await Promise.all(
+          images.map((img) => {
+            if (img.complete) return Promise.resolve();
+            return new Promise((resolve) => {
+              const done = () => resolve();
+              img.addEventListener('load', done, { once: true });
+              img.addEventListener('error', done, { once: true });
+            });
+          })
+        );
+      } catch (_) {}
 
       const width = Math.ceil(Math.max(el.scrollWidth, el.getBoundingClientRect().width));
       const height = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height));
@@ -82,15 +100,15 @@ export default function JourneyExportPage() {
     };
 
     document.body.dataset.exportReady = 'false';
-    const raf = requestAnimationFrame(() => requestAnimationFrame(markReady));
-    const timeoutId = window.setTimeout(markReady, 200);
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => { void markReady(); }));
+    const timeoutId = window.setTimeout(() => { void markReady(); }, 200);
 
     let observer;
     if (typeof ResizeObserver !== 'undefined' && documentRef.current) {
       observer = new ResizeObserver(() => {
         document.body.dataset.exportReady = 'false';
         window.clearTimeout(timeoutId);
-        window.setTimeout(markReady, 120);
+        window.setTimeout(() => { void markReady(); }, 120);
       });
       observer.observe(documentRef.current);
     }
@@ -136,6 +154,7 @@ export default function JourneyExportPage() {
             globalMetrics={globalMetrics}
             globalJourneys={globalJourneys}
             onOpenLinkedJourneyPreview={() => {}}
+            isExport
           />
         </div>
       </div>

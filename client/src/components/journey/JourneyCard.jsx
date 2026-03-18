@@ -59,7 +59,7 @@ function LinkedJourneyBlock({ card, globalJourneys = [], onOpenLinkedJourneyPrev
   )
 }
 
-export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly }) {
+export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
   const { t } = useTranslation()
   const [localContent, setLocalContent] = useState(card.content || '')
   const [showMenu, setShowMenu] = useState(false)
@@ -512,7 +512,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
       <div className={`${card.type === 'metric' ? 'px-3 pt-3 pb-1.5' : 'p-3'} ${readOnly ? '' : 'cursor-text'}`} onPointerDown={(e) => e.stopPropagation()}>
          {card.type === 'channel' || card.type === 'metric' ? (
            card.type === 'channel' ? <ChannelCard card={card} onUpdate={readOnly ? () => {} : onUpdate} /> : (
-             <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} />
+             <JourneyMetricCard metric={globalMetrics?.find(m => m.id === card.content)} isExport={isExport} />
            )
          ) : card.type === 'linked_journey' ? (
            <LinkedJourneyBlock card={card} globalJourneys={globalJourneys} onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview} />

@@ -863,7 +863,16 @@ app.post('/api/export/journeys/:id/pdf', async (req, res) => {
         const renderOrigin = (process.env.EXPORT_RENDER_ORIGIN || req.headers.origin || (process.env.NODE_ENV === 'production' ? CLIENT_ORIGIN : 'http://localhost:5173')).replace(/\/$/, '');
         const exportUrl = `${renderOrigin}/export/journey/${id}?token=${encodeURIComponent(exportToken)}`;
 
-        process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+        if (process.env.NODE_ENV === 'production') {
+            const path = require('path');
+            const playwrightCoreDir = path.dirname(require.resolve('playwright-core/package.json'));
+            const localBrowsersDir = path.join(playwrightCoreDir, '.local-browsers');
+            const hasProjectLocalBrowsers = fs.existsSync(localBrowsersDir) && fs.readdirSync(localBrowsersDir).length > 0;
+
+            if (hasProjectLocalBrowsers) {
+                process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+            }
+        }
         const { chromium } = require('playwright');
         browser = await chromium.launch({
             headless: true,
@@ -876,9 +885,18 @@ app.post('/api/export/journeys/:id/pdf', async (req, res) => {
         });
 
         await page.emulateMedia({ media: 'screen' });
-        await page.goto(exportUrl, { waitUntil: 'networkidle', timeout: 60000 });
-        await page.waitForFunction(() => document.body?.dataset?.exportReady === 'true', { timeout: 60000 });
+        await page.goto(exportUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        await page.waitForFunction(
+            () => document.body?.dataset?.exportReady === 'true' || Boolean(document.body?.dataset?.exportError),
+            { timeout: 60000 }
+        );
         await page.waitForTimeout(200);
+
+        const exportError = await page.evaluate(() => document.body?.dataset?.exportError || '');
+        if (exportError) {
+            throw new Error(exportError);
+        }
 
         const dimensions = await page.evaluate(() => {
             const root = document.querySelector('[data-export-document-root]');

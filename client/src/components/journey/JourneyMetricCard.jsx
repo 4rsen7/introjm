@@ -1,12 +1,21 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowUp, ArrowDown, Minus, BarChart3 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, LabelList, XAxis, Tooltip, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
 import { CHART_PALETTE, DEFAULT_BAR_COLOR, formatSeriesLabel } from '../../utils/metrics';
 
-const JourneyMetricCard = ({ metric }) => {
+const EXPORT_CHART_SIZES = {
+  pie: { width: 220, height: 150 },
+  donut: { width: 220, height: 150 },
+  line: { width: 250, height: 120 },
+  area: { width: 250, height: 120 },
+  bar: { width: 250, height: 120 },
+};
+
+const JourneyMetricCard = React.memo(function JourneyMetricCard({ metric, isExport = false, animate = true }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en';
+  const [animationSeed, setAnimationSeed] = useState(0);
   if (!metric) {
     return (
       <div className="flex flex-col items-center justify-center h-24 text-gray-400">
@@ -17,6 +26,34 @@ const JourneyMetricCard = ({ metric }) => {
   }
 
   const { name, type, value, suffix, previousValue, reverseColors, seriesData, chartType, seriesLabelFormat = 'text' } = metric;
+  const animationDelay = useMemo(() => {
+    const source = String(metric?.id || metric?.name || '');
+    const hash = [...source].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    return 80 + (hash % 180);
+  }, [metric?.id, metric?.name]);
+
+  useEffect(() => {
+    if (!animate || isExport) {
+      setAnimationSeed(0);
+      return;
+    }
+
+    let frameId;
+    let timeoutId;
+    frameId = window.requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => setAnimationSeed((seed) => seed + 1), animationDelay);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [animate, animationDelay, isExport]);
+
+  const shouldAnimate = animate && !isExport;
+
   const getColor = (i) => (seriesData && seriesData[i]?.color) ? seriesData[i].color : CHART_PALETTE[i % CHART_PALETTE.length];
   const getBarColor = (i) => (seriesData && seriesData[i]?.color) ? seriesData[i].color : DEFAULT_BAR_COLOR;
   const MAX_LABEL_LEN = 7;
@@ -24,6 +61,19 @@ const JourneyMetricCard = ({ metric }) => {
     const text = formatSeriesLabel(label, seriesLabelFormat, locale);
     if (!text || text.length <= MAX_LABEL_LEN) return text ?? '';
     return text.slice(0, MAX_LABEL_LEN) + '..';
+  };
+
+  const renderChart = (chartTypeKey, render) => {
+    if (isExport) {
+      const size = EXPORT_CHART_SIZES[chartTypeKey] || EXPORT_CHART_SIZES.line;
+      return render(size.width, size.height);
+    }
+
+    return (
+      <ResponsiveContainer width="100%" height="100%" debounce={50}>
+        {render()}
+      </ResponsiveContainer>
+    );
   };
 
   const renderContent = () => {
@@ -93,8 +143,8 @@ const JourneyMetricCard = ({ metric }) => {
               </div>
               <div className="flex-1 min-h-0 flex items-center gap-2 px-1">
                 <div className="min-w-0 h-full" style={{ flex: '0 0 70%' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                  {renderChart(chartType, (width, height) => (
+                    <PieChart key={`pie-${animationSeed}`} width={width} height={height}>
                       <Pie
                         data={seriesData}
                         dataKey="value"
@@ -104,16 +154,18 @@ const JourneyMetricCard = ({ metric }) => {
                         innerRadius={chartType === 'donut' ? '55%' : 0}
                         outerRadius="90%"
                         paddingAngle={1}
-                        isAnimationActive={true}
+                        isAnimationActive={shouldAnimate}
+                        animationDuration={950}
+                        animationBegin={0}
                       >
                         {hasData &&
                           seriesData.map((_, i) => (
                             <Cell key={i} fill={getColor(i)} />
                           ))}
                       </Pie>
-                      <Tooltip formatter={(value, name) => [value, name]} contentStyle={{ fontSize: 11 }} />
+                      {!isExport && <Tooltip formatter={(value, name) => [value, name]} contentStyle={{ fontSize: 11 }} />}
                     </PieChart>
-                  </ResponsiveContainer>
+                  ))}
                 </div>
                 {hasData && (
                   <div className="flex flex-col gap-1 pr-1" style={{ flex: '0 0 30%' }}>
@@ -141,36 +193,36 @@ const JourneyMetricCard = ({ metric }) => {
               {name}
             </div>
             <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                {chartType === 'line' ? (
-                  <LineChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
+              {renderChart(chartType, (width, height) =>
+                chartType === 'line' ? (
+                  <LineChart key={`line-${animationSeed}`} width={width} height={height} data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
-                    <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="value" stroke={getColor(0)} strokeWidth={2} dot={{ r: 3, fill: getColor(0), strokeWidth: 0 }} isAnimationActive={true}>
+                    {!isExport && <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />}
+                    <Line type="monotone" dataKey="value" stroke={getColor(0)} strokeWidth={2} dot={{ r: 3, fill: getColor(0), strokeWidth: 0 }} isAnimationActive={shouldAnimate} animationDuration={900} animationBegin={0}>
                       <LabelList dataKey="value" position="top" offset={5} fontSize={10} fill="#6b7280" />
                     </Line>
                   </LineChart>
                 ) : chartType === 'area' ? (
-                  <AreaChart data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
+                  <AreaChart key={`area-${animationSeed}`} width={width} height={height} data={seriesData} margin={{ top: 20, right: 20, left: 20, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
-                    <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
-                    <Area type="monotone" dataKey="value" fill={getColor(0)} stroke={getColor(0)} strokeWidth={2} fillOpacity={0.6} isAnimationActive={true}>
+                    {!isExport && <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />}
+                    <Area type="monotone" dataKey="value" fill={getColor(0)} stroke={getColor(0)} strokeWidth={2} fillOpacity={0.6} isAnimationActive={shouldAnimate} animationDuration={900} animationBegin={0}>
                       <LabelList dataKey="value" position="top" offset={5} fontSize={10} fill="#6b7280" />
                     </Area>
                   </AreaChart>
                 ) : (
-                  <BarChart data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 4 }}>
+                  <BarChart key={`bar-${animationSeed}`} width={width} height={height} data={seriesData} margin={{ top: 0, right: 0, left: 0, bottom: 4 }}>
                     <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} tickFormatter={formatLabel} padding={{ left: 8, right: 8 }} interval={0} />
-                    <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="value" radius={[2, 2, 0, 0]} isAnimationActive={true}>
+                    {!isExport && <Tooltip formatter={(v, name) => [v, formatLabel(name)]} contentStyle={{ fontSize: 11 }} />}
+                    <Bar dataKey="value" radius={[2, 2, 0, 0]} isAnimationActive={shouldAnimate} animationDuration={900} animationBegin={0}>
                       {seriesData.map((_, i) => (
                         <Cell key={i} fill={getBarColor(i)} />
                       ))}
                       <LabelList dataKey="value" position="insideTop" offset={5} fontSize={10} fill="#ffffff" style={{ fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.1)' }} />
                     </Bar>
                   </BarChart>
-                )}
-              </ResponsiveContainer>
+                )
+              )}
             </div>
           </div>
         );
@@ -184,6 +236,6 @@ const JourneyMetricCard = ({ metric }) => {
     ? (chartType === 'bar' ? 'h-36' : chartType === 'pie' || chartType === 'donut' ? 'h-44' : 'h-40')
     : (type === 'Comparison' ? 'h-32' : 'h-28');
   return <div className={`w-full ${cardHeight} px-2 pt-2 pb-1`}>{renderContent()}</div>;
-};
+});
 
 export default JourneyMetricCard;

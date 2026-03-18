@@ -14,6 +14,7 @@ export default function JourneyMapView({
   globalMetrics = [],
   globalJourneys = [],
   onOpenLinkedJourneyPreview,
+  isExport = false,
 }) {
   return (
     <DndContext onDragStart={noop} onDragOver={noop} onDragEnd={noop} onDragCancel={noop}>
@@ -78,6 +79,7 @@ export default function JourneyMapView({
               onEditMetric={noop}
               onOpenLinkedJourneyPreview={onOpenLinkedJourneyPreview}
               readOnly
+              isExport={isExport}
             />
           )
         )}
