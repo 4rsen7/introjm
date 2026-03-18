@@ -246,8 +246,8 @@ function SeoFeaturePageSection({ icon: Icon, title, body, bullets }) {
       <p className="mt-4 text-base leading-8 text-slate-300">{body}</p>
       <ul className="mt-6 space-y-3">
         {bullets.map((item) => (
-          <li key={item} className="flex items-start gap-3 text-sm leading-7 text-slate-200 sm:text-base">
-            <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
+          <li key={item} className="flex items-center gap-3 text-sm leading-7 text-slate-200 sm:text-base">
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
               <Check className="h-3.5 w-3.5" />
             </span>
             <span>{item}</span>
@@ -386,8 +386,8 @@ export default function JourneyMapSoftwarePage() {
           <div className="mt-10 grid gap-4 text-left md:grid-cols-3">
             {copy.highlights.map((item) => (
               <div key={item} className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] px-5 py-4 text-sm leading-7 text-slate-200 backdrop-blur-xl">
-                <div className="flex items-start gap-3">
-                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
                     <Check className="h-3.5 w-3.5" />
                   </span>
                   <span>{item}</span>
