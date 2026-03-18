@@ -355,45 +355,39 @@ export default function JourneyMapSoftwarePage() {
   }, [copy, lang]);
 
   return (
-    <div className="min-h-screen bg-[#050816] text-white">
-      <div className="mx-auto max-w-7xl px-4 pb-20 pt-10 sm:px-6 lg:px-8 lg:pt-14">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-6">
-          <Link to={`/${lang}`} className="flex items-center gap-3 text-lg font-semibold tracking-[-0.04em] text-white">
-            <img src="/logo.svg" alt="IteroJM" className="h-8 w-8 rounded-lg object-contain shrink-0" />
-            IteroJM
-          </Link>
-          <div className="flex items-center gap-6 text-sm text-slate-300">
-            <Link to={`/${lang}`} className="transition hover:text-white">
-              {copy.secondaryCta}
-            </Link>
-            <a
-              href={appAuthHref}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#8b5cf6,#0ea5e9)] px-4 py-2.5 font-semibold text-white shadow-[0_12px_30px_rgba(59,130,246,0.25)] transition hover:opacity-95"
+    <div className="min-h-screen bg-[#060814] text-white">
+      <main className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <section className="mx-auto max-w-5xl text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/80">
+            {copy.eyebrow}
+          </div>
+          <h1 className="mt-8 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-5xl lg:text-7xl">
+            {copy.heroTitle}
+          </h1>
+          <p className="mx-auto mt-6 max-w-4xl text-lg leading-8 text-slate-300 sm:text-xl">
+            {copy.heroSubtitle}
+          </p>
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <Link
+              to={appAuthHref}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-sky-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_12px_40px_rgba(59,130,246,0.35)] transition-transform duration-200 hover:-translate-y-0.5"
             >
               {copy.primaryCta}
               <ArrowRight className="h-4 w-4" />
-            </a>
-          </div>
-        </header>
-
-        <main className="pt-12 sm:pt-16">
-          <div className="max-w-4xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/80">
-              {copy.eyebrow}
-            </div>
-            <h1 className="mt-6 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-5xl lg:text-6xl">
-              {copy.heroTitle}
-            </h1>
-            <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300 sm:text-xl">
-              {copy.heroSubtitle}
-            </p>
+            </Link>
+            <Link
+              to={lang === 'uk' ? '/uk' : '/en'}
+              className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-slate-200 transition-colors duration-200 hover:bg-white/[0.07]"
+            >
+              {copy.secondaryCta}
+            </Link>
           </div>
 
-          <div className="mt-10 grid gap-4 lg:grid-cols-3">
+          <div className="mt-10 grid gap-4 text-left md:grid-cols-3">
             {copy.highlights.map((item) => (
-              <div key={item} className="rounded-[1.6rem] border border-white/10 bg-white/[0.04] p-5">
-                <div className="flex items-start gap-3 text-sm leading-7 text-slate-200 sm:text-base">
-                  <span className="mt-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
+              <div key={item} className="rounded-[1.75rem] border border-white/10 bg-white/[0.04] px-5 py-4 text-sm leading-7 text-slate-200 backdrop-blur-xl">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
                     <Check className="h-3.5 w-3.5" />
                   </span>
                   <span>{item}</span>
@@ -401,48 +395,50 @@ export default function JourneyMapSoftwarePage() {
               </div>
             ))}
           </div>
+        </section>
 
-          <div className="mt-12 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-3 shadow-[0_30px_90px_rgba(2,6,23,0.6)] sm:p-4">
-            <img
-              src="/promoCJM.png"
-              alt="IteroJM customer journey mapping workspace"
-              className="w-full rounded-[1.5rem] border border-white/10 bg-white object-contain"
-            />
-          </div>
+        <div className="mt-12 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] p-3 shadow-[0_30px_90px_rgba(2,6,23,0.6)] sm:p-4">
+          <img
+            src="/promoCJM.png"
+            alt="IteroJM customer journey mapping workspace"
+            className="w-full rounded-[1.5rem] border border-white/10 bg-white object-contain"
+          />
+        </div>
 
-          <div className="mt-14 grid gap-6">
-            {copy.sections.map((section) => (
-              <SeoFeaturePageSection key={section.title} {...section} />
+        <div className="mt-14 grid gap-6">
+          {copy.sections.map((section) => (
+            <SeoFeaturePageSection key={section.title} {...section} />
+          ))}
+        </div>
+
+        <section className="mt-16 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-2xl sm:p-8">
+          <h2 className="text-3xl font-semibold tracking-[-0.03em] text-white">{copy.faqTitle}</h2>
+          <div className="mt-8 grid gap-4">
+            {copy.faqItems.map((item) => (
+              <div key={item.q} className="rounded-[1.5rem] border border-white/10 bg-[#0b1022] px-5 py-5">
+                <h3 className="text-lg font-medium text-white">{item.q}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-300 sm:text-base">{item.a}</p>
+              </div>
             ))}
           </div>
+        </section>
 
-          <section className="mt-16 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">{copy.faqTitle}</h2>
-            <div className="mt-8 space-y-6">
-              {copy.faqItems.map((item) => (
-                <div key={item.q} className="rounded-[1.5rem] border border-white/10 bg-slate-950/40 p-5">
-                  <h3 className="text-lg font-semibold text-white">{item.q}</h3>
-                  <p className="mt-3 text-base leading-8 text-slate-300">{item.a}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+        <SeoInternalLinksSection lang={lang} currentSlug="customer-journey-map-software" {...relatedCopy[lang]} />
+      </main>
 
-          <SeoInternalLinksSection lang={lang} currentSlug="customer-journey-map-software" {...relatedCopy[lang]} />
-        </main>
-
-        <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-8 text-sm text-slate-400">
-          <div>© 2026 IteroJM</div>
-          <div className="flex items-center gap-4">
-            <Link to={`/${lang}/terms`} className="transition hover:text-white">
+      <footer className="border-t border-white/10 bg-[#050712]/90">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <span>© 2026 IteroJM</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to={`/${lang}/terms`} className="transition-colors hover:text-white">
               {copy.footerLinks.terms}
             </Link>
-            <Link to={`/${lang}/privacy`} className="transition hover:text-white">
+            <Link to={`/${lang}/privacy`} className="transition-colors hover:text-white">
               {copy.footerLinks.privacy}
             </Link>
           </div>
-        </footer>
-      </div>
+        </div>
+      </footer>
     </div>
   );
 }

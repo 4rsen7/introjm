@@ -79,6 +79,18 @@ const ExternalRedirect = ({ to }) => {
   return null;
 };
 
+const ScrollToTopOnRouteChange = () => {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [location.pathname]);
+
+  return null;
+};
+
 const ProtectedOutlet = ({ authReady, isAuthenticated }) => {
   if (!authReady) {
     return (
@@ -812,6 +824,7 @@ function App() {
 
   return (
     <>
+      <ScrollToTopOnRouteChange />
       <div className={`fixed top-0 left-0 h-1 bg-orange-600 z-[9999] transition-all duration-300 ease-out ${isNavigating ? 'opacity-100' : 'opacity-0'}`} style={{ width: `${loadingProgress}%` }}></div>
       <Routes>
         <Route path="/" element={IS_LANDING_HOST ? <Navigate to="/en" replace /> : <Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
