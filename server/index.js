@@ -105,8 +105,20 @@ app.use((req, res, next) => {
     const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
 
     if (hostname === CANONICAL_HOST) {
+        if (path === '/') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
+        }
+
         if (path === '/landing') {
-            return res.redirect(301, `${CANONICAL_ORIGIN}/${query}`);
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
+        }
+
+        if (path === '/landing/en') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
+        }
+
+        if (path === '/landing/uk') {
+            return res.redirect(301, `${CANONICAL_ORIGIN}/uk${query}`);
         }
 
         if (isAppRoutePath(path)) {
@@ -115,7 +127,7 @@ app.use((req, res, next) => {
     }
 
     if (hostname === APP_HOST && path === '/landing') {
-        return res.redirect(301, `${CANONICAL_ORIGIN}/${query}`);
+        return res.redirect(301, `${CANONICAL_ORIGIN}/en${query}`);
     }
 
     if (hostname === ADMIN_HOST && path === '/landing') {

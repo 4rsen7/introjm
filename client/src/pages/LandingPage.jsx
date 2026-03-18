@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { setLocale } from '../i18n';
 import {
@@ -26,8 +26,10 @@ const BROWSER_HOSTNAME = typeof window !== 'undefined' ? window.location.hostnam
 const IS_LOCAL_BROWSER = BROWSER_HOSTNAME === 'localhost' || BROWSER_HOSTNAME === '127.0.0.1';
 const LANDING_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_LANDING_ORIGIN) || 'https://iterojm.com').replace(/\/$/, '');
 const APP_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_ORIGIN) || 'https://app.iterojm.com').replace(/\/$/, '');
-const LANDING_HOME_HREF = IS_LOCAL_BROWSER ? '/landing' : LANDING_ORIGIN;
 const APP_AUTH_HREF = IS_LOCAL_BROWSER ? '/auth' : `${APP_ORIGIN}/auth`;
+const LANDING_PATH_BY_LANG = { en: '/en', uk: '/uk' };
+const getLandingPath = (lang = 'en') => LANDING_PATH_BY_LANG[lang] || LANDING_PATH_BY_LANG.en;
+const getLandingHref = (lang = 'en') => `${LANDING_ORIGIN}${getLandingPath(lang)}`;
 
 const scrollTo = (id) => {
   const el = document.getElementById(id);
@@ -36,6 +38,17 @@ const scrollTo = (id) => {
 
 const cn = (...parts) => parts.filter(Boolean).join(' ');
 const stripTrailingHeadlinePeriod = (text) => (typeof text === 'string' ? text.replace(/\.$/, '') : text);
+const upsertHeadLink = (selector, attrs) => {
+  if (typeof document === 'undefined') return;
+  let el = document.head.querySelector(selector);
+  if (!el) {
+    el = document.createElement('link');
+    document.head.appendChild(el);
+  }
+  Object.entries(attrs).forEach(([key, value]) => {
+    if (value != null) el.setAttribute(key, value);
+  });
+};
 
 const enCopy = {
   heroEyebrow: 'Journey intelligence for modern product teams',
@@ -960,7 +973,9 @@ function PricingCard({ plan, billingCycle, t, featured = false, authHref }) {
 
 export default function LandingPage() {
   const { t, i18n } = useTranslation();
-  const currentLang = i18n.language?.startsWith('uk') ? 'uk' : 'en';
+  const location = useLocation();
+  const navigate = useNavigate();
+  const currentLang = location.pathname.startsWith('/uk') ? 'uk' : 'en';
   const copy = currentLang === 'uk' ? ukCopy : enCopy;
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
@@ -1074,6 +1089,42 @@ export default function LandingPage() {
   ];
   const currentLangLabel = langOptions.find((opt) => opt.code === currentLang)?.label ?? currentLang;
   const visiblePlans = !plansLoading && !plansError && plans.length > 0 ? plans.slice(0, 3) : fallbackPlans;
+
+  useEffect(() => {
+    if (i18n.language !== currentLang) {
+      setLocale(currentLang);
+    }
+  }, [currentLang, i18n.language]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    document.documentElement.lang = currentLang;
+
+    upsertHeadLink('link[rel="canonical"]', {
+      rel: 'canonical',
+      href: getLandingHref(currentLang),
+    });
+
+    upsertHeadLink('link[rel="alternate"][hreflang="en"]', {
+      rel: 'alternate',
+      hreflang: 'en',
+      href: getLandingHref('en'),
+    });
+
+    upsertHeadLink('link[rel="alternate"][hreflang="uk"]', {
+      rel: 'alternate',
+      hreflang: 'uk',
+      href: getLandingHref('uk'),
+    });
+
+    upsertHeadLink('link[rel="alternate"][hreflang="x-default"]', {
+      rel: 'alternate',
+      hreflang: 'x-default',
+      href: getLandingHref('en'),
+    });
+  }, [currentLang]);
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#050816] text-white antialiased">
       <NetworkBackdrop />
@@ -1081,7 +1132,7 @@ export default function LandingPage() {
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8 lg:gap-12">
-            <a href={LANDING_HOME_HREF} className="flex items-center gap-3 text-lg font-semibold tracking-[-0.04em] text-white">
+            <a href={getLandingPath(currentLang)} className="flex items-center gap-3 text-lg font-semibold tracking-[-0.04em] text-white">
               <img src="/logo.svg" alt="IteroJM" className="h-8 w-8 rounded-lg object-contain shrink-0" />
               IteroJM
             </a>
@@ -1121,7 +1172,7 @@ export default function LandingPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setLocale(opt.code);
+                          navigate(getLandingPath(opt.code));
                           setLangDropdownOpen(false);
                         }}
                         className={cn(

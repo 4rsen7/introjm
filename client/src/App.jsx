@@ -36,8 +36,9 @@ const LANDING_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.V
 const APP_ORIGIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_ORIGIN) || 'https://app.iterojm.com';
 const LANDING_HOSTS = new Set(['iterojm.com', 'www.iterojm.com']);
 const IS_LANDING_HOST = !IS_LOCAL_HOST && LANDING_HOSTS.has(HOSTNAME);
+const LANDING_LANG_PATHS = new Set(['/en', '/uk']);
 
-const PUBLIC_PATHS = new Set([...(IS_LANDING_HOST ? ['/'] : []), '/landing', '/auth', '/terms', '/privacy']);
+const PUBLIC_PATHS = new Set([...(IS_LANDING_HOST ? ['/', ...LANDING_LANG_PATHS] : [...LANDING_LANG_PATHS]), '/landing', '/landing/en', '/landing/uk', '/auth', '/terms', '/privacy']);
 
 const isPublicPath = (path) => PUBLIC_PATHS.has(path) || path.startsWith('/export/');
 
@@ -786,8 +787,12 @@ function App() {
     <>
       <div className={`fixed top-0 left-0 h-1 bg-orange-600 z-[9999] transition-all duration-300 ease-out ${isNavigating ? 'opacity-100' : 'opacity-0'}`} style={{ width: `${loadingProgress}%` }}></div>
       <Routes>
-        <Route path="/" element={IS_LANDING_HOST ? <LandingPage /> : <Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
-        <Route path="/landing" element={IS_LOCAL_HOST ? <LandingPage /> : IS_LANDING_HOST ? <Navigate to="/" replace /> : <ExternalRedirect to={LANDING_ORIGIN} />} />
+        <Route path="/" element={IS_LANDING_HOST ? <Navigate to="/en" replace /> : <Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
+        <Route path="/en" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <LandingPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en`} />} />
+        <Route path="/uk" element={IS_LANDING_HOST || IS_LOCAL_HOST ? <LandingPage /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk`} />} />
+        <Route path="/landing" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/en" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en`} />} />
+        <Route path="/landing/en" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/en" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en`} />} />
+        <Route path="/landing/uk" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/uk" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk`} />} />
         <Route path="/auth" element={IS_LANDING_HOST ? <ExternalRedirect to={`${APP_ORIGIN}/auth`} /> : <AuthPage onLogin={() => navigate('/dashboard')} />} />
         <Route path="/export/journey/:id" element={<JourneyExportPage />} />
         <Route path="/terms" element={<TermsPage />} />
