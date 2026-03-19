@@ -202,7 +202,7 @@ const allowedOrigins = [
 
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
-const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
 const INTERVIEW_SUMMARY_SECTION_ORDER = [
     'summary',
     'journeyDraft',
@@ -4262,6 +4262,7 @@ const buildInterviewTranscriptionSystemState = ({
     const defaultRateMap = {
         'gpt-4o-mini-transcribe': 0.003,
         'gpt-4o-transcribe': 0.006,
+        'gpt-4o-transcribe-diarize': 0.006,
         'whisper-1': 0.006,
     };
     const ratePerMinute = Number.isFinite(configuredRate) && configuredRate > 0
@@ -4284,6 +4285,94 @@ const normalizeTimestamp = (seconds) => {
     return hours > 0 ? `${String(hours).padStart(2, '0')}:${mmss}` : mmss;
 };
 
+const getInterviewSpeakerRole = (speaker) => {
+    const normalized = String(speaker || '').trim().toLowerCase();
+    if (!normalized) return null;
+
+    if (['interviewer', 'moderator', 'host', 'researcher', 'facilitator', 'agent'].includes(normalized)) {
+        return 'Interviewer';
+    }
+
+    if (['respondent', 'participant', 'customer', 'interviewee', 'guest', 'user'].includes(normalized)) {
+        return 'Respondent';
+    }
+
+    return null;
+};
+
+const formatFallbackSpeakerLabel = (speaker) => {
+    const cleaned = String(speaker || '').trim();
+    if (!cleaned) return null;
+    return cleaned
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const normalizeTranscriptSegments = (segments) => {
+    const prepared = segments.map((segment) => {
+        const rawSpeaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
+        return {
+            segment,
+            rawSpeaker,
+            directRole: getInterviewSpeakerRole(rawSpeaker),
+        };
+    });
+
+    const speakersWithoutRoles = [];
+    prepared.forEach(({ rawSpeaker, directRole }) => {
+        if (!rawSpeaker || directRole || speakersWithoutRoles.includes(rawSpeaker)) return;
+        speakersWithoutRoles.push(rawSpeaker);
+    });
+
+    const rolesAlreadyPresent = new Set(
+        prepared
+            .map(({ directRole }) => directRole)
+            .filter(Boolean)
+    );
+    const missingRoles = ['Interviewer', 'Respondent'].filter((role) => !rolesAlreadyPresent.has(role));
+    const speakerRoleOverrides = new Map();
+
+    if (missingRoles.length === 1 || speakersWithoutRoles.length >= 2) {
+        missingRoles.forEach((role, index) => {
+            const speaker = speakersWithoutRoles[index];
+            if (speaker) {
+                speakerRoleOverrides.set(speaker, role);
+            }
+        });
+    }
+
+    return prepared.map(({ segment, rawSpeaker, directRole }, index) => {
+        const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+        if (!text) return null;
+
+        const start = Number(segment?.start);
+        const speaker = directRole
+            || speakerRoleOverrides.get(rawSpeaker)
+            || formatFallbackSpeakerLabel(rawSpeaker)
+            || 'Respondent';
+
+        return {
+            id: crypto.randomUUID(),
+            speaker,
+            text,
+            timestamp: normalizeTimestamp(Number.isFinite(start) ? start : index * 10),
+        };
+    }).filter(Boolean);
+};
+
+const getOpenAiTranscriptionResponseFormats = (model) => {
+    if (model === 'gpt-4o-transcribe-diarize') {
+        return ['diarized_json', 'json'];
+    }
+
+    if (model === 'whisper-1') {
+        return ['verbose_json', 'json'];
+    }
+
+    return ['json'];
+};
+
 const splitTranscriptIntoEntries = (text, durationSeconds = 0) => {
     const cleaned = String(text || '').trim();
     if (!cleaned) return [];
@@ -4301,7 +4390,11 @@ const splitTranscriptIntoEntries = (text, durationSeconds = 0) => {
         id: crypto.randomUUID(),
         speaker: 'Respondent',
         text: segment,
-        timestamp: normalizeTimestamp(source.length > 1 ? (totalDuration * index) / source.length : 0),
+        timestamp: normalizeTimestamp(
+            totalDuration > 0 && source.length > 1
+                ? (totalDuration * index) / source.length
+                : index * 10
+        ),
     }));
 };
 
@@ -4310,18 +4403,7 @@ const normalizeOpenAiTranscript = (payload) => {
     const durationSeconds = Number(payload?.duration);
 
     if (Array.isArray(payload?.segments) && payload.segments.length > 0) {
-        const transcript = payload.segments
-            .map((segment, index) => {
-                const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
-                if (!text) return null;
-                return {
-                    id: crypto.randomUUID(),
-                    speaker: typeof segment?.speaker === 'string' && segment.speaker.trim() ? segment.speaker.trim() : 'Respondent',
-                    text,
-                    timestamp: normalizeTimestamp(Number.isFinite(Number(segment?.start)) ? Number(segment.start) : index * 10),
-                };
-            })
-            .filter(Boolean);
+        const transcript = normalizeTranscriptSegments(payload.segments);
 
         if (transcript.length > 0) {
             return {
@@ -4355,6 +4437,9 @@ const transcribeAudioWithOpenAI = async (file) => {
         form.append('file', audioBlob, file.originalname || 'interview-audio');
         form.append('model', model);
         form.append('response_format', responseFormat);
+        if (model === 'gpt-4o-transcribe-diarize') {
+            form.append('chunking_strategy', 'auto');
+        }
         return form;
     };
 
@@ -4387,12 +4472,24 @@ const transcribeAudioWithOpenAI = async (file) => {
         };
     };
 
-    let transcriptionResponse;
-    try {
-        transcriptionResponse = await requestTranscription('verbose_json');
-    } catch (error) {
-        if (![400, 422].includes(error.status)) throw error;
-        transcriptionResponse = await requestTranscription('json');
+    const responseFormats = getOpenAiTranscriptionResponseFormats(model);
+    let transcriptionResponse = null;
+    let lastFormatError = null;
+
+    for (const responseFormat of responseFormats) {
+        try {
+            transcriptionResponse = await requestTranscription(responseFormat);
+            break;
+        } catch (error) {
+            if (![400, 422].includes(error.status) || responseFormat === responseFormats[responseFormats.length - 1]) {
+                throw error;
+            }
+            lastFormatError = error;
+        }
+    }
+
+    if (!transcriptionResponse) {
+        throw lastFormatError || new Error('OpenAI transcription failed before a valid response was returned.');
     }
 
     const normalized = normalizeOpenAiTranscript(transcriptionResponse.payload);
