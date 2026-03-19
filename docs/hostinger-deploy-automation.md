@@ -2,18 +2,19 @@
 
 This repo uses a practical deployment split:
 
-- `iterojm.com` backend is deployed from the repository
+- `iterojm.com` backend is deployed by Hostinger from the repository
 - `app.iterojm.com` is served from `public_html/app`
 - `admin.iterojm.com` is served from `public_html/admin`
 
-The missing automation step is syncing freshly built static assets from:
+The reliable automation path for this setup is:
 
-- `server/public/client`
-- `server/public/admin`
+1. build `client` and `admin` inside GitHub Actions
+2. upload the built static bundles to Hostinger over SSH/SCP
+3. optionally run a backend restart command after a short settle delay
 
-into the live Hostinger directories.
+This avoids depending on `node`/`npm` availability in the Hostinger SSH shell.
 
-## Stage 1: One-command deploy over SSH
+## Manual SSH deploy helper
 
 Server-side script:
 
@@ -23,87 +24,27 @@ Local SSH wrapper:
 
 - `/Users/avrdnn/Desktop/iterojm/iterojm/scripts/deploy-hostinger-over-ssh.sh`
 
-### What the server-side deploy script does
+These helpers are still useful when you are deploying from a machine that already has Node available, but the primary production path is now GitHub Actions.
 
-1. Optionally pulls latest `main`
-2. Loads env from:
-   - `server/.env`
-   - optional `.env.hostinger.deploy`
-3. Generates:
-   - `client/.env.production.local`
-   - `admin/.env.production.local`
-4. Installs dependencies
-5. Installs Playwright Chromium
-6. Builds `client` and `admin`
-7. Syncs:
-   - `server/public/client/` -> `public_html/app/`
-   - `server/public/admin/` -> `public_html/admin/`
-8. Optionally runs a restart command
-
-### Required server-side env
-
-Minimum values required for the static frontend build:
-
-- `VITE_SUPABASE_URL` or `SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY` or `SUPABASE_ANON_KEY`
-- `VITE_API_BASE_URL` or `CANONICAL_ORIGIN`
-- `VITE_LANDING_ORIGIN` or `CANONICAL_ORIGIN`
-- `VITE_APP_ORIGIN` or `APP_ORIGIN`
-
-If your SSH shell does not expose the same env vars as hPanel, create:
-
-- `.env.hostinger.deploy`
-
-from:
-
-- `.env.hostinger.deploy.example`
-
-Do not commit that file.
-
-### Running the deploy manually
-
-On the Hostinger server:
-
-```bash
-cd /path/to/repository
-bash scripts/deploy-hostinger.sh
-```
-
-From your local machine over SSH:
-
-```bash
-export HOSTINGER_SSH_HOST=your.host
-export HOSTINGER_SSH_USER=your-user
-export HOSTINGER_SSH_PORT=22
-export HOSTINGER_REPO_DIR=/home/your-user/domains/iterojm.com/nodejs
-export HOSTINGER_PUBLIC_HTML_DIR=/home/your-user/domains/iterojm.com/public_html
-bash scripts/deploy-hostinger-over-ssh.sh
-```
-
-Optional:
-
-```bash
-export HOSTINGER_SERVER_RESTART_COMMAND='touch /home/your-user/domains/iterojm.com/public_html/tmp/restart.txt'
-```
-
-## Stage 2: GitHub Actions after push to main
+## GitHub Actions after push to main
 
 Workflow:
 
 - `/Users/avrdnn/Desktop/iterojm/iterojm/.github/workflows/deploy-hostinger.yml`
 
-Required GitHub secrets:
+### Required GitHub secrets
+
+SSH / destination:
 
 - `HOSTINGER_SSH_HOST`
 - `HOSTINGER_SSH_USER`
 - `HOSTINGER_SSH_KEY`
 - `HOSTINGER_SSH_PORT`
-- `HOSTINGER_REPO_DIR`
 - `HOSTINGER_PUBLIC_HTML_DIR`
 - `HOSTINGER_SERVER_RESTART_COMMAND` (optional)
 - `HOSTINGER_DEPLOY_SETTLE_SECONDS` (optional)
 
-Frontend build secrets (recommended, so SSH deploy does not depend on hPanel env visibility):
+Frontend build secrets:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
@@ -111,43 +52,40 @@ Frontend build secrets (recommended, so SSH deploy does not depend on hPanel env
 - `VITE_LANDING_ORIGIN`
 - `VITE_APP_ORIGIN`
 
-Optional fallback secrets if you prefer reusing server-style names:
-
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `CANONICAL_ORIGIN`
-- `APP_ORIGIN`
-
 Recommended values:
 
-- `HOSTINGER_REPO_DIR=/home/<user>/domains/iterojm.com/nodejs`
 - `HOSTINGER_PUBLIC_HTML_DIR=/home/<user>/domains/iterojm.com/public_html`
-- `HOSTINGER_DEPLOY_SETTLE_SECONDS=120` (optional, useful if Hostinger updates the `nodejs` checkout shortly after push)
+- `HOSTINGER_DEPLOY_SETTLE_SECONDS=120`
 - `VITE_API_BASE_URL=https://iterojm.com/api`
 - `VITE_LANDING_ORIGIN=https://iterojm.com`
 - `VITE_APP_ORIGIN=https://app.iterojm.com`
 
-If you accidentally set `HOSTINGER_REPO_DIR` to `public_html`, the workflow now tries to auto-detect `.builds/source/repository`, but it is still better to store the exact repository path in the secret.
-
-### How it works
+### How the workflow now works
 
 On every push to `main`, GitHub Actions:
 
-1. connects to the Hostinger server over SSH
-2. enters the deployment repo
-3. optionally waits a bit for Hostinger's own git sync to settle
-4. runs `bash scripts/deploy-hostinger.sh`
+1. checks out the repository
+2. installs dependencies in GitHub Actions
+3. writes `client/.env.production.local` and `admin/.env.production.local` from GitHub secrets
+4. builds `client` and `admin`
+5. archives:
+   - `server/public/client`
+   - `server/public/admin`
+6. uploads those archives to Hostinger
+7. extracts them into:
+   - `public_html/app`
+   - `public_html/admin`
+8. optionally waits a bit and runs a backend restart command
 
 This means:
 
 - no File Manager uploads
 - no manual asset cleanup
-- no manual syncing of `app` and `admin`
+- no `npm install` on Hostinger over SSH
 
 ## Notes
 
-- The script uses `rsync --delete` when available, so old hashed assets are removed automatically.
-- If `rsync` is unavailable, it falls back to cleaning the target directory and copying files.
+- The workflow deletes old contents inside `public_html/app` and `public_html/admin` before extracting the new bundles, so stale hashed assets do not linger.
+- Hidden files such as `.htaccess` are preserved because the deploy uploads tar archives, not a shallow file copy.
 - The backend restart is intentionally optional because Hostinger setups vary.
-- If you see `fatal: not a git repository`, it usually means `HOSTINGER_REPO_DIR` points to the wrong folder. For your Hostinger setup, the correct repository path is `/home/<user>/domains/iterojm.com/nodejs`.
-- The workflow intentionally skips `git fetch/pull` on the server because the Hostinger-managed `nodejs` checkout may not have non-interactive GitHub credentials. It builds from whatever revision Hostinger has already synced there.
+- Backend code deployment is still handled by your Hostinger Node app / git integration. The workflow only automates the static `app` and `admin` deployments plus an optional restart hook.

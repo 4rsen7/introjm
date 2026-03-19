@@ -9,7 +9,81 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+      VITE_LANDING_ORIGIN: ${{ secrets.VITE_LANDING_ORIGIN }}
+      VITE_APP_ORIGIN: ${{ secrets.VITE_APP_ORIGIN }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium runtime
+        run: npm run install:playwright:chromium
+
+      - name: Validate required frontend env
+        run: |
+          for var in \
+            VITE_SUPABASE_URL \
+            VITE_SUPABASE_ANON_KEY \
+            VITE_API_BASE_URL \
+            VITE_LANDING_ORIGIN \
+            VITE_APP_ORIGIN
+          do
+            if [ -z "${!var}" ]; then
+              echo "Missing required secret: $var" >&2
+              exit 1
+            fi
+          done
+
+      - name: Write production env overrides
+        run: |
+          cat > client/.env.production.local <<EOF
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          VITE_API_BASE_URL=${VITE_API_BASE_URL}
+          VITE_LANDING_ORIGIN=${VITE_LANDING_ORIGIN}
+          VITE_APP_ORIGIN=${VITE_APP_ORIGIN}
+          EOF
+
+          cat > admin/.env.production.local <<EOF
+          VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+          VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+          VITE_API_BASE_URL=${VITE_API_BASE_URL}
+          EOF
+
+      - name: Build static apps
+        run: |
+          rm -rf server/public/client server/public/admin
+          npm run build --workspace=client
+          npm run build --workspace=admin
+
+      - name: Archive client and admin bundles
+        run: |
+          tar -czf client-build.tar.gz -C server/public/client .
+          tar -czf admin-build.tar.gz -C server/public/admin .
+
+      - name: Upload build archives to Hostinger
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          source: "client-build.tar.gz,admin-build.tar.gz"
+          target: "/tmp/iterojm-deploy"
+          overwrite: true
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -20,33 +94,37 @@ jobs:
           script_stop: true
           command_timeout: 45m
           script: |
-            REPO_DIR="${{ secrets.HOSTINGER_REPO_DIR }}"
-            if [ ! -d "$REPO_DIR/.git" ] && [ -d "$REPO_DIR/.builds/source/repository/.git" ]; then
-              REPO_DIR="$REPO_DIR/.builds/source/repository"
-            fi
-            if [ ! -d "$REPO_DIR/.git" ] && [ -d "$(dirname "$REPO_DIR")/nodejs/.git" ]; then
-              REPO_DIR="$(dirname "$REPO_DIR")/nodejs"
-            fi
-            if [ ! -d "$REPO_DIR/.git" ]; then
-              echo "HOSTINGER_REPO_DIR is not a git repository: $REPO_DIR" >&2
+            set -e
+
+            PUBLIC_HTML_DIR="${{ secrets.HOSTINGER_PUBLIC_HTML_DIR }}"
+            SERVER_RESTART_COMMAND="${{ secrets.HOSTINGER_SERVER_RESTART_COMMAND }}"
+            HOSTINGER_DEPLOY_SETTLE_SECONDS="${{ secrets.HOSTINGER_DEPLOY_SETTLE_SECONDS }}"
+            DEPLOY_TMP_DIR="/tmp/iterojm-deploy"
+            APP_DIR="${PUBLIC_HTML_DIR}/app"
+            ADMIN_DIR="${PUBLIC_HTML_DIR}/admin"
+
+            if [ -z "$PUBLIC_HTML_DIR" ]; then
+              echo "HOSTINGER_PUBLIC_HTML_DIR is required" >&2
               exit 1
             fi
-            export PUBLIC_HTML_DIR="${{ secrets.HOSTINGER_PUBLIC_HTML_DIR }}"
-            export SERVER_RESTART_COMMAND="${{ secrets.HOSTINGER_SERVER_RESTART_COMMAND }}"
-            export HOSTINGER_DEPLOY_SETTLE_SECONDS="${{ secrets.HOSTINGER_DEPLOY_SETTLE_SECONDS }}"
-            export VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}"
-            export VITE_SUPABASE_ANON_KEY="${{ secrets.VITE_SUPABASE_ANON_KEY }}"
-            export VITE_API_BASE_URL="${{ secrets.VITE_API_BASE_URL }}"
-            export VITE_LANDING_ORIGIN="${{ secrets.VITE_LANDING_ORIGIN }}"
-            export VITE_APP_ORIGIN="${{ secrets.VITE_APP_ORIGIN }}"
-            export SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
-            export SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
-            export CANONICAL_ORIGIN="${{ secrets.CANONICAL_ORIGIN }}"
-            export APP_ORIGIN="${{ secrets.APP_ORIGIN }}"
-            cd "$REPO_DIR"
+
+            mkdir -p "$APP_DIR" "$ADMIN_DIR"
+
+            rm -rf "$APP_DIR"/*
+            find "$APP_DIR" -mindepth 1 -maxdepth 1 -name '.*' -exec rm -rf {} +
+            tar -xzf "$DEPLOY_TMP_DIR/client-build.tar.gz" -C "$APP_DIR"
+
+            rm -rf "$ADMIN_DIR"/*
+            find "$ADMIN_DIR" -mindepth 1 -maxdepth 1 -name '.*' -exec rm -rf {} +
+            tar -xzf "$DEPLOY_TMP_DIR/admin-build.tar.gz" -C "$ADMIN_DIR"
+
+            rm -f "$DEPLOY_TMP_DIR/client-build.tar.gz" "$DEPLOY_TMP_DIR/admin-build.tar.gz"
+
             if [ -n "$HOSTINGER_DEPLOY_SETTLE_SECONDS" ]; then
-              echo "Waiting $HOSTINGER_DEPLOY_SETTLE_SECONDS seconds for Hostinger repo sync..."
+              echo "Waiting $HOSTINGER_DEPLOY_SETTLE_SECONDS seconds before optional restart..."
               sleep "$HOSTINGER_DEPLOY_SETTLE_SECONDS"
             fi
-            export SKIP_GIT_PULL=1
-            bash scripts/deploy-hostinger.sh
+
+            if [ -n "$SERVER_RESTART_COMMAND" ]; then
+              bash -lc "$SERVER_RESTART_COMMAND"
+            fi
