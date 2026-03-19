@@ -98,6 +98,11 @@
     "painPoints": "Client Pain Points",
     "keyQuotes": "Key Quotes",
     "cancel": "Cancel",
+    "copyLine": "Copy sentence",
+    "copied": "Copied",
+    "editLine": "Edit sentence",
+    "resizeInsightsPanel": "Resize AI insights panel",
+    "copyFailed": "Couldn't copy this sentence. Please try again.",
     "deleteTitle": "Delete Interview",
     "deleteMessage": "Are you sure you want to delete \"{{title}}\"?",
     "deleteConfirm": "Delete"

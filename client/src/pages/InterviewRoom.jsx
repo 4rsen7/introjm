@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio } from 'lucide-react';
+import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio, Copy, Check } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
 import { API_BASE_URL } from '../config/api';
 import { useQueryClient } from '@tanstack/react-query';
 
 const API_URL = API_BASE_URL;
+const INSIGHTS_PANEL_WIDTH_KEY = 'iterojm.interview.insightsWidth';
+const DEFAULT_INSIGHTS_WIDTH = 420;
+const MIN_INSIGHTS_WIDTH = 320;
+const MAX_INSIGHTS_WIDTH = 680;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -131,6 +135,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const transcriptEndRef = useRef(null);
+  const mainContentRef = useRef(null);
   
   const [interview, setInterview] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +161,14 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   const [currentLine, setCurrentLine] = useState('');
   const [editingIndex, setEditingIndex] = useState(null);
   const [editValue, setEditValue] = useState('');
+  const [copiedIndex, setCopiedIndex] = useState(null);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true));
+  const [isResizingInsights, setIsResizingInsights] = useState(false);
+  const [insightsWidth, setInsightsWidth] = useState(() => {
+    if (typeof window === 'undefined') return DEFAULT_INSIGHTS_WIDTH;
+    const stored = Number.parseInt(window.localStorage.getItem(INSIGHTS_PANEL_WIDTH_KEY) || '', 10);
+    return Number.isFinite(stored) ? stored : DEFAULT_INSIGHTS_WIDTH;
+  });
 
   // AI Summary State
   const [generatingAI, setGeneratingAI] = useState(false);
@@ -316,6 +329,52 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcriptData, currentLine]);
 
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setIsDesktopLayout(window.innerWidth >= 1024);
+    };
+
+    handleWindowResize();
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(INSIGHTS_PANEL_WIDTH_KEY, String(insightsWidth));
+  }, [insightsWidth]);
+
+  useEffect(() => {
+    if (!isResizingInsights || !isDesktopLayout) return undefined;
+
+    const handlePointerMove = (event) => {
+      const container = mainContentRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const nextWidth = rect.right - event.clientX;
+      const maxAllowed = Math.min(MAX_INSIGHTS_WIDTH, Math.max(MIN_INSIGHTS_WIDTH, rect.width - 420));
+      const clampedWidth = Math.min(maxAllowed, Math.max(MIN_INSIGHTS_WIDTH, nextWidth));
+      setInsightsWidth(clampedWidth);
+    };
+
+    const stopResizing = () => {
+      setIsResizingInsights(false);
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopResizing);
+
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+    };
+  }, [isDesktopLayout, isResizingInsights]);
+
   const startRecording = async () => {
     try {
       // Prompt for Mic
@@ -433,6 +492,19 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     transcriptDataRef.current = updated;
     setEditingIndex(null);
     saveInterview({ transcript_data: updated }, updated);
+  };
+
+  const handleCopyLine = async (entryText, index) => {
+    try {
+      await navigator.clipboard.writeText(entryText || '');
+      setCopiedIndex(index);
+      window.setTimeout(() => {
+        setCopiedIndex((current) => (current === index ? null : current));
+      }, 1600);
+    } catch (err) {
+      console.error('Clipboard copy failed:', err);
+      alert(t('interviews.copyFailed'));
+    }
   };
 
   const toggleSpeaker = (index) => {
@@ -618,9 +690,12 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div ref={mainContentRef} className="relative flex-1 flex overflow-hidden">
         {/* Left: Transcript View */}
-        <div className="w-2/3 flex flex-col bg-white">
+        <div
+          className="w-2/3 min-w-0 flex flex-col bg-white lg:w-auto"
+          style={isDesktopLayout ? { width: `calc(100% - ${insightsWidth}px)` } : undefined}
+        >
           <div className="flex-none bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
             <div className="flex items-center gap-2">
                {isUploadMode && transcriptData.length === 0 ? <UploadCloud className="text-emerald-500" size={20} /> : <Volume2 className="text-emerald-500" size={20} />}
@@ -734,7 +809,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                       <span>{entry.timestamp}</span>
                     </div>
                     
-                    <div className={`relative px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed ${isInterviewer ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none' : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none'}`}>
+                    <div className={`px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed ${isInterviewer ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none' : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none'}`}>
                       {isEditing ? (
                         <div className="flex flex-col gap-2 min-w-[250px]">
                           <textarea 
@@ -750,15 +825,25 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                           </div>
                         </div>
                       ) : (
-                        <>
-                          <p>{entry.text}</p>
-                          <button 
-                            onClick={() => { setEditingIndex(index); setEditValue(entry.text); }}
-                            className="absolute top-2 right-2 p-1 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                        </>
+                        <div className="flex items-start gap-3">
+                          <p className="min-w-0 flex-1">{entry.text}</p>
+                          <div className="flex flex-shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button
+                              onClick={() => handleCopyLine(entry.text, index)}
+                              title={copiedIndex === index ? t('interviews.copied') : t('interviews.copyLine')}
+                              className="p-1 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-all"
+                            >
+                              {copiedIndex === index ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                            <button 
+                              onClick={() => { setEditingIndex(index); setEditValue(entry.text); }}
+                              title={t('interviews.editLine')}
+                              className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -789,7 +874,10 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
         </div>
 
         {/* Right: AI Insights Panel */}
-        <div className="w-1/3 flex flex-col border-l border-gray-200 bg-gray-50 z-10 relative">
+        <div
+          className="w-1/3 flex min-w-0 flex-shrink-0 flex-col border-l border-gray-200 bg-gray-50 z-10 relative lg:w-auto"
+          style={isDesktopLayout ? { width: `${insightsWidth}px` } : undefined}
+        >
           <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2 bg-white">
             <Sparkles className="text-amber-500" size={20} />
             <h2 className="font-semibold text-gray-900">{t('interviews.aiInsights')}</h2>
@@ -973,6 +1061,28 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
             )}
           </div>
         </div>
+
+        {isDesktopLayout && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t('interviews.resizeInsightsPanel')}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setIsResizingInsights(true);
+            }}
+            className="absolute inset-y-0 z-20 w-4 -translate-x-1/2 cursor-col-resize"
+            style={{ left: `calc(100% - ${insightsWidth}px)` }}
+          >
+            <div className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isResizingInsights ? 'bg-blue-400' : 'bg-gray-200 hover:bg-blue-300'}`} />
+            <div className={`absolute left-1/2 top-1/2 flex h-10 w-3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-white shadow-sm transition-all ${isResizingInsights ? 'border-blue-300 text-blue-500' : 'border-gray-200 text-gray-300 hover:border-blue-200 hover:text-blue-400'}`}>
+              <div className="flex gap-0.5">
+                <span className="h-3.5 w-0.5 rounded-full bg-current" />
+                <span className="h-3.5 w-0.5 rounded-full bg-current" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
