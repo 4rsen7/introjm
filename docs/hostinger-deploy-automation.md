@@ -101,12 +101,31 @@ Required GitHub secrets:
 - `HOSTINGER_REPO_DIR`
 - `HOSTINGER_PUBLIC_HTML_DIR`
 - `HOSTINGER_SERVER_RESTART_COMMAND` (optional)
+- `HOSTINGER_DEPLOY_SETTLE_SECONDS` (optional)
+
+Frontend build secrets (recommended, so SSH deploy does not depend on hPanel env visibility):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_API_BASE_URL`
+- `VITE_LANDING_ORIGIN`
+- `VITE_APP_ORIGIN`
+
+Optional fallback secrets if you prefer reusing server-style names:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `CANONICAL_ORIGIN`
+- `APP_ORIGIN`
 
 Recommended values:
 
 - `HOSTINGER_REPO_DIR=/home/<user>/domains/iterojm.com/nodejs`
 - `HOSTINGER_PUBLIC_HTML_DIR=/home/<user>/domains/iterojm.com/public_html`
 - `HOSTINGER_DEPLOY_SETTLE_SECONDS=120` (optional, useful if Hostinger updates the `nodejs` checkout shortly after push)
+- `VITE_API_BASE_URL=https://iterojm.com/api`
+- `VITE_LANDING_ORIGIN=https://iterojm.com`
+- `VITE_APP_ORIGIN=https://app.iterojm.com`
 
 If you accidentally set `HOSTINGER_REPO_DIR` to `public_html`, the workflow now tries to auto-detect `.builds/source/repository`, but it is still better to store the exact repository path in the secret.
 
