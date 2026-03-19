@@ -102,6 +102,13 @@ Required GitHub secrets:
 - `HOSTINGER_PUBLIC_HTML_DIR`
 - `HOSTINGER_SERVER_RESTART_COMMAND` (optional)
 
+Recommended values:
+
+- `HOSTINGER_REPO_DIR=/home/<user>/domains/iterojm.com/public_html/.builds/source/repository`
+- `HOSTINGER_PUBLIC_HTML_DIR=/home/<user>/domains/iterojm.com/public_html`
+
+If you accidentally set `HOSTINGER_REPO_DIR` to `public_html`, the workflow now tries to auto-detect `.builds/source/repository`, but it is still better to store the exact repository path in the secret.
+
 ### How it works
 
 On every push to `main`, GitHub Actions:
@@ -121,3 +128,4 @@ This means:
 - The script uses `rsync --delete` when available, so old hashed assets are removed automatically.
 - If `rsync` is unavailable, it falls back to cleaning the target directory and copying files.
 - The backend restart is intentionally optional because Hostinger setups vary.
+- If you see `fatal: not a git repository`, it usually means `HOSTINGER_REPO_DIR` points to `public_html` instead of `.builds/source/repository`.
