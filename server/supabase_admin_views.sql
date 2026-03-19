@@ -20,7 +20,13 @@ RETURNS TABLE (
   res_new_users bigint,
   res_journeys_24h bigint,
   res_activation_rate numeric,
-  res_api_errors_24h bigint
+  res_api_errors_24h bigint,
+  res_total_transcriptions bigint,
+  res_avg_transcription_duration_seconds numeric,
+  res_longest_transcription_duration_seconds numeric,
+  res_total_transcription_estimated_cost_usd numeric,
+  res_transcription_duration_coverage bigint,
+  res_transcription_cost_coverage bigint
 )
 SECURITY DEFINER
 SET search_path = public
@@ -41,6 +47,19 @@ BEGIN
         AND j.created_at < p.created_at + interval '24 hours'
       ) as is_activated
     FROM profiles p
+  ),
+  transcription_stats AS (
+    SELECT
+      i.id,
+      CASE
+        WHEN jsonb_typeof(i.transcript_data) = 'array' THEN jsonb_array_length(i.transcript_data)
+        ELSE 0
+      END AS transcript_entry_count,
+      NULLIF(i.summary_data -> '_system' ->> 'durationSeconds', '')::numeric AS duration_seconds,
+      NULLIF(i.summary_data -> '_system' ->> 'estimatedCostUsd', '')::numeric AS estimated_cost_usd
+    FROM public.interviews i
+    WHERE jsonb_typeof(i.transcript_data) = 'array'
+      AND jsonb_array_length(i.transcript_data) > 0
   )
   SELECT
     1::int as res_id,
@@ -55,7 +74,31 @@ BEGIN
     COALESCE(
       (SELECT count(*)::bigint FROM public.system_logs WHERE level = 'error' AND created_at > now() - interval '24 hours'),
       0::bigint
-    ) as res_api_errors_24h;
+    ) as res_api_errors_24h,
+    COALESCE(
+      (SELECT count(*)::bigint FROM transcription_stats),
+      0::bigint
+    ) as res_total_transcriptions,
+    COALESCE(
+      (SELECT round(avg(duration_seconds), 1) FROM transcription_stats WHERE duration_seconds IS NOT NULL),
+      0::numeric
+    ) as res_avg_transcription_duration_seconds,
+    COALESCE(
+      (SELECT max(duration_seconds) FROM transcription_stats WHERE duration_seconds IS NOT NULL),
+      0::numeric
+    ) as res_longest_transcription_duration_seconds,
+    COALESCE(
+      (SELECT round(sum(estimated_cost_usd), 6) FROM transcription_stats WHERE estimated_cost_usd IS NOT NULL),
+      0::numeric
+    ) as res_total_transcription_estimated_cost_usd,
+    COALESCE(
+      (SELECT count(*)::bigint FROM transcription_stats WHERE duration_seconds IS NOT NULL),
+      0::bigint
+    ) as res_transcription_duration_coverage,
+    COALESCE(
+      (SELECT count(*)::bigint FROM transcription_stats WHERE estimated_cost_usd IS NOT NULL),
+      0::bigint
+    ) as res_transcription_cost_coverage;
 END;
 $$;
 
@@ -68,7 +111,13 @@ SELECT
   res_new_users as new_users_last_30d,
   res_journeys_24h as journeys_created_24h,
   res_activation_rate as activation_rate,
-  res_api_errors_24h as api_errors_24h
+  res_api_errors_24h as api_errors_24h,
+  res_total_transcriptions as total_transcriptions,
+  res_avg_transcription_duration_seconds as avg_transcription_duration_seconds,
+  res_longest_transcription_duration_seconds as longest_transcription_duration_seconds,
+  res_total_transcription_estimated_cost_usd as total_transcription_estimated_cost_usd,
+  res_transcription_duration_coverage as transcription_duration_coverage,
+  res_transcription_cost_coverage as transcription_cost_coverage
 FROM public.get_admin_dashboard_stats();
 
 -- 4. Функція Графіка
@@ -76,6 +125,7 @@ CREATE OR REPLACE FUNCTION public.get_admin_chart_data()
 RETURNS TABLE (
   res_id bigint,
   res_date text,
+  res_metric text,
   res_value bigint
 )
 SECURITY DEFINER
@@ -89,13 +139,50 @@ BEGIN
 
   RETURN QUERY
   SELECT
-    row_number() OVER () as res_id,
-    to_char(created_at, 'YYYY-MM-DD') as res_date,
-    count(*)::bigint as res_value
-  FROM profiles
-  WHERE created_at > now() - interval '30 days'
-  GROUP BY 2
-  ORDER BY 2;
+    row_number() OVER (ORDER BY chart_rows.metric_date, chart_rows.metric_name) as res_id,
+    to_char(chart_rows.metric_date, 'YYYY-MM-DD') as res_date,
+    chart_rows.metric_name as res_metric,
+    chart_rows.metric_value as res_value
+  FROM (
+    SELECT
+      created_at::date as metric_date,
+      'users'::text as metric_name,
+      count(*)::bigint as metric_value
+    FROM public.profiles
+    WHERE created_at >= now() - interval '90 days'
+    GROUP BY 1
+
+    UNION ALL
+
+    SELECT
+      created_at::date as metric_date,
+      'journeys'::text as metric_name,
+      count(*)::bigint as metric_value
+    FROM public.journeys
+    WHERE created_at >= now() - interval '90 days'
+    GROUP BY 1
+
+    UNION ALL
+
+    SELECT
+      COALESCE(
+        NULLIF(i.summary_data -> '_system' ->> 'generatedAt', '')::timestamptz,
+        i.updated_at,
+        i.created_at
+      )::date as metric_date,
+      'transcriptions'::text as metric_name,
+      count(*)::bigint as metric_value
+    FROM public.interviews i
+    WHERE jsonb_typeof(i.transcript_data) = 'array'
+      AND jsonb_array_length(i.transcript_data) > 0
+      AND COALESCE(
+        NULLIF(i.summary_data -> '_system' ->> 'generatedAt', '')::timestamptz,
+        i.updated_at,
+        i.created_at
+      ) >= now() - interval '90 days'
+    GROUP BY 1
+  ) as chart_rows
+  ORDER BY chart_rows.metric_date, chart_rows.metric_name;
 END;
 $$;
 
@@ -104,6 +191,7 @@ CREATE VIEW public.admin_chart_data WITH (security_invoker = true) AS
 SELECT
   res_id as id,
   res_date as date,
+  res_metric as metric,
   res_value as value
 FROM public.get_admin_chart_data();
 

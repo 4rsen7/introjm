@@ -1,13 +1,28 @@
 import React, { useContext, useEffect, useState, useMemo } from "react";
 import { Row, Col, Card, Spin, Alert, Segmented, DatePicker, Space } from "antd";
 import type { Dayjs } from "dayjs";
-import { UserOutlined, GlobalOutlined, RiseOutlined, CloudServerOutlined, CalendarOutlined } from "@ant-design/icons";
-import { Area } from "@ant-design/plots";
+import { UserOutlined, GlobalOutlined, RiseOutlined, CloudServerOutlined, CalendarOutlined, FileTextOutlined } from "@ant-design/icons";
+import { Line } from "@ant-design/plots";
 import dayjs from "dayjs";
 import { supabaseClient } from "../../providers/supabase-client";
 import { ColorModeContext } from "../../contexts/color-mode";
 
 const { RangePicker } = DatePicker;
+
+const CHART_METRICS = ["users", "journeys", "transcriptions"] as const;
+type ChartMetric = (typeof CHART_METRICS)[number];
+
+const CHART_METRIC_LABELS: Record<ChartMetric, string> = {
+  users: "Users",
+  journeys: "Journeys",
+  transcriptions: "Transcriptions",
+};
+
+const CHART_METRIC_COLORS: Record<ChartMetric, string> = {
+  users: "#3E7BFA",
+  journeys: "#14B8A6",
+  transcriptions: "#F59E0B",
+};
 
 interface DashboardStats {
   total_users: number;
@@ -16,41 +31,92 @@ interface DashboardStats {
   journeys_created_24h: number;
   activation_rate: number;
   api_errors_24h: number;
+  total_transcriptions: number;
+  avg_transcription_duration_seconds: number;
+  longest_transcription_duration_seconds: number;
+  total_transcription_estimated_cost_usd: number;
+  transcription_duration_coverage: number;
+  transcription_cost_coverage: number;
   res_total_users?: number;
   res_total_journeys?: number;
   res_new_users?: number;
   res_journeys_24h?: number;
   res_activation_rate?: number;
   res_api_errors_24h?: number;
+  res_total_transcriptions?: number;
+  res_avg_transcription_duration_seconds?: number;
+  res_longest_transcription_duration_seconds?: number;
+  res_total_transcription_estimated_cost_usd?: number;
+  res_transcription_duration_coverage?: number;
+  res_transcription_cost_coverage?: number;
 }
 
 interface ChartData {
   date: string;
+  metric: ChartMetric;
   value: number;
 }
 
-// Заповнюємо всі дні в діапазоні [start, end], значення з data або 0
+function normalizeChartMetric(metric: unknown): ChartMetric {
+  return CHART_METRICS.includes(metric as ChartMetric) ? (metric as ChartMetric) : "users";
+}
+
+function formatDuration(seconds?: number | null) {
+  const safeSeconds = Number(seconds);
+  if (!Number.isFinite(safeSeconds) || safeSeconds <= 0) return "—";
+
+  const totalSeconds = Math.round(safeSeconds);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${remainingSeconds}s`;
+  return `${remainingSeconds}s`;
+}
+
+function formatCurrency(value?: number | null) {
+  const safeValue = Number(value);
+  if (!Number.isFinite(safeValue)) return "Not tracked";
+  return safeValue.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: safeValue >= 100 ? 0 : 2,
+    maximumFractionDigits: safeValue >= 100 ? 0 : 2,
+  });
+}
+
+// Заповнюємо всі дні в діапазоні [start, end], значення з data або 0 для всіх серій
 function fillMissingDatesInRange(
   data: any[],
   start: Date,
   end: Date
 ): ChartData[] {
   const filled: ChartData[] = [];
-  const cur = new Date(start);
-  cur.setHours(0, 0, 0, 0);
-  const endTime = new Date(end);
-  endTime.setHours(0, 0, 0, 0);
-  while (cur <= endTime) {
-    const dateStr = cur.toISOString().split("T")[0];
-    const found = data.find(
-      (item) => (item.date === dateStr) || (item.res_date === dateStr)
-    );
-    filled.push({
-      date: dateStr,
-      value: found ? Number(found.value ?? found.res_value) : 0,
+  const lookup = new Map<string, number>();
+
+  data.forEach((item) => {
+    const date = String(item.date ?? item.res_date ?? "");
+    if (!date) return;
+    const metric = normalizeChartMetric(item.metric ?? item.res_metric);
+    lookup.set(`${date}:${metric}`, Number(item.value ?? item.res_value ?? 0));
+  });
+
+  let cursor = dayjs(start).startOf("day");
+  const lastDay = dayjs(end).startOf("day");
+
+  while (cursor.isBefore(lastDay) || cursor.isSame(lastDay, "day")) {
+    const dateStr = cursor.format("YYYY-MM-DD");
+    CHART_METRICS.forEach((metric) => {
+      filled.push({
+        date: dateStr,
+        metric,
+        value: lookup.get(`${dateStr}:${metric}`) ?? 0,
+      });
     });
-    cur.setDate(cur.getDate() + 1);
+    cursor = cursor.add(1, "day");
   }
+
   return filled;
 }
 
@@ -105,6 +171,22 @@ const StatCard = ({ title, value, icon, trend, trendColor = "#4ADE80", suffix, i
   );
 };
 
+const DetailRow = ({ label, value, valueColor, isDark, border = true }: any) => (
+  <div
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+      paddingBottom: border ? 12 : 0,
+      borderBottom: border ? (isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #e5e7eb") : "none",
+    }}
+  >
+    <span style={{ color: isDark ? "rgba(255,255,255,0.45)" : "#6b7280", fontSize: 13 }}>{label}</span>
+    <span style={{ fontSize: 16, fontWeight: 600, color: valueColor ?? (isDark ? "#fff" : "rgba(0,0,0,0.88)") }}>{value}</span>
+  </div>
+);
+
 export const DashboardPage: React.FC = () => {
   const { mode } = useContext(ColorModeContext);
   const isDark = mode === "dark";
@@ -115,7 +197,13 @@ export const DashboardPage: React.FC = () => {
     new_users_last_30d: 0,
     journeys_created_24h: 0,
     activation_rate: 0,
-    api_errors_24h: 0
+    api_errors_24h: 0,
+    total_transcriptions: 0,
+    avg_transcription_duration_seconds: 0,
+    longest_transcription_duration_seconds: 0,
+    total_transcription_estimated_cost_usd: 0,
+    transcription_duration_coverage: 0,
+    transcription_cost_coverage: 0,
   });
   
   const [rawChartData, setRawChartData] = useState<any[]>([]);
@@ -153,9 +241,20 @@ export const DashboardPage: React.FC = () => {
             journeys_created_24h: Number(statsData.journeys_created_24h ?? statsData.res_journeys_24h ?? 0),
             activation_rate: Number(statsData.activation_rate ?? statsData.res_activation_rate ?? 0),
             api_errors_24h: Number(statsData.api_errors_24h ?? statsData.res_api_errors_24h ?? 0),
+            total_transcriptions: Number(statsData.total_transcriptions ?? statsData.res_total_transcriptions ?? 0),
+            avg_transcription_duration_seconds: Number(statsData.avg_transcription_duration_seconds ?? statsData.res_avg_transcription_duration_seconds ?? 0),
+            longest_transcription_duration_seconds: Number(statsData.longest_transcription_duration_seconds ?? statsData.res_longest_transcription_duration_seconds ?? 0),
+            total_transcription_estimated_cost_usd: Number(statsData.total_transcription_estimated_cost_usd ?? statsData.res_total_transcription_estimated_cost_usd ?? 0),
+            transcription_duration_coverage: Number(statsData.transcription_duration_coverage ?? statsData.res_transcription_duration_coverage ?? 0),
+            transcription_cost_coverage: Number(statsData.transcription_cost_coverage ?? statsData.res_transcription_cost_coverage ?? 0),
           });
         }
-        setRawChartData(chartRes ?? []);
+        setRawChartData(
+          (chartRes ?? []).map((item) => ({
+            ...item,
+            metric: normalizeChartMetric(item.metric ?? item.res_metric),
+          }))
+        );
       } catch (err: any) {
         console.error("Dashboard Fetch Error:", err);
         setErrorMsg(err.message);
@@ -190,38 +289,39 @@ export const DashboardPage: React.FC = () => {
   const axisStroke = isDark ? "rgba(255, 255, 255, 0.08)" : "#d1d5db";
   const textColor = isDark ? "rgba(255,255,255,0.65)" : "#6b7280";
   const formatDateLabel = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const parsed = dayjs(dateStr);
+    return parsed.isValid() ? parsed.format("MMM D") : dateStr;
   };
   const chartConfig = {
     data: chartData,
     xField: "date",
     yField: "value",
+    seriesField: "metric",
     smooth: true,
-    color: "#3E7BFA",
+    color: ({ metric }: { metric: ChartMetric }) => CHART_METRIC_COLORS[metric],
     line: {
       size: 2.5,
       style: { lineCap: "round", lineJoin: "round" },
     },
-    areaStyle: () => ({
-      fill: "l(270) 0:#3E7BFA 0.5:rgba(62, 123, 250, 0.25) 1:rgba(62, 123, 250, 0.02)",
-    }),
     point: {
-      size: 4,
+      size: 3,
       shape: "circle",
-      style: {
-        fill: "#3E7BFA",
+      style: ({ metric }: { metric: ChartMetric }) => ({
+        fill: CHART_METRIC_COLORS[metric],
         stroke: isDark ? "#16181D" : "#ffffff",
         lineWidth: 2,
-      },
+      }),
+    },
+    legend: {
+      position: "top",
     },
     tooltip: {
       title: (title: string) => {
-        const d = new Date(title);
-        return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+        const parsed = dayjs(title);
+        return parsed.isValid() ? parsed.format("ddd, MMM D, YYYY") : title;
       },
-      formatter: (datum: { value: number }) => ({
-        name: "Registrations",
+      formatter: (datum: { metric: ChartMetric; value: number }) => ({
+        name: CHART_METRIC_LABELS[datum.metric],
         value: String(datum.value),
       }),
       domStyles: {
@@ -251,7 +351,7 @@ export const DashboardPage: React.FC = () => {
         autoHide: true,
         autoRotate: false,
         formatter: (v: string) => formatDateLabel(v),
-        style: { fill: "#ffffff", fontSize: 11 },
+        style: { fill: textColor, fontSize: 11 },
       },
       line: { style: { stroke: axisStroke } },
       range: [0, 1],
@@ -261,7 +361,7 @@ export const DashboardPage: React.FC = () => {
       tickCount: 5,
       label: {
         formatter: (v: string) => Math.round(Number(v)).toString(),
-        style: { fill: "#ffffff", fontSize: 11 },
+        style: { fill: textColor, fontSize: 11 },
       },
       grid: { line: { style: { stroke: gridStroke, lineDash: [4, 4] } } },
     },
@@ -286,6 +386,14 @@ export const DashboardPage: React.FC = () => {
   const isHealthy = stats.api_errors_24h === 0;
   const healthValue = isHealthy ? "100%" : `${Math.max(100 - (stats.api_errors_24h * 5), 0).toFixed(1)}%`; // -5% за кожну помилку
   const healthTrend = isHealthy ? "All systems operational" : `${stats.api_errors_24h} errors in last 24h`;
+  const transcriptionAvgDuration = formatDuration(stats.avg_transcription_duration_seconds);
+  const transcriptionLongestDuration = formatDuration(stats.longest_transcription_duration_seconds);
+  const transcriptionCostLabel = stats.transcription_cost_coverage > 0
+    ? formatCurrency(stats.total_transcription_estimated_cost_usd)
+    : "Not tracked";
+  const transcriptionTrend = stats.transcription_duration_coverage > 0
+    ? `${transcriptionAvgDuration} avg recording`
+    : "Duration metadata pending";
 
   return (
     <div style={{ padding: 24 }}>
@@ -293,7 +401,7 @@ export const DashboardPage: React.FC = () => {
       
       {/* Cards */}
       <Row gutter={[16, 16]}>
-        <Col span={6}>
+        <Col flex="1 1 220px">
           <StatCard 
             title="Total Users" 
             value={stats.total_users} 
@@ -302,7 +410,7 @@ export const DashboardPage: React.FC = () => {
             isDark={isDark}
           />
         </Col>
-        <Col span={6}>
+        <Col flex="1 1 220px">
           <StatCard 
             title="Total Journeys" 
             value={stats.total_journeys} 
@@ -311,7 +419,7 @@ export const DashboardPage: React.FC = () => {
             isDark={isDark}
           />
         </Col>
-        <Col span={6}>
+        <Col flex="1 1 220px">
           <StatCard 
             title="New Users (30d)" 
             value={stats.new_users_last_30d} 
@@ -321,7 +429,17 @@ export const DashboardPage: React.FC = () => {
             isDark={isDark}
           />
         </Col>
-        <Col span={6}>
+        <Col flex="1 1 220px">
+          <StatCard 
+            title="Total Transcriptions" 
+            value={stats.total_transcriptions} 
+            icon={<FileTextOutlined />}
+            trend={transcriptionTrend}
+            trendColor="#F59E0B"
+            isDark={isDark}
+          />
+        </Col>
+        <Col flex="1 1 220px">
           <StatCard 
             title="System Health" 
             value={healthValue} 
@@ -339,7 +457,7 @@ export const DashboardPage: React.FC = () => {
         <Col span={16}>
           <Card 
             className="dashboard-user-growth-chart"
-            title="User Growth (Registrations)" 
+            title="Platform Activity Trends" 
             extra={
               <Space wrap size="middle" align="center">
                 <Segmented
@@ -366,26 +484,73 @@ export const DashboardPage: React.FC = () => {
             }
             style={{ overflow: "hidden" }}
           >
-             <Area {...chartConfig} />
+             <Line {...chartConfig} />
           </Card>
         </Col>
         <Col span={8}>
-          <Card title="Product Health">
-             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #e5e7eb" }}>
-                  <span style={{ color: isDark ? "rgba(255,255,255,0.45)" : "#6b7280", fontSize: 13 }}>Activation Rate (24h)</span>
-                  <span style={{ fontSize: 18, fontWeight: 600, color: isDark ? "#fff" : "rgba(0,0,0,0.88)" }}>{stats.activation_rate}%</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 12, borderBottom: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid #e5e7eb" }}>
-                  <span style={{ color: isDark ? "rgba(255,255,255,0.45)" : "#6b7280", fontSize: 13 }}>API Errors (24h)</span>
-                  <span style={{ fontSize: 18, fontWeight: 600, color: stats.api_errors_24h > 0 ? "#ef4444" : "#22c55e" }}>{stats.api_errors_24h}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: isDark ? "rgba(255,255,255,0.45)" : "#6b7280", fontSize: 13 }}>Export Actions</span>
-                  <span style={{ fontSize: 14, color: isDark ? "rgba(255,255,255,0.25)" : "#9ca3af" }}>Not tracked</span>
-                </div>
-             </div>
-          </Card>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <Card title="Product Health">
+               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <DetailRow
+                    label="Activation Rate (24h)"
+                    value={`${stats.activation_rate}%`}
+                    isDark={isDark}
+                  />
+                  <DetailRow
+                    label="API Errors (24h)"
+                    value={stats.api_errors_24h}
+                    valueColor={stats.api_errors_24h > 0 ? "#ef4444" : "#22c55e"}
+                    isDark={isDark}
+                  />
+                  <DetailRow
+                    label="Export Actions"
+                    value="Not tracked"
+                    valueColor={isDark ? "rgba(255,255,255,0.25)" : "#9ca3af"}
+                    isDark={isDark}
+                    border={false}
+                  />
+               </div>
+            </Card>
+
+            <Card title="Transcription Analytics">
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <DetailRow
+                  label="Total Transcriptions"
+                  value={stats.total_transcriptions}
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Estimated Cost"
+                  value={transcriptionCostLabel}
+                  valueColor={stats.transcription_cost_coverage > 0 ? "#F59E0B" : (isDark ? "rgba(255,255,255,0.25)" : "#9ca3af")}
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Avg Recording Length"
+                  value={transcriptionAvgDuration}
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Longest Recording"
+                  value={transcriptionLongestDuration}
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Token Usage"
+                  value="Not tracked"
+                  valueColor={isDark ? "rgba(255,255,255,0.25)" : "#9ca3af"}
+                  isDark={isDark}
+                  border={false}
+                />
+              </div>
+
+              <div style={{ marginTop: 16, fontSize: 12, color: isDark ? "rgba(255,255,255,0.45)" : "#6b7280", lineHeight: 1.5 }}>
+                Duration coverage: {stats.transcription_duration_coverage}/{stats.total_transcriptions || 0}
+                {" · "}
+                Cost coverage: {stats.transcription_cost_coverage}/{stats.total_transcriptions || 0}
+              </div>
+            </Card>
+          </div>
         </Col>
       </Row>
     </div>
