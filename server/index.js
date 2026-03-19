@@ -3638,56 +3638,47 @@ ${conversationText}
 });
 
 const upload = multer({ dest: 'uploads/' });
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const safeDeleteFile = (filePath) => {
+    if (!filePath) return;
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    } catch (err) {
+        console.warn(`Failed to delete temp file ${filePath}:`, err.message);
+    }
+};
 
-// 7. Upload Audio and Transcribe
-app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req, res) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    const { id } = req.params;
-    
-    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
-    if (!req.file) return res.status(400).json({ status: 'error', message: 'No audio file uploaded.' });
+const processInterviewAudioUpload = async ({ interviewId, file }) => {
+    let geminiFileId = null;
+    let fileManager = null;
 
     try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
-
-        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews')
-            .select('id, workspace_id, type')
-            .eq('id', id).single();
-            
-        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
-
-        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
-        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
-
         if (!process.env.GEMINI_API_KEY) {
-             throw new Error("GEMINI_API_KEY is not configured.");
+            throw new Error("GEMINI_API_KEY is not configured.");
         }
-        
-        const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
+        fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-        // Step 1: Upload to Google AI
-        const uploadResponse = await fileManager.uploadFile(req.file.path, {
-            mimeType: req.file.mimetype,
-            displayName: req.file.originalname,
+        const uploadResponse = await fileManager.uploadFile(file.path, {
+            mimeType: file.mimetype,
+            displayName: file.originalname,
         });
-        const geminiFileId = uploadResponse.file.name;
-        
-        // Step 2: Wait for processing (Files typically need a few seconds to process if they are large)
+        geminiFileId = uploadResponse.file.name;
+
         let fileStatus = await fileManager.getFile(geminiFileId);
         while (fileStatus.state === "PROCESSING") {
-             process.stdout.write(".");
-             await new Promise((resolve) => setTimeout(resolve, 5000)); // sleep 5s
-             fileStatus = await fileManager.getFile(geminiFileId);
+            await sleep(5000);
+            fileStatus = await fileManager.getFile(geminiFileId);
         }
-        
+
         if (fileStatus.state === "FAILED") {
             throw new Error("Audio processing failed on Gemini servers.");
         }
 
-        // Step 3: Prompt for Transcription
         const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
         Estimate the general speaker roles (e.g. "Interviewer" vs "Respondent"). 
         Estimate the local timestamp of each message starting from "00:00" relative to the start of the audio.
@@ -3706,14 +3697,14 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
             },
             { text: prompt },
         ]);
-        
+
         const responseText = result.response.text();
-        
+
         let newTranscriptData;
         try {
             const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
             newTranscriptData = JSON.parse(cleanJsonString);
-            
+
             if (!Array.isArray(newTranscriptData)) {
                 throw new Error("Parsed data is not an array");
             }
@@ -3723,35 +3714,97 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
             throw new Error("AI returned an invalid transcript format.");
         }
 
-        // Clean up locally
-        fs.unlinkSync(req.file.path);
-        
-        // Update database with transcript and set status to completed
-        const { data, error } = await supabaseAdmin.from('interviews')
-            .update({ 
-                transcript_data: newTranscriptData, 
+        const { error } = await supabaseAdmin.from('interviews')
+            .update({
+                transcript_data: newTranscriptData,
+                summary_data: null,
                 status: 'completed',
-                updated_at: new Date().toISOString() 
+                updated_at: new Date().toISOString()
             })
+            .eq('id', interviewId);
+
+        if (error) throw error;
+    } catch (err) {
+        logSystemError(err, `ASYNC interview upload ${interviewId}`);
+        await supabaseAdmin.from('interviews')
+            .update({
+                status: 'failed',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', interviewId);
+    } finally {
+        safeDeleteFile(file.path);
+
+        if (fileManager && geminiFileId) {
+            try {
+                await fileManager.deleteFile(geminiFileId);
+            } catch (cleanupErr) {
+                console.warn("Could not delete file from Google AI Studio:", cleanupErr.message);
+            }
+        }
+    }
+};
+
+// 7. Upload Audio and Transcribe
+app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    if (!req.file) return res.status(400).json({ status: 'error', message: 'No audio file uploaded.' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews')
+            .select('*')
+            .eq('id', id).single();
+            
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        if (existing.status === 'processing') {
+            safeDeleteFile(req.file.path);
+            return res.status(409).json({ status: 'error', error: 'Transcription is already in progress for this interview.' });
+        }
+
+        const processingPayload = {
+            transcript_data: [],
+            summary_data: null,
+            status: 'processing',
+            updated_at: new Date().toISOString()
+        };
+
+        const { data: updatedInterview, error: updateError } = await supabaseAdmin.from('interviews')
+            .update(processingPayload)
             .eq('id', existing.id)
             .select()
             .single();
 
-        if (error) throw error;
-        
-        // Try to clean up from Google AI servers
-        try {
-            await fileManager.deleteFile(geminiFileId);
-        } catch (cleanupErr) {
-            console.warn("Could not delete file from Google AI Studio:", cleanupErr.message);
-        }
+        if (updateError) throw updateError;
 
-        res.json({ status: 'success', data });
+        const uploadFile = {
+            path: req.file.path,
+            mimetype: req.file.mimetype,
+            originalname: req.file.originalname,
+        };
+
+        setImmediate(() => {
+            processInterviewAudioUpload({
+                interviewId: existing.id,
+                file: uploadFile,
+            }).catch((backgroundErr) => {
+                logSystemError(backgroundErr, `ASYNC interview upload dispatch ${existing.id}`);
+            });
+        });
+
+        res.status(202).json({ status: 'accepted', data: updatedInterview });
     } catch (err) {
         logSystemError(err, `POST /api/interviews/${id}/upload-audio`);
-        if (req.file && fs.existsSync(req.file.path)) {
-             fs.unlinkSync(req.file.path); // cleanup on error
-        }
+        safeDeleteFile(req.file?.path);
         res.status(500).json({ status: 'error', error: err.message });
     }
 });

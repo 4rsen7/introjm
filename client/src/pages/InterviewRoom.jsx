@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio } from 'lucide-react';
@@ -165,6 +165,19 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState('');
   const normalizedSummary = useMemo(() => normalizeInterviewSummary(interview?.summary_data), [interview?.summary_data]);
+  const uploadFailureShownRef = useRef(false);
+  const interviewStatusLabel = useMemo(() => {
+    switch (interview?.status) {
+      case 'processing':
+        return t('interviews.statusProcessing');
+      case 'completed':
+        return t('interviews.statusCompleted');
+      case 'failed':
+        return t('interviews.statusFailed');
+      default:
+        return t('interviews.statusDraft');
+    }
+  }, [interview?.status, t]);
 
   const handleTitleSave = () => {
     if (editedTitle.trim() !== interview.title && editedTitle.trim() !== '') {
@@ -174,30 +187,83 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     setIsEditingTitle(false);
   };
 
-  // Fetch Interview
-  useEffect(() => {
-    async function fetchInterview() {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${API_URL}/interviews/${id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const json = await res.json();
-        if (res.ok && json.data) {
-          setInterview(json.data);
-          setTranscriptData(json.data.transcript_data || []);
-        } else {
-          alert('Interview not found');
-          navigate('/interviews');
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
+  const fetchInterview = useCallback(async ({ redirectOnMissing = true, settleLoading = false } = {}) => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/interviews/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const json = await res.json();
+      if (res.ok && json.data) {
+        setInterview(json.data);
+        setTranscriptData(json.data.transcript_data || []);
+        transcriptDataRef.current = json.data.transcript_data || [];
+        return json.data;
+      }
+
+      if (redirectOnMissing) {
+        alert('Interview not found');
+        navigate('/interviews');
+      }
+      return null;
+    } catch (err) {
+      console.error(err);
+      return null;
+    } finally {
+      if (settleLoading) {
         setLoading(false);
       }
     }
-    fetchInterview();
   }, [id, navigate]);
+
+  // Fetch Interview
+  useEffect(() => {
+    fetchInterview({ settleLoading: true });
+  }, [fetchInterview]);
+
+  useEffect(() => {
+    if (loading || !isUploadMode || !interview || interview.status !== 'processing') {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let timerId;
+
+    const pollInterview = async () => {
+      const data = await fetchInterview({ redirectOnMissing: false });
+      if (cancelled || !data) return;
+
+      if (data.status === 'completed' && Array.isArray(data.transcript_data) && data.transcript_data.length > 0) {
+        uploadFailureShownRef.current = false;
+        setSelectedFile(null);
+        setUploadStage(1);
+        navigate(`/interviews/${id}`, { replace: true });
+        queryClient.invalidateQueries(['interviews']);
+        return;
+      }
+
+      if (data.status === 'failed') {
+        setUploadStage(1);
+        if (!uploadFailureShownRef.current) {
+          uploadFailureShownRef.current = true;
+          alert(t('interviews.transcriptionFailed'));
+        }
+        queryClient.invalidateQueries(['interviews']);
+        return;
+      }
+
+      timerId = window.setTimeout(pollInterview, 4000);
+    };
+
+    pollInterview();
+
+    return () => {
+      cancelled = true;
+      if (timerId) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [fetchInterview, id, interview?.status, isUploadMode, loading, navigate, queryClient, t]);
 
   // Setup Speech Recognition
   useEffect(() => {
@@ -408,6 +474,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     if (!selectedFile) return;
     setIsUploading(true);
     setUploadStage(1);
+    uploadFailureShownRef.current = false;
     
     // Simulate stages since we don't have Server-Sent Events from backend
     // Stage 1: Uploading (0 - 3s)
@@ -420,6 +487,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     formData.append('audio', selectedFile);
 
     try {
+      let acceptedForProcessing = false;
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}/interviews/${id}/upload-audio`, {
         method: 'POST',
@@ -431,24 +499,29 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
 
       const json = await res.json();
       
-      if (res.ok && json.data) {
+      if ((res.status === 202 || res.ok) && json.data) {
+        acceptedForProcessing = true;
+        setInterview(json.data);
         setTranscriptData(json.data.transcript_data || []);
         transcriptDataRef.current = json.data.transcript_data || [];
-        setInterview(json.data);
         setSelectedFile(null);
-        navigate(`/interviews/${id}`, { replace: true });
         queryClient.invalidateQueries(['interviews']);
+        setUploadStage(2);
       } else {
         alert(json.error || 'Failed to process audio file');
+      }
+
+      if (!acceptedForProcessing) {
+        setUploadStage(1);
       }
     } catch (err) {
       console.error('Upload error:', err);
       alert('Network error while uploading.');
+      setUploadStage(1);
     } finally {
       clearTimeout(stageTimer1);
       clearTimeout(stageTimer2);
       setIsUploading(false);
-      setUploadStage(1);
     }
   };
 
@@ -462,6 +535,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   if (!interview) return null;
 
   const isCompleted = interview.status === 'completed';
+  const isUploadProcessing = isUploadMode && transcriptData.length === 0 && (isUploading || interview.status === 'processing');
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white">
@@ -502,8 +576,8 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                   <><span className="w-2 h-2 rounded-full bg-green-500 shadow-sm animate-pulse"></span> {t('interviews.ready')}</>
                 )}
               </span>
-              <span className={`px-2 py-0.5 rounded capitalize border ${isCompleted ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-800 border-yellow-200'}`}>
-                {interview.status || 'draft'}
+              <span className={`px-2 py-0.5 rounded capitalize border ${isCompleted ? 'bg-green-50 text-green-700 border-green-200' : interview.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-800 border-yellow-200'}`}>
+                {interviewStatusLabel}
               </span>
               <span className="text-gray-500 whitespace-nowrap">{new Date(interview.created_at).toLocaleDateString()}</span>
             </div>
@@ -564,7 +638,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                 onDragLeave={handleDrag}
                 onDrop={handleDrop}
               >
-                {isUploading ? (
+                {isUploadProcessing ? (
                   <div className="flex flex-col items-center gap-4">
                     <div className="relative flex items-center justify-center py-4">
                       <div className="absolute inset-0 bg-emerald-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
@@ -572,14 +646,26 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-gray-900 animate-pulse">
-                        {uploadStage === 1 && t('interviews.uploadStage1')}
-                        {uploadStage === 2 && t('interviews.uploadStage2')}
-                        {uploadStage === 3 && t('interviews.uploadStage3')}
+                        {isUploading ? (
+                          <>
+                            {uploadStage === 1 && t('interviews.uploadStage1')}
+                            {uploadStage === 2 && t('interviews.uploadStage2')}
+                            {uploadStage === 3 && t('interviews.uploadStage3')}
+                          </>
+                        ) : (
+                          t('interviews.transcribing')
+                        )}
                       </h3>
                       <p className="text-gray-500 mt-2 transition-opacity duration-300">
-                        {uploadStage === 1 && t('interviews.uploadStage1Desc')}
-                        {uploadStage === 2 && t('interviews.uploadStage2Desc')}
-                        {uploadStage === 3 && t('interviews.uploadStage3Desc')}
+                        {isUploading ? (
+                          <>
+                            {uploadStage === 1 && t('interviews.uploadStage1Desc')}
+                            {uploadStage === 2 && t('interviews.uploadStage2Desc')}
+                            {uploadStage === 3 && t('interviews.uploadStage3Desc')}
+                          </>
+                        ) : (
+                          t('interviews.transcribingDesc')
+                        )}
                       </p>
                     </div>
                   </div>
