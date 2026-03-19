@@ -252,6 +252,8 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   // Transcript State
   const [transcriptData, setTranscriptData] = useState([]);
   const transcriptDataRef = useRef([]); // Ref to hold latest state for auto-save
+  const prevTranscriptLengthRef = useRef(0);
+  const prevLastTranscriptIdRef = useRef(null);
   const [currentLine, setCurrentLine] = useState('');
   const [editingIndex, setEditingIndex] = useState(null);
   const [editValue, setEditValue] = useState('');
@@ -418,9 +420,23 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     }
   }, []);
 
-  // Auto-scroll
+  // Auto-scroll only for live transcript updates and newly appended lines.
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const prevLength = prevTranscriptLengthRef.current;
+    const prevLastId = prevLastTranscriptIdRef.current;
+    const lastEntry = transcriptData[transcriptData.length - 1];
+    const nextLastId = lastEntry?.id ?? null;
+    const appendedNewEntry =
+      transcriptData.length > prevLength ||
+      (transcriptData.length > 0 && nextLastId !== prevLastId && transcriptData.length === prevLength);
+    const hasLiveTranscript = Boolean(currentLine);
+
+    if (appendedNewEntry || hasLiveTranscript) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    prevTranscriptLengthRef.current = transcriptData.length;
+    prevLastTranscriptIdRef.current = nextLastId;
   }, [transcriptData, currentLine]);
 
   useEffect(() => {

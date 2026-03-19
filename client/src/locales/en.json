@@ -59,7 +59,7 @@
     "uploadStage1": "Uploading to secure cloud...",
     "uploadStage1Desc": "Transferring your media file safely to our processing servers.",
     "uploadStage2": "Analyzing Audio...",
-    "uploadStage2Desc": "Google Gemini 2.5 Pro is processing speech patterns and separating speakers.",
+    "uploadStage2Desc": "AI is processing the recording and preparing the transcript structure.",
     "uploadStage3": "Generating structured transcript...",
     "uploadStage3Desc": "Finalizing the timestamps and text formatting. Almost done!",
     "dragDrop": "Drag and drop audio file here",

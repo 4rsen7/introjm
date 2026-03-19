@@ -202,6 +202,7 @@ const allowedOrigins = [
 
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
 
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -221,6 +222,122 @@ function withInterviewSystemState(summaryData, nextSystemState) {
     }
     baseSummary[INTERVIEW_SYSTEM_KEY] = nextSystemState;
     return baseSummary;
+}
+
+function formatTranscriptTimestamp(totalSeconds) {
+    const safeSeconds = Number.isFinite(totalSeconds) ? Math.max(0, totalSeconds) : 0;
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const seconds = Math.floor(safeSeconds % 60);
+    const base = [minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+    return hours > 0 ? `${String(hours).padStart(2, '0')}:${base}` : base;
+}
+
+function splitTranscriptTextIntoEntries(text, durationSeconds) {
+    const cleaned = String(text || '').trim();
+    if (!cleaned) return [];
+
+    const chunks = cleaned
+        .split(/\n+/)
+        .flatMap((paragraph) => paragraph.split(/(?<=[.!?])\s+/))
+        .map((chunk) => chunk.trim())
+        .filter(Boolean);
+
+    const sourceChunks = chunks.length > 0 ? chunks : [cleaned];
+    const totalDuration = Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0;
+
+    return sourceChunks.map((chunk, index) => {
+        const timestampSeconds = sourceChunks.length > 1
+            ? (totalDuration * index) / sourceChunks.length
+            : 0;
+
+        return {
+            id: crypto.randomUUID(),
+            speaker: 'Respondent',
+            text: chunk,
+            timestamp: formatTranscriptTimestamp(timestampSeconds),
+        };
+    });
+}
+
+function normalizeOpenAiTranscriptJson(payload, fallbackText = '') {
+    if (!payload || typeof payload !== 'object') {
+        return splitTranscriptTextIntoEntries(fallbackText, 0);
+    }
+
+    if (Array.isArray(payload.segments) && payload.segments.length > 0) {
+        const normalizedSegments = payload.segments
+            .map((segment, index) => {
+                const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+                if (!text) return null;
+                const start = Number(segment?.start);
+                const speaker = typeof segment?.speaker === 'string' && segment.speaker.trim()
+                    ? segment.speaker.trim()
+                    : 'Respondent';
+
+                return {
+                    id: crypto.randomUUID(),
+                    speaker,
+                    text,
+                    timestamp: formatTranscriptTimestamp(Number.isFinite(start) ? start : index * 10),
+                };
+            })
+            .filter(Boolean);
+
+        if (normalizedSegments.length > 0) return normalizedSegments;
+    }
+
+    const transcriptText = typeof payload.text === 'string' && payload.text.trim()
+        ? payload.text
+        : fallbackText;
+    const durationSeconds = Number(payload.duration);
+    return splitTranscriptTextIntoEntries(transcriptText, durationSeconds);
+}
+
+function getOpenAiTranscriptionRatePerMinute(model) {
+    const explicitRate = Number(process.env.OPENAI_TRANSCRIPTION_RATE_USD_PER_MINUTE);
+    if (Number.isFinite(explicitRate) && explicitRate > 0) return explicitRate;
+
+    switch (model) {
+        case 'gpt-4o-mini-transcribe':
+            return 0.003;
+        case 'gpt-4o-transcribe':
+        case 'gpt-4o-transcribe-diarize':
+        case 'whisper-1':
+            return 0.006;
+        default:
+            return null;
+    }
+}
+
+function createInterviewTranscriptionSystemState({
+    provider,
+    model,
+    durationSeconds,
+    file,
+    mode = 'transcription',
+    responseFormat = null,
+    usedFallbackSegmentation = false,
+    estimatedCostUsd = null,
+}) {
+    const metadata = {
+        provider,
+        model,
+        mode,
+        responseFormat,
+        generatedAt: new Date().toISOString(),
+        fileName: file?.originalname || '',
+        mimeType: file?.mimetype || '',
+        fileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+        durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+        usedFallbackSegmentation: !!usedFallbackSegmentation,
+    };
+
+    if (Number.isFinite(estimatedCostUsd)) {
+        metadata.estimatedCostUsd = Number(estimatedCostUsd.toFixed(6));
+    }
+
+    return metadata;
 }
 
 function getEffectiveInterviewStatus(interview) {
@@ -3694,7 +3811,7 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews').select('id, workspace_id, transcript_data').eq('id', id).single();
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews').select('id, workspace_id, transcript_data, summary_data').eq('id', id).single();
         if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
 
         const workspaceIds = await getAccessibleWorkspaceIds(user.id);
@@ -3868,6 +3985,8 @@ ${conversationText}
             throw new Error("AI returned an empty or unsupported summary format.");
         }
 
+        aiSummaryData = withInterviewSystemState(aiSummaryData, getInterviewSystemState(existing.summary_data));
+
         const { data, error } = await supabaseAdmin.from('interviews')
             .update({ summary_data: aiSummaryData, updated_at: new Date().toISOString() })
             .eq('id', existing.id)
@@ -3896,74 +4015,271 @@ const safeDeleteFile = (filePath) => {
     }
 };
 
+const buildInterviewTranscriptionSystemState = ({
+    provider,
+    model,
+    durationSeconds,
+    file,
+    responseFormat = null,
+    usedFallbackSegmentation = false,
+}) => {
+    const metadata = {
+        provider,
+        model,
+        responseFormat,
+        generatedAt: new Date().toISOString(),
+        fileName: file?.originalname || '',
+        mimeType: file?.mimetype || '',
+        fileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+        durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+        usedFallbackSegmentation: !!usedFallbackSegmentation,
+    };
+
+    const configuredRate = Number(process.env.OPENAI_TRANSCRIPTION_RATE_USD_PER_MINUTE);
+    const defaultRateMap = {
+        'gpt-4o-mini-transcribe': 0.003,
+        'gpt-4o-transcribe': 0.006,
+        'whisper-1': 0.006,
+    };
+    const ratePerMinute = Number.isFinite(configuredRate) && configuredRate > 0
+        ? configuredRate
+        : defaultRateMap[model];
+
+    if (Number.isFinite(ratePerMinute) && Number.isFinite(durationSeconds)) {
+        metadata.estimatedCostUsd = Number((((durationSeconds / 60) * ratePerMinute)).toFixed(6));
+    }
+
+    return metadata;
+};
+
+const normalizeTimestamp = (seconds) => {
+    const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const remainder = Math.floor(safe % 60);
+    const mmss = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+    return hours > 0 ? `${String(hours).padStart(2, '0')}:${mmss}` : mmss;
+};
+
+const splitTranscriptIntoEntries = (text, durationSeconds = 0) => {
+    const cleaned = String(text || '').trim();
+    if (!cleaned) return [];
+
+    const chunks = cleaned
+        .split(/\n+/)
+        .flatMap((part) => part.split(/(?<=[.!?])\s+/))
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+    const source = chunks.length > 0 ? chunks : [cleaned];
+    const totalDuration = Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0;
+
+    return source.map((segment, index) => ({
+        id: crypto.randomUUID(),
+        speaker: 'Respondent',
+        text: segment,
+        timestamp: normalizeTimestamp(source.length > 1 ? (totalDuration * index) / source.length : 0),
+    }));
+};
+
+const normalizeOpenAiTranscript = (payload) => {
+    const transcriptText = typeof payload?.text === 'string' ? payload.text.trim() : '';
+    const durationSeconds = Number(payload?.duration);
+
+    if (Array.isArray(payload?.segments) && payload.segments.length > 0) {
+        const transcript = payload.segments
+            .map((segment, index) => {
+                const text = typeof segment?.text === 'string' ? segment.text.trim() : '';
+                if (!text) return null;
+                return {
+                    id: crypto.randomUUID(),
+                    speaker: typeof segment?.speaker === 'string' && segment.speaker.trim() ? segment.speaker.trim() : 'Respondent',
+                    text,
+                    timestamp: normalizeTimestamp(Number.isFinite(Number(segment?.start)) ? Number(segment.start) : index * 10),
+                };
+            })
+            .filter(Boolean);
+
+        if (transcript.length > 0) {
+            return {
+                transcript,
+                durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+                usedFallbackSegmentation: false,
+            };
+        }
+    }
+
+    return {
+        transcript: splitTranscriptIntoEntries(transcriptText, durationSeconds),
+        durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+        usedFallbackSegmentation: true,
+    };
+};
+
+const transcribeAudioWithOpenAI = async (file) => {
+    if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY is not configured.');
+    }
+
+    const model = process.env.OPENAI_TRANSCRIPTION_MODEL || DEFAULT_OPENAI_TRANSCRIPTION_MODEL;
+    const fileBuffer = await fs.promises.readFile(file.path);
+    const audioBlob = new Blob([fileBuffer], {
+        type: file.mimetype || 'application/octet-stream',
+    });
+
+    const createForm = (responseFormat) => {
+        const form = new FormData();
+        form.append('file', audioBlob, file.originalname || 'interview-audio');
+        form.append('model', model);
+        form.append('response_format', responseFormat);
+        return form;
+    };
+
+    const requestTranscription = async (responseFormat) => {
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            },
+            body: createForm(responseFormat),
+        });
+
+        const rawText = await response.text();
+        let payload = null;
+        try {
+            payload = rawText ? JSON.parse(rawText) : null;
+        } catch {
+            payload = null;
+        }
+
+        if (!response.ok) {
+            const error = new Error(payload?.error?.message || rawText || `OpenAI transcription failed with status ${response.status}.`);
+            error.status = response.status;
+            throw error;
+        }
+
+        return {
+            payload: payload || {},
+            responseFormat,
+        };
+    };
+
+    let transcriptionResponse;
+    try {
+        transcriptionResponse = await requestTranscription('verbose_json');
+    } catch (error) {
+        if (![400, 422].includes(error.status)) throw error;
+        transcriptionResponse = await requestTranscription('json');
+    }
+
+    const normalized = normalizeOpenAiTranscript(transcriptionResponse.payload);
+    return {
+        transcript: normalized.transcript,
+        systemState: buildInterviewTranscriptionSystemState({
+            provider: 'openai',
+            model,
+            durationSeconds: normalized.durationSeconds,
+            file,
+            responseFormat: transcriptionResponse.responseFormat,
+            usedFallbackSegmentation: normalized.usedFallbackSegmentation,
+        }),
+    };
+};
+
 const processInterviewAudioUpload = async ({ interviewId, file }) => {
     let geminiFileId = null;
     let fileManager = null;
+    let transcriptionSystemState = null;
 
     try {
-        if (!process.env.GEMINI_API_KEY) {
-            throw new Error("GEMINI_API_KEY is not configured.");
-        }
-
-        fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-
-        const uploadResponse = await fileManager.uploadFile(file.path, {
-            mimeType: file.mimetype,
-            displayName: file.originalname,
-        });
-        geminiFileId = uploadResponse.file.name;
-
-        let fileStatus = await fileManager.getFile(geminiFileId);
-        while (fileStatus.state === "PROCESSING") {
-            await sleep(5000);
-            fileStatus = await fileManager.getFile(geminiFileId);
-        }
-
-        if (fileStatus.state === "FAILED") {
-            throw new Error("Audio processing failed on Gemini servers.");
-        }
-
-        const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
-        Estimate the general speaker roles (e.g. "Interviewer" vs "Respondent"). 
-        Estimate the local timestamp of each message starting from "00:00" relative to the start of the audio.
-        
-        You MUST return your response as a valid JSON array of objects, where each object has the keys: 
-        "id" (generate a unique string id), "speaker" (string), "text" (string), "timestamp" (string).
-        
-        Do not include any markdown format blocks around the JSON array, just output the raw JSON array.`;
-
-        const result = await model.generateContent([
-            {
-                fileData: {
-                    mimeType: uploadResponse.file.mimeType,
-                    fileUri: uploadResponse.file.uri
-                }
-            },
-            { text: prompt },
-        ]);
-
-        const responseText = result.response.text();
-
         let newTranscriptData;
-        try {
-            const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-            newTranscriptData = JSON.parse(cleanJsonString);
-
-            if (!Array.isArray(newTranscriptData)) {
-                throw new Error("Parsed data is not an array");
+        if (process.env.OPENAI_API_KEY) {
+            const openAiResult = await transcribeAudioWithOpenAI(file);
+            newTranscriptData = openAiResult.transcript;
+            transcriptionSystemState = {
+                ...openAiResult.systemState,
+                uploadStatus: 'completed',
+            };
+        } else {
+            if (!process.env.GEMINI_API_KEY) {
+                throw new Error("Neither OPENAI_API_KEY nor GEMINI_API_KEY is configured.");
             }
-        } catch (e) {
-            console.error("Transcription parse error:", e);
-            console.error("Raw response:", responseText);
-            throw new Error("AI returned an invalid transcript format.");
+
+            fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+
+            const uploadResponse = await fileManager.uploadFile(file.path, {
+                mimeType: file.mimetype,
+                displayName: file.originalname,
+            });
+            geminiFileId = uploadResponse.file.name;
+
+            let fileStatus = await fileManager.getFile(geminiFileId);
+            while (fileStatus.state === "PROCESSING") {
+                await sleep(5000);
+                fileStatus = await fileManager.getFile(geminiFileId);
+            }
+
+            if (fileStatus.state === "FAILED") {
+                throw new Error("Audio processing failed on Gemini servers.");
+            }
+
+            const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
+            Estimate the general speaker roles (e.g. "Interviewer" vs "Respondent"). 
+            Estimate the local timestamp of each message starting from "00:00" relative to the start of the audio.
+            
+            You MUST return your response as a valid JSON array of objects, where each object has the keys: 
+            "id" (generate a unique string id), "speaker" (string), "text" (string), "timestamp" (string).
+            
+            Do not include any markdown format blocks around the JSON array, just output the raw JSON array.`;
+
+            const result = await model.generateContent([
+                {
+                    fileData: {
+                        mimeType: uploadResponse.file.mimeType,
+                        fileUri: uploadResponse.file.uri
+                    }
+                },
+                { text: prompt },
+            ]);
+
+            const responseText = result.response.text();
+
+            try {
+                const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+                newTranscriptData = JSON.parse(cleanJsonString);
+
+                if (!Array.isArray(newTranscriptData)) {
+                    throw new Error("Parsed data is not an array");
+                }
+            } catch (e) {
+                console.error("Transcription parse error:", e);
+                console.error("Raw response:", responseText);
+                throw new Error("AI returned an invalid transcript format.");
+            }
+
+            transcriptionSystemState = {
+                ...buildInterviewTranscriptionSystemState({
+                    provider: 'gemini',
+                    model: 'gemini-2.5-pro',
+                    durationSeconds: null,
+                    file,
+                    responseFormat: 'custom_json_array',
+                    usedFallbackSegmentation: false,
+                }),
+                uploadStatus: 'completed',
+            };
+        }
+
+        if (!Array.isArray(newTranscriptData) || newTranscriptData.length === 0) {
+            throw new Error('The transcription provider returned an empty transcript.');
         }
 
         const { error } = await supabaseAdmin.from('interviews')
             .update({
                 transcript_data: newTranscriptData,
-                summary_data: null,
+                summary_data: withInterviewSystemState(null, transcriptionSystemState),
                 status: 'completed',
                 updated_at: new Date().toISOString()
             })
@@ -3981,7 +4297,10 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
         await updateInterviewStatusCompat(
             interviewId,
             'failed',
-            { upload_error_message: err.message || INTERVIEW_UPLOAD_ERROR_FALLBACK },
+            {
+                upload_error_message: err.message || INTERVIEW_UPLOAD_ERROR_FALLBACK,
+                summary_data: withInterviewSystemState(latestInterview?.summary_data ?? null, transcriptionSystemState),
+            },
             latestInterview?.summary_data ?? null
         );
     } finally {
