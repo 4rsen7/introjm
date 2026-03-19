@@ -4386,16 +4386,39 @@ const splitTranscriptIntoEntries = (text, durationSeconds = 0) => {
     const source = chunks.length > 0 ? chunks : [cleaned];
     const totalDuration = Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0;
 
-    return source.map((segment, index) => ({
-        id: crypto.randomUUID(),
-        speaker: 'Respondent',
-        text: segment,
-        timestamp: normalizeTimestamp(
-            totalDuration > 0 && source.length > 1
-                ? (totalDuration * index) / source.length
-                : index * 10
-        ),
-    }));
+    let awaitingResponse = false;
+    let previousSpeaker = null;
+
+    return source.map((segment, index) => {
+        const trimmed = String(segment || '').trim();
+        const isQuestion = /[?؟]\s*$/.test(trimmed);
+
+        let speaker = 'Respondent';
+        if (isQuestion) {
+            speaker = 'Interviewer';
+            awaitingResponse = true;
+        } else if (awaitingResponse) {
+            speaker = 'Respondent';
+            awaitingResponse = false;
+        } else if (previousSpeaker) {
+            speaker = previousSpeaker;
+        } else if (index === 0) {
+            speaker = isQuestion ? 'Interviewer' : 'Respondent';
+        }
+
+        previousSpeaker = speaker;
+
+        return {
+            id: crypto.randomUUID(),
+            speaker,
+            text: trimmed,
+            timestamp: normalizeTimestamp(
+                totalDuration > 0 && source.length > 1
+                    ? (totalDuration * index) / source.length
+                    : index * 10
+            ),
+        };
+    });
 };
 
 const normalizeOpenAiTranscript = (payload) => {
