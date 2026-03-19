@@ -1910,15 +1910,87 @@ function normalizeObjectArray(value, mapper, maxItems) {
     .slice(0, maxItems);
 }
 
+function normalizeTouchpoints(value, maxItems) {
+  return normalizeObjectArray(
+    value,
+    (item) => {
+      if (typeof item === 'string') {
+        const touchpoint = cleanString(item);
+        return touchpoint ? { touchpoint, interactsWith: '', channel: '' } : null;
+      }
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const touchpoint = cleanString(item.touchpoint);
+      const interactsWith = cleanString(item.interactsWith || item.actor || item.stakeholder);
+      const channel = cleanString(item.channel);
+      if (!touchpoint && !interactsWith && !channel) return null;
+      return { touchpoint, interactsWith, channel };
+    },
+    maxItems
+  );
+}
+
+function normalizeStagePainPoints(value, maxItems) {
+  return normalizeObjectArray(
+    value,
+    (item) => {
+      if (typeof item === 'string') {
+        const description = cleanString(item);
+        return description ? { title: '', description, severity: '' } : null;
+      }
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const title = cleanString(item.title);
+      const description = cleanString(item.description || item.problem || item.painPoint);
+      const severity = normalizeEnum(item.severity, ['low', 'medium', 'high']);
+      if (!title && !description && !severity) return null;
+      return { title, description, severity };
+    },
+    maxItems
+  );
+}
+
 function normalizeInterviewSummaryData(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
   const summary = raw.summary && typeof raw.summary === 'object' && !Array.isArray(raw.summary) ? raw.summary : {};
+  const journeyDraft = raw.journeyDraft && typeof raw.journeyDraft === 'object' && !Array.isArray(raw.journeyDraft) ? raw.journeyDraft : {};
+  const jtbdProfile = raw.jtbdProfile && typeof raw.jtbdProfile === 'object' && !Array.isArray(raw.jtbdProfile) ? raw.jtbdProfile : {};
+  const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress) ? raw.forcesOfProgress : {};
   const normalized = {
     summary: {
       jobToBeDone: cleanString(summary.jobToBeDone || raw.jobToBeDone),
       generalInsight: cleanString(summary.generalInsight || raw.generalInsight || raw.generalInsights),
       overallSentiment: normalizeEnum(summary.overallSentiment || raw.overallSentiment, ['positive', 'mixed', 'negative']),
+    },
+    journeyDraft: {
+      jobContext: cleanString(journeyDraft.jobContext),
+      stages: normalizeObjectArray(
+        journeyDraft.stages,
+        (item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const stage = cleanString(item.stage);
+          const customerActions = normalizeStringArray(item.customerActions, 6);
+          const touchpoints = normalizeTouchpoints(item.touchpoints, 6);
+          const painPoints = normalizeStagePainPoints(item.painPoints, 5);
+          if (!stage && customerActions.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
+          return { stage, customerActions, touchpoints, painPoints };
+        },
+        8
+      ),
+    },
+    jtbdProfile: {
+      mainJob: cleanString(jtbdProfile.mainJob),
+      functionalJob: cleanString(jtbdProfile.functionalJob),
+      emotionalJob: cleanString(jtbdProfile.emotionalJob),
+      socialJob: cleanString(jtbdProfile.socialJob),
+      jobContext: cleanString(jtbdProfile.jobContext),
+      desiredOutcome: cleanString(jtbdProfile.desiredOutcome),
+      successCriteria: normalizeStringArray(jtbdProfile.successCriteria, 5),
+    },
+    forcesOfProgress: {
+      pushes: normalizeStringArray(forcesOfProgress.pushes, 5),
+      pulls: normalizeStringArray(forcesOfProgress.pulls, 5),
+      anxieties: normalizeStringArray(forcesOfProgress.anxieties, 5),
+      habits: normalizeStringArray(forcesOfProgress.habits, 5),
     },
     painPoints: normalizeObjectArray(
       raw.painPoints,
@@ -2015,6 +2087,19 @@ function normalizeInterviewSummaryData(raw) {
     normalized.summary.jobToBeDone ||
     normalized.summary.generalInsight ||
     normalized.summary.overallSentiment ||
+    normalized.journeyDraft.jobContext ||
+    normalized.journeyDraft.stages.length > 0 ||
+    normalized.jtbdProfile.mainJob ||
+    normalized.jtbdProfile.functionalJob ||
+    normalized.jtbdProfile.emotionalJob ||
+    normalized.jtbdProfile.socialJob ||
+    normalized.jtbdProfile.jobContext ||
+    normalized.jtbdProfile.desiredOutcome ||
+    normalized.jtbdProfile.successCriteria.length > 0 ||
+    normalized.forcesOfProgress.pushes.length > 0 ||
+    normalized.forcesOfProgress.pulls.length > 0 ||
+    normalized.forcesOfProgress.anxieties.length > 0 ||
+    normalized.forcesOfProgress.habits.length > 0 ||
     normalized.painPoints.length > 0 ||
     normalized.momentsOfFriction.length > 0 ||
     normalized.unmetNeeds.length > 0 ||
@@ -3524,6 +3609,8 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
 Your task is to analyze this interview as evidence about the customer's lived experience across a service, not just to summarize the conversation.
 
 Focus on:
+- the customer journey they are moving through
+- stages, customer actions, touchpoints, and pain points at each stage
 - what the respondent is trying to achieve
 - broken expectations
 - friction and service gaps across touchpoints
@@ -3532,6 +3619,8 @@ Focus on:
 - workarounds
 - the likely root causes behind complaints
 - evidence-backed opportunity areas for improving the experience
+- the customer's JTBD profile
+- the 4 forces of progress (push, pull, anxiety, habit)
 
 CRITICAL RULES:
 - Detect the dominant language of the transcript and write the entire output in that exact same language.
@@ -3548,6 +3637,44 @@ Return EXACTLY one valid JSON object with this schema:
     "jobToBeDone": "string",
     "generalInsight": "string",
     "overallSentiment": "positive|mixed|negative"
+  },
+  "journeyDraft": {
+    "jobContext": "string",
+    "stages": [
+      {
+        "stage": "string",
+        "customerActions": ["string"],
+        "touchpoints": [
+          {
+            "touchpoint": "string",
+            "interactsWith": "string",
+            "channel": "string"
+          }
+        ],
+        "painPoints": [
+          {
+            "title": "string",
+            "description": "string",
+            "severity": "low|medium|high"
+          }
+        ]
+      }
+    ]
+  },
+  "jtbdProfile": {
+    "mainJob": "string",
+    "functionalJob": "string",
+    "emotionalJob": "string",
+    "socialJob": "string",
+    "jobContext": "string",
+    "desiredOutcome": "string",
+    "successCriteria": ["string"]
+  },
+  "forcesOfProgress": {
+    "pushes": ["string"],
+    "pulls": ["string"],
+    "anxieties": ["string"],
+    "habits": ["string"]
   },
   "painPoints": [
     {
@@ -3589,6 +3716,12 @@ Return EXACTLY one valid JSON object with this schema:
 }
 
 LIMITS:
+- journeyDraft.stages: up to 8
+- journeyDraft.customerActions: up to 6 per stage
+- journeyDraft.touchpoints: up to 6 per stage
+- journeyDraft.painPoints: up to 5 per stage
+- jtbdProfile.successCriteria: up to 5
+- forcesOfProgress.pushes/pulls/anxieties/habits: up to 5 each
 - painPoints: up to 5
 - momentsOfFriction: up to 5
 - unmetNeeds: up to 5

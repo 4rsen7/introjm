@@ -16,10 +16,59 @@ const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecogni
 
 const cleanString = (value) => typeof value === 'string' ? value.trim() : '';
 
+const normalizeStringArray = (value, maxItems) =>
+  Array.isArray(value)
+    ? value
+        .map((item) => cleanString(item))
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+
+const normalizeTouchpoints = (value, maxItems) =>
+  Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (typeof item === 'string') {
+            const touchpoint = cleanString(item);
+            return touchpoint ? { touchpoint, interactsWith: '', channel: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const touchpoint = cleanString(item.touchpoint);
+          const interactsWith = cleanString(item.interactsWith || item.actor || item.stakeholder);
+          const channel = cleanString(item.channel);
+          if (!touchpoint && !interactsWith && !channel) return null;
+          return { touchpoint, interactsWith, channel };
+        })
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+
+const normalizeStagePainPoints = (value, maxItems) =>
+  Array.isArray(value)
+    ? value
+        .map((item) => {
+          if (typeof item === 'string') {
+            const description = cleanString(item);
+            return description ? { title: '', description, severity: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const title = cleanString(item.title);
+          const description = cleanString(item.description || item.problem || item.painPoint);
+          const severity = cleanString(item.severity);
+          if (!title && !description && !severity) return null;
+          return { title, description, severity };
+        })
+        .filter(Boolean)
+        .slice(0, maxItems)
+    : [];
+
 const normalizeInterviewSummary = (raw) => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
   const summary = raw.summary && typeof raw.summary === 'object' && !Array.isArray(raw.summary) ? raw.summary : {};
+  const journeyDraft = raw.journeyDraft && typeof raw.journeyDraft === 'object' && !Array.isArray(raw.journeyDraft) ? raw.journeyDraft : {};
+  const jtbdProfile = raw.jtbdProfile && typeof raw.jtbdProfile === 'object' && !Array.isArray(raw.jtbdProfile) ? raw.jtbdProfile : {};
+  const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress) ? raw.forcesOfProgress : {};
   const painPoints = Array.isArray(raw.painPoints)
     ? raw.painPoints
         .map((item) => {
@@ -80,6 +129,38 @@ const normalizeInterviewSummary = (raw) => {
       generalInsight: cleanString(summary.generalInsight || raw.generalInsight || raw.generalInsights),
       overallSentiment: cleanString(summary.overallSentiment || raw.overallSentiment),
     },
+    journeyDraft: {
+      jobContext: cleanString(journeyDraft.jobContext),
+      stages: Array.isArray(journeyDraft.stages)
+        ? journeyDraft.stages
+            .map((item) => {
+              if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+              const stage = cleanString(item.stage);
+              const customerActions = normalizeStringArray(item.customerActions, 6);
+              const touchpoints = normalizeTouchpoints(item.touchpoints, 6);
+              const painPoints = normalizeStagePainPoints(item.painPoints, 5);
+              if (!stage && customerActions.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
+              return { stage, customerActions, touchpoints, painPoints };
+            })
+            .filter(Boolean)
+            .slice(0, 8)
+        : [],
+    },
+    jtbdProfile: {
+      mainJob: cleanString(jtbdProfile.mainJob),
+      functionalJob: cleanString(jtbdProfile.functionalJob),
+      emotionalJob: cleanString(jtbdProfile.emotionalJob),
+      socialJob: cleanString(jtbdProfile.socialJob),
+      jobContext: cleanString(jtbdProfile.jobContext),
+      desiredOutcome: cleanString(jtbdProfile.desiredOutcome),
+      successCriteria: normalizeStringArray(jtbdProfile.successCriteria, 5),
+    },
+    forcesOfProgress: {
+      pushes: normalizeStringArray(forcesOfProgress.pushes, 5),
+      pulls: normalizeStringArray(forcesOfProgress.pulls, 5),
+      anxieties: normalizeStringArray(forcesOfProgress.anxieties, 5),
+      habits: normalizeStringArray(forcesOfProgress.habits, 5),
+    },
     painPoints,
     momentsOfFriction,
     unmetNeeds: normalizePairList(raw.unmetNeeds, 'need', 'whyItMatters'),
@@ -92,6 +173,19 @@ const normalizeInterviewSummary = (raw) => {
     normalized.summary.jobToBeDone ||
     normalized.summary.generalInsight ||
     normalized.summary.overallSentiment ||
+    normalized.journeyDraft.jobContext ||
+    normalized.journeyDraft.stages.length > 0 ||
+    normalized.jtbdProfile.mainJob ||
+    normalized.jtbdProfile.functionalJob ||
+    normalized.jtbdProfile.emotionalJob ||
+    normalized.jtbdProfile.socialJob ||
+    normalized.jtbdProfile.jobContext ||
+    normalized.jtbdProfile.desiredOutcome ||
+    normalized.jtbdProfile.successCriteria.length > 0 ||
+    normalized.forcesOfProgress.pushes.length > 0 ||
+    normalized.forcesOfProgress.pulls.length > 0 ||
+    normalized.forcesOfProgress.anxieties.length > 0 ||
+    normalized.forcesOfProgress.habits.length > 0 ||
     normalized.painPoints.length > 0 ||
     normalized.momentsOfFriction.length > 0 ||
     normalized.unmetNeeds.length > 0 ||
@@ -902,7 +996,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                 </p>
               </div>
             ) : normalizedSummary ? (
-              <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
                 {/* Overview */}
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.overview')}</h3>
@@ -928,6 +1022,162 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                     )}
                   </div>
                 </div>
+
+                {normalizedSummary.journeyDraft.stages.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.journeyDraft')}</h3>
+                    {normalizedSummary.journeyDraft.jobContext && (
+                      <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900 leading-relaxed">
+                        <span className="font-semibold">{t('interviews.jobContext')}:</span> {normalizedSummary.journeyDraft.jobContext}
+                      </div>
+                    )}
+                    <div className="space-y-3">
+                      {normalizedSummary.journeyDraft.stages.map((stage, i) => (
+                        <div key={`${stage.stage || 'stage'}-${i}`} className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm space-y-3">
+                          {stage.stage && (
+                            <div className="text-xs font-bold uppercase tracking-wider text-gray-400">{stage.stage}</div>
+                          )}
+
+                          {stage.customerActions.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('interviews.customerActions')}</div>
+                              <ul className="space-y-1">
+                                {stage.customerActions.map((action, actionIndex) => (
+                                  <li key={`${action}-${actionIndex}`} className="text-sm text-gray-800 leading-relaxed">• {action}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {stage.touchpoints.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('interviews.touchpoints')}</div>
+                              <div className="space-y-2">
+                                {stage.touchpoints.map((touchpoint, touchpointIndex) => (
+                                  <div key={`${touchpoint.touchpoint}-${touchpointIndex}`} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700 space-y-1">
+                                    {touchpoint.touchpoint && <div className="font-medium text-gray-900">{touchpoint.touchpoint}</div>}
+                                    {(touchpoint.interactsWith || touchpoint.channel) && (
+                                      <div className="text-xs text-gray-600">
+                                        {touchpoint.interactsWith && <span>{t('interviews.interactsWith')}: {touchpoint.interactsWith}</span>}
+                                        {touchpoint.interactsWith && touchpoint.channel && <span> • </span>}
+                                        {touchpoint.channel && <span>{t('interviews.channel')}: {touchpoint.channel}</span>}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {stage.painPoints.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('interviews.stagePainPoints')}</div>
+                              <div className="space-y-2">
+                                {stage.painPoints.map((point, pointIndex) => (
+                                  <div key={`${point.title || point.description}-${pointIndex}`} className="rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2 text-sm text-rose-900 space-y-1">
+                                    <div className="font-medium">{point.title || point.description}</div>
+                                    {point.title && point.description && <div className="text-rose-800 leading-relaxed">{point.description}</div>}
+                                    {point.severity && <div className="text-xs uppercase tracking-wider text-rose-600">{t('interviews.severity')}: {point.severity}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(normalizedSummary.jtbdProfile.mainJob ||
+                  normalizedSummary.jtbdProfile.functionalJob ||
+                  normalizedSummary.jtbdProfile.emotionalJob ||
+                  normalizedSummary.jtbdProfile.socialJob ||
+                  normalizedSummary.jtbdProfile.jobContext ||
+                  normalizedSummary.jtbdProfile.desiredOutcome ||
+                  normalizedSummary.jtbdProfile.successCriteria.length > 0) && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.jtbdProfile')}</h3>
+                    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm space-y-3">
+                      {normalizedSummary.jtbdProfile.mainJob && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.mainJob')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.mainJob}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.functionalJob && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.functionalJob')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.functionalJob}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.emotionalJob && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.emotionalJob')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.emotionalJob}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.socialJob && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.socialJob')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.socialJob}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.jobContext && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.jobContext')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.jobContext}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.desiredOutcome && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1">{t('interviews.desiredOutcome')}</div>
+                          <div className="text-sm text-gray-900 leading-relaxed">{normalizedSummary.jtbdProfile.desiredOutcome}</div>
+                        </div>
+                      )}
+                      {normalizedSummary.jtbdProfile.successCriteria.length > 0 && (
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">{t('interviews.successCriteria')}</div>
+                          <ul className="space-y-1">
+                            {normalizedSummary.jtbdProfile.successCriteria.map((criterion, criterionIndex) => (
+                              <li key={`${criterion}-${criterionIndex}`} className="text-sm text-gray-900 leading-relaxed">• {criterion}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(normalizedSummary.forcesOfProgress.pushes.length > 0 ||
+                  normalizedSummary.forcesOfProgress.pulls.length > 0 ||
+                  normalizedSummary.forcesOfProgress.anxieties.length > 0 ||
+                  normalizedSummary.forcesOfProgress.habits.length > 0) && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.forcesOfProgress')}</h3>
+                    <div className="grid gap-3">
+                      {[
+                        ['pushes', t('interviews.pushes'), 'bg-amber-50 border-amber-100 text-amber-900'],
+                        ['pulls', t('interviews.pulls'), 'bg-emerald-50 border-emerald-100 text-emerald-900'],
+                        ['anxieties', t('interviews.anxieties'), 'bg-rose-50 border-rose-100 text-rose-900'],
+                        ['habits', t('interviews.habits'), 'bg-slate-50 border-slate-200 text-slate-900'],
+                      ].map(([key, label, tone]) => {
+                        const items = normalizedSummary.forcesOfProgress[key];
+                        if (!items || items.length === 0) return null;
+                        return (
+                          <div key={key} className={`rounded-xl border p-4 shadow-sm space-y-2 ${tone}`}>
+                            <div className="text-xs font-bold uppercase tracking-wider">{label}</div>
+                            <ul className="space-y-1">
+                              {items.map((item, itemIndex) => (
+                                <li key={`${item}-${itemIndex}`} className="text-sm leading-relaxed">• {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Pain Points */}
                 {normalizedSummary.painPoints.length > 0 && (

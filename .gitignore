@@ -6,6 +6,9 @@ node_modules/
 .env
 .env.e2e
 */.env
+.env.hostinger.deploy
+client/.env.production.local
+admin/.env.production.local
 .DS_Store
 
 # Логи та збірки

@@ -1,0 +1,29 @@
+name: Deploy To Hostinger
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT }}
+          script_stop: true
+          command_timeout: 45m
+          script: |
+            export PUBLIC_HTML_DIR="${{ secrets.HOSTINGER_PUBLIC_HTML_DIR }}"
+            export SERVER_RESTART_COMMAND="${{ secrets.HOSTINGER_SERVER_RESTART_COMMAND }}"
+            cd "${{ secrets.HOSTINGER_REPO_DIR }}"
+            git fetch origin main
+            git pull --ff-only origin main
+            export SKIP_GIT_PULL=1
+            bash scripts/deploy-hostinger.sh
