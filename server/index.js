@@ -679,6 +679,96 @@ function sanitizeInterviewForClient(interview) {
     };
 }
 
+function isMissingDatabaseObjectError(error, objectName = '') {
+    if (!error) return false;
+    const message = String(error.message || '').toLowerCase();
+    const details = String(error.details || '').toLowerCase();
+    const hint = String(error.hint || '').toLowerCase();
+    const needle = String(objectName || '').toLowerCase();
+    return (
+        error.code === '42P01' ||
+        error.code === '42883' ||
+        message.includes('does not exist') ||
+        details.includes('does not exist') ||
+        hint.includes('does not exist') ||
+        (needle && (message.includes(needle) || details.includes(needle) || hint.includes(needle)))
+    );
+}
+
+async function getWorkspaceCreatedInterviewUsage(workspaceId, currentInterviewCount = 0) {
+    const { data, error } = await supabaseAdmin
+        .from('workspace_usage_counters')
+        .select('interviews_created')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+    if (error) {
+        if (isMissingDatabaseObjectError(error, 'workspace_usage_counters')) {
+            return currentInterviewCount;
+        }
+        throw error;
+    }
+
+    const persistedCount = Number.isFinite(Number(data?.interviews_created)) ? Number(data.interviews_created) : 0;
+    return Math.max(currentInterviewCount, persistedCount);
+}
+
+async function incrementWorkspaceInterviewUsage(workspaceId) {
+    const rpcResult = await supabaseAdmin.rpc('increment_workspace_interview_usage', {
+        p_workspace_id: workspaceId,
+    });
+
+    if (!rpcResult.error) {
+        const nextCount = Number.isFinite(Number(rpcResult.data)) ? Number(rpcResult.data) : null;
+        return { persisted: true, count: nextCount };
+    }
+
+    if (!isMissingDatabaseObjectError(rpcResult.error, 'increment_workspace_interview_usage')) {
+        throw rpcResult.error;
+    }
+
+    const currentRow = await supabaseAdmin
+        .from('workspace_usage_counters')
+        .select('workspace_id, interviews_created')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+    if (currentRow.error) {
+        if (isMissingDatabaseObjectError(currentRow.error, 'workspace_usage_counters')) {
+            return { persisted: false, count: null };
+        }
+        throw currentRow.error;
+    }
+
+    if (currentRow.data) {
+        const nextCount = (Number(currentRow.data.interviews_created) || 0) + 1;
+        const updateResult = await supabaseAdmin
+            .from('workspace_usage_counters')
+            .update({
+                interviews_created: nextCount,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('workspace_id', workspaceId)
+            .select('interviews_created')
+            .single();
+
+        if (updateResult.error) throw updateResult.error;
+        return { persisted: true, count: Number(updateResult.data?.interviews_created) || nextCount };
+    }
+
+    const insertResult = await supabaseAdmin
+        .from('workspace_usage_counters')
+        .insert([{
+            workspace_id: workspaceId,
+            interviews_created: 1,
+        }])
+        .select('interviews_created')
+        .single();
+
+    if (insertResult.error) throw insertResult.error;
+    return { persisted: true, count: Number(insertResult.data?.interviews_created) || 1 };
+}
+
 function isInterviewStatusConstraintError(error) {
     if (!error) return false;
     return error.constraint === 'interviews_status_check' || String(error.message || '').includes('interviews_status_check');
@@ -970,6 +1060,7 @@ async function getWorkspacePlanAndLimits(workspaceId) {
         supabaseAdmin.from('metrics').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
         supabaseAdmin.from('interviews').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
     ]);
+    const interviewUsageCount = await getWorkspaceCreatedInterviewUsage(workspaceId, interviewsRes.count ?? 0);
     return {
         planName: plan.name,
         planId: plan.id,
@@ -984,7 +1075,7 @@ async function getWorkspacePlanAndLimits(workspaceId) {
             journeys: journeysRes.count ?? 0,
             personas: personasRes.count ?? 0,
             metrics: metricsRes.count ?? 0,
-            interviews: interviewsRes.count ?? 0,
+            interviews: interviewUsageCount,
         },
     };
 }
@@ -4058,6 +4149,25 @@ app.post('/api/interviews', async (req, res) => {
         }]).select().single();
 
         if (error) throw error;
+        try {
+            const usageResult = await incrementWorkspaceInterviewUsage(workspace.id);
+            if (!usageResult.persisted) {
+                console.warn(`Interview usage counter is not available yet for workspace ${workspace.id}; falling back to current row count until migration is applied.`);
+            }
+        } catch (usageError) {
+            await logSystemError(usageError, 'POST /api/interviews increment usage');
+            const rollbackResult = await supabaseAdmin
+                .from('interviews')
+                .delete()
+                .eq('id', data.id);
+            if (rollbackResult.error) {
+                await logSystemError(rollbackResult.error, 'POST /api/interviews rollback after usage increment failure');
+            }
+            return res.status(500).json({
+                status: 'error',
+                error: 'Failed to reserve interview quota. Please try again.',
+            });
+        }
         res.status(201).json({ status: 'success', data });
     } catch (err) {
         logSystemError(err, 'POST /api/interviews');
