@@ -203,6 +203,215 @@ const allowedOrigins = [
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const INTERVIEW_SUMMARY_SECTION_ORDER = [
+    'summary',
+    'journeyDraft',
+    'jtbdProfile',
+    'forcesOfProgress',
+    'painPoints',
+    'momentsOfFriction',
+    'unmetNeeds',
+    'workarounds',
+    'opportunityAreas',
+    'strengths',
+    'quotes',
+];
+const INTERVIEW_SUMMARY_PRESET_SECTIONS = {
+    full_analysis: INTERVIEW_SUMMARY_SECTION_ORDER,
+    quick_summary: ['summary', 'painPoints', 'strengths', 'quotes'],
+    research_insights: ['summary', 'painPoints', 'strengths', 'momentsOfFriction', 'unmetNeeds', 'workarounds', 'opportunityAreas', 'quotes'],
+    journey_mapping: ['summary', 'journeyDraft', 'painPoints', 'strengths', 'momentsOfFriction', 'quotes'],
+    jtbd_analysis: ['summary', 'jtbdProfile', 'forcesOfProgress', 'strengths', 'quotes'],
+};
+const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
+    summary: {
+        focus: [
+            'what the respondent is trying to achieve',
+            'the sharpest evidence-backed summary of the interview',
+            'the overall emotional tone of the experience',
+        ],
+        schema: `"summary": {
+    "jobToBeDone": "string",
+    "generalInsight": "string",
+    "overallSentiment": "positive|mixed|negative"
+  }`,
+        limits: [
+            'summary.generalInsight: 1 concise paragraph',
+        ],
+    },
+    journeyDraft: {
+        focus: [
+            'the customer journey they are moving through',
+            'stages, customer actions, touchpoints, and pain points at each stage',
+        ],
+        schema: `"journeyDraft": {
+    "jobContext": "string",
+    "stages": [
+      {
+        "stage": "string",
+        "customerActions": ["string"],
+        "touchpoints": [
+          {
+            "touchpoint": "string",
+            "interactsWith": "string",
+            "channel": "string"
+          }
+        ],
+        "painPoints": [
+          {
+            "title": "string",
+            "description": "string",
+            "severity": "low|medium|high"
+          }
+        ]
+      }
+    ]
+  }`,
+        limits: [
+            'journeyDraft.stages: up to 8',
+            'journeyDraft.customerActions: up to 6 per stage',
+            'journeyDraft.touchpoints: up to 6 per stage',
+            'journeyDraft.painPoints: up to 5 per stage',
+        ],
+    },
+    jtbdProfile: {
+        focus: [
+            'the customer\'s JTBD profile',
+        ],
+        schema: `"jtbdProfile": {
+    "mainJob": "string",
+    "functionalJob": "string",
+    "emotionalJob": "string",
+    "socialJob": "string",
+    "jobContext": "string",
+    "desiredOutcome": "string",
+    "successCriteria": ["string"]
+  }`,
+        limits: [
+            'jtbdProfile.successCriteria: up to 5',
+        ],
+    },
+    forcesOfProgress: {
+        focus: [
+            'the 4 forces of progress (push, pull, anxiety, habit)',
+        ],
+        schema: `"forcesOfProgress": {
+    "pushes": ["string"],
+    "pulls": ["string"],
+    "anxieties": ["string"],
+    "habits": ["string"]
+  }`,
+        limits: [
+            'forcesOfProgress.pushes/pulls/anxieties/habits: up to 5 each',
+        ],
+    },
+    painPoints: {
+        focus: [
+            'broken expectations',
+            'the likely root causes behind complaints',
+            'the most important pain points and their impact',
+        ],
+        schema: `"painPoints": [
+    {
+      "title": "string",
+      "description": "string",
+      "rootCause": "string",
+      "impact": "string",
+      "severity": "low|medium|high",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'painPoints: up to 5',
+        ],
+    },
+    momentsOfFriction: {
+        focus: [
+            'friction and service gaps across touchpoints',
+            'moments where the experience breaks down and how the customer reacts',
+        ],
+        schema: `"momentsOfFriction": [
+    {
+      "stage": "string",
+      "situation": "string",
+      "breakdown": "string",
+      "customerReaction": "string"
+    }
+  ]`,
+        limits: [
+            'momentsOfFriction: up to 5',
+        ],
+    },
+    unmetNeeds: {
+        focus: [
+            'unmet needs',
+        ],
+        schema: `"unmetNeeds": [
+    {
+      "need": "string",
+      "whyItMatters": "string"
+    }
+  ]`,
+        limits: [
+            'unmetNeeds: up to 5',
+        ],
+    },
+    workarounds: {
+        focus: [
+            'workarounds',
+        ],
+        schema: `"workarounds": [
+    {
+      "workaround": "string",
+      "whatItSignals": "string"
+    }
+  ]`,
+        limits: [
+            'workarounds: up to 3',
+        ],
+    },
+    opportunityAreas: {
+        focus: [
+            'evidence-backed opportunity areas for improving the experience',
+        ],
+        schema: `"opportunityAreas": [
+    {
+      "area": "string",
+      "rationale": "string"
+    }
+  ]`,
+        limits: [
+            'opportunityAreas: up to 5',
+        ],
+    },
+    strengths: {
+        focus: [
+            'what already works well in the experience',
+            'service elements, solutions, or touchpoints that genuinely help the customer',
+            'positive moments worth preserving or scaling',
+        ],
+        schema: `"strengths": [
+    {
+      "title": "string",
+      "description": "string",
+      "whyItWorks": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'strengths: up to 5',
+        ],
+    },
+    quotes: {
+        focus: [
+            'the strongest verbatim quotes that represent the customer\'s voice',
+        ],
+        schema: `"quotes": ["string"]`,
+        limits: [
+            'quotes: up to 3',
+        ],
+    },
+};
 
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -222,6 +431,113 @@ function withInterviewSystemState(summaryData, nextSystemState) {
     }
     baseSummary[INTERVIEW_SYSTEM_KEY] = nextSystemState;
     return baseSummary;
+}
+
+function normalizeInterviewSummarySections(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    return value.reduce((sections, item) => {
+        const sectionKey = typeof item === 'string' ? item.trim() : '';
+        if (!INTERVIEW_SUMMARY_SECTION_ORDER.includes(sectionKey) || seen.has(sectionKey)) return sections;
+        seen.add(sectionKey);
+        sections.push(sectionKey);
+        return sections;
+    }, []);
+}
+
+function resolveInterviewSummaryRequest(body = {}) {
+    const requestedSections = normalizeInterviewSummarySections(body?.selectedSections);
+    const presetCandidate = typeof body?.preset === 'string' ? body.preset.trim() : '';
+    const preset = Object.prototype.hasOwnProperty.call(INTERVIEW_SUMMARY_PRESET_SECTIONS, presetCandidate)
+        ? presetCandidate
+        : (requestedSections.length > 0 ? 'custom' : 'full_analysis');
+
+    return {
+        preset,
+        selectedSections: requestedSections.length > 0
+            ? requestedSections
+            : [...(INTERVIEW_SUMMARY_PRESET_SECTIONS[preset] || INTERVIEW_SUMMARY_PRESET_SECTIONS.full_analysis)],
+        mergeMode: body?.mergeMode === 'replace_all' ? 'replace_all' : 'merge_selected',
+    };
+}
+
+function buildInterviewSummaryPrompt({ conversationText, selectedSections }) {
+    const sectionDefs = selectedSections
+        .map((sectionKey) => INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS[sectionKey])
+        .filter(Boolean);
+    const focusBullets = [...new Set(sectionDefs.flatMap((section) => section.focus || []))];
+    const schema = sectionDefs.map((section) => section.schema).join(',\n');
+    const limits = [...new Set(sectionDefs.flatMap((section) => section.limits || []))];
+
+    return `You are a senior CX Researcher and Service Designer.
+Your task is to analyze this interview as evidence about the customer's lived experience across a service, not just to summarize the conversation.
+
+Only generate the requested analysis sections.
+
+Focus on:
+${focusBullets.map((item) => `- ${item}`).join('\n')}
+
+CRITICAL RULES:
+- Detect the dominant language of the transcript and write the entire output in that exact same language.
+- Base every conclusion only on evidence from the transcript.
+- Do not invent facts, motivations, stages, or context that are not supported by the transcript.
+- Prioritize the respondent's statements over the interviewer's framing.
+- Merge duplicate observations.
+- Be specific, concise, and insight-rich.
+- Highlight not only problems, but also what already works well when that section is requested.
+- If something is unclear, prefer an empty string or empty array instead of guessing.
+- Return only the requested top-level keys and omit everything else.
+
+Return EXACTLY one valid JSON object with this schema:
+{
+  ${schema}
+}
+
+LIMITS:
+${limits.map((item) => `- ${item}`).join('\n')}
+
+Do not include markdown fences.
+Return only JSON.
+
+Transcript:
+"""
+${conversationText}
+"""`;
+}
+
+function mergeInterviewSummarySections(existingSummaryData, generatedSummaryData, selectedSections) {
+    const existingSummary = normalizeInterviewSummaryData(existingSummaryData) || {};
+    const mergedSummary = {};
+
+    INTERVIEW_SUMMARY_SECTION_ORDER.forEach((sectionKey) => {
+        if (selectedSections.includes(sectionKey)) {
+            mergedSummary[sectionKey] = generatedSummaryData[sectionKey];
+            return;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(existingSummary, sectionKey)) {
+            mergedSummary[sectionKey] = existingSummary[sectionKey];
+            return;
+        }
+
+        mergedSummary[sectionKey] = generatedSummaryData[sectionKey];
+    });
+
+    return normalizeInterviewSummaryData(mergedSummary) || generatedSummaryData;
+}
+
+function buildInterviewSummarySystemState(currentSystemState, { provider, model, preset, selectedSections, mergeMode }) {
+    return {
+        ...currentSystemState,
+        summaryGeneration: {
+            provider,
+            model,
+            preset,
+            selectedSections,
+            mergeMode,
+            generatedAt: new Date().toISOString(),
+        },
+    };
 }
 
 function formatTranscriptTimestamp(totalSeconds) {
@@ -2310,6 +2626,23 @@ function normalizeInterviewSummaryData(raw) {
       },
       5
     ),
+    strengths: normalizeObjectArray(
+      raw.strengths,
+      (item) => {
+        if (typeof item === 'string') {
+          const title = cleanString(item);
+          return title ? { title, description: '', whyItWorks: '', evidenceQuote: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const title = cleanString(item.title);
+        const description = cleanString(item.description);
+        const whyItWorks = cleanString(item.whyItWorks);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!title && !description && !whyItWorks && !evidenceQuote) return null;
+        return { title, description, whyItWorks, evidenceQuote };
+      },
+      5
+    ),
     quotes: normalizeStringArray(raw.quotes, 3),
   };
 
@@ -2335,6 +2668,7 @@ function normalizeInterviewSummaryData(raw) {
     normalized.unmetNeeds.length > 0 ||
     normalized.workarounds.length > 0 ||
     normalized.opportunityAreas.length > 0 ||
+    normalized.strengths.length > 0 ||
     normalized.quotes.length > 0;
 
   return hasContent ? normalized : null;
@@ -3821,6 +4155,9 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'No transcript data found for this interview.' });
         }
 
+        const summaryRequest = resolveInterviewSummaryRequest(req.body || {});
+        const { preset, selectedSections, mergeMode } = summaryRequest;
+
         // 1. Initialize Gemini API
         if (!process.env.GEMINI_API_KEY) {
              throw new Error("GEMINI_API_KEY is not configured on the server.");
@@ -3835,137 +4172,7 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
         ).join('\n');
 
         // 3. Construct the prompt
-        const prompt = `You are a senior CX Researcher and Service Designer.
-Your task is to analyze this interview as evidence about the customer's lived experience across a service, not just to summarize the conversation.
-
-Focus on:
-- the customer journey they are moving through
-- stages, customer actions, touchpoints, and pain points at each stage
-- what the respondent is trying to achieve
-- broken expectations
-- friction and service gaps across touchpoints
-- unmet needs
-- emotional reactions
-- workarounds
-- the likely root causes behind complaints
-- evidence-backed opportunity areas for improving the experience
-- the customer's JTBD profile
-- the 4 forces of progress (push, pull, anxiety, habit)
-
-CRITICAL RULES:
-- Detect the dominant language of the transcript and write the entire output in that exact same language.
-- Base every conclusion only on evidence from the transcript.
-- Do not invent facts, motivations, stages, or context that are not supported by the transcript.
-- Prioritize the respondent's statements over the interviewer's framing.
-- Merge duplicate observations.
-- Be specific, concise, and insight-rich.
-- If something is unclear, prefer an empty string or empty array instead of guessing.
-
-Return EXACTLY one valid JSON object with this schema:
-{
-  "summary": {
-    "jobToBeDone": "string",
-    "generalInsight": "string",
-    "overallSentiment": "positive|mixed|negative"
-  },
-  "journeyDraft": {
-    "jobContext": "string",
-    "stages": [
-      {
-        "stage": "string",
-        "customerActions": ["string"],
-        "touchpoints": [
-          {
-            "touchpoint": "string",
-            "interactsWith": "string",
-            "channel": "string"
-          }
-        ],
-        "painPoints": [
-          {
-            "title": "string",
-            "description": "string",
-            "severity": "low|medium|high"
-          }
-        ]
-      }
-    ]
-  },
-  "jtbdProfile": {
-    "mainJob": "string",
-    "functionalJob": "string",
-    "emotionalJob": "string",
-    "socialJob": "string",
-    "jobContext": "string",
-    "desiredOutcome": "string",
-    "successCriteria": ["string"]
-  },
-  "forcesOfProgress": {
-    "pushes": ["string"],
-    "pulls": ["string"],
-    "anxieties": ["string"],
-    "habits": ["string"]
-  },
-  "painPoints": [
-    {
-      "title": "string",
-      "description": "string",
-      "rootCause": "string",
-      "impact": "string",
-      "severity": "low|medium|high",
-      "evidenceQuote": "string"
-    }
-  ],
-  "momentsOfFriction": [
-    {
-      "stage": "string",
-      "situation": "string",
-      "breakdown": "string",
-      "customerReaction": "string"
-    }
-  ],
-  "unmetNeeds": [
-    {
-      "need": "string",
-      "whyItMatters": "string"
-    }
-  ],
-  "workarounds": [
-    {
-      "workaround": "string",
-      "whatItSignals": "string"
-    }
-  ],
-  "opportunityAreas": [
-    {
-      "area": "string",
-      "rationale": "string"
-    }
-  ],
-  "quotes": ["string"]
-}
-
-LIMITS:
-- journeyDraft.stages: up to 8
-- journeyDraft.customerActions: up to 6 per stage
-- journeyDraft.touchpoints: up to 6 per stage
-- journeyDraft.painPoints: up to 5 per stage
-- jtbdProfile.successCriteria: up to 5
-- forcesOfProgress.pushes/pulls/anxieties/habits: up to 5 each
-- painPoints: up to 5
-- momentsOfFriction: up to 5
-- unmetNeeds: up to 5
-- workarounds: up to 3
-- opportunityAreas: up to 5
-- quotes: up to 3
-
-Do not include markdown fences.
-Return only JSON.
-
-Transcript:
-"""
-${conversationText}
-"""`;
+        const prompt = buildInterviewSummaryPrompt({ conversationText, selectedSections });
 
         // 4. Call Gemini
         const result = await model.generateContent(prompt);
@@ -3985,7 +4192,23 @@ ${conversationText}
             throw new Error("AI returned an empty or unsupported summary format.");
         }
 
-        aiSummaryData = withInterviewSystemState(aiSummaryData, getInterviewSystemState(existing.summary_data));
+        if (mergeMode === 'merge_selected') {
+            aiSummaryData = mergeInterviewSummarySections(existing.summary_data, aiSummaryData, selectedSections);
+        }
+
+        aiSummaryData = withInterviewSystemState(
+            aiSummaryData,
+            buildInterviewSummarySystemState(
+                getInterviewSystemState(existing.summary_data),
+                {
+                    provider: 'gemini',
+                    model: 'gemini-2.5-pro',
+                    preset,
+                    selectedSections,
+                    mergeMode,
+                }
+            )
+        );
 
         const { data, error } = await supabaseAdmin.from('interviews')
             .update({ summary_data: aiSummaryData, updated_at: new Date().toISOString() })

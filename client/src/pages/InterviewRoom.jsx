@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Mic, Search, CheckCircle2, AlertCircle, Loader2, StopCircle, Play, Sparkles, Save, ChevronLeft, Volume2, User, Edit2, UploadCloud, FileAudio, Copy, Check } from 'lucide-react';
+import { Mic, CheckCircle2, AlertCircle, Loader2, StopCircle, Sparkles, Save, ChevronLeft, Volume2, Edit2, UploadCloud, FileAudio, Copy, Check } from 'lucide-react';
 import { getAuthToken } from '../services/auth';
 import { API_BASE_URL } from '../config/api';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,9 +11,31 @@ const INSIGHTS_PANEL_WIDTH_KEY = 'iterojm.interview.insightsWidth';
 const DEFAULT_INSIGHTS_WIDTH = 420;
 const MIN_INSIGHTS_WIDTH = 320;
 const MAX_INSIGHTS_WIDTH = 680;
+const INSIGHT_SECTION_ORDER = [
+  'summary',
+  'journeyDraft',
+  'jtbdProfile',
+  'forcesOfProgress',
+  'painPoints',
+  'momentsOfFriction',
+  'unmetNeeds',
+  'workarounds',
+  'opportunityAreas',
+  'strengths',
+  'quotes',
+];
+const INSIGHT_PRESET_SECTIONS = {
+  quick_summary: ['summary', 'painPoints', 'strengths', 'quotes'],
+  research_insights: ['summary', 'painPoints', 'strengths', 'momentsOfFriction', 'unmetNeeds', 'workarounds', 'opportunityAreas', 'quotes'],
+  journey_mapping: ['summary', 'journeyDraft', 'painPoints', 'strengths', 'momentsOfFriction', 'quotes'],
+  jtbd_analysis: ['summary', 'jtbdProfile', 'forcesOfProgress', 'strengths', 'quotes'],
+};
+const DEFAULT_INSIGHT_PRESET = 'research_insights';
+const DEFAULT_INSIGHT_SECTIONS = [...INSIGHT_PRESET_SECTIONS[DEFAULT_INSIGHT_PRESET]];
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 const cleanString = (value) => typeof value === 'string' ? value.trim() : '';
 
 const normalizeStringArray = (value, maxItems) =>
@@ -122,6 +144,23 @@ const normalizeInterviewSummary = (raw) => {
         })
         .filter(Boolean)
     : [];
+  const strengths = Array.isArray(raw.strengths)
+    ? raw.strengths
+        .map((item) => {
+          if (typeof item === 'string') {
+            const title = cleanString(item);
+            return title ? { title, description: '', whyItWorks: '', evidenceQuote: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const title = cleanString(item.title);
+          const description = cleanString(item.description);
+          const whyItWorks = cleanString(item.whyItWorks);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!title && !description && !whyItWorks && !evidenceQuote) return null;
+          return { title, description, whyItWorks, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
 
   const normalized = {
     summary: {
@@ -166,6 +205,7 @@ const normalizeInterviewSummary = (raw) => {
     unmetNeeds: normalizePairList(raw.unmetNeeds, 'need', 'whyItMatters'),
     workarounds: normalizePairList(raw.workarounds, 'workaround', 'whatItSignals'),
     opportunityAreas: normalizePairList(raw.opportunityAreas, 'area', 'rationale'),
+    strengths,
     quotes: Array.isArray(raw.quotes) ? raw.quotes.map((q) => cleanString(q)).filter(Boolean) : [],
   };
 
@@ -191,6 +231,7 @@ const normalizeInterviewSummary = (raw) => {
     normalized.unmetNeeds.length > 0 ||
     normalized.workarounds.length > 0 ||
     normalized.opportunityAreas.length > 0 ||
+    normalized.strengths.length > 0 ||
     normalized.quotes.length > 0;
 
   return hasContent ? normalized : null;
@@ -220,6 +261,30 @@ const sentimentLabel = (sentiment, t) => {
     default:
       return sentiment;
   }
+};
+
+const normalizeInsightConfigFromSummary = (summaryData) => {
+  if (!isPlainObject(summaryData)) return null;
+  const systemState = isPlainObject(summaryData._system) ? summaryData._system : null;
+  const summaryGeneration = isPlainObject(systemState?.summaryGeneration) ? systemState.summaryGeneration : null;
+  if (!summaryGeneration) return null;
+
+  const selectedSections = INSIGHT_SECTION_ORDER.filter((sectionKey) =>
+    Array.isArray(summaryGeneration.selectedSections) && summaryGeneration.selectedSections.includes(sectionKey)
+  );
+  const presetCandidate = cleanString(summaryGeneration.preset);
+  const preset = presetCandidate === 'custom' || presetCandidate === 'full_analysis' || Object.prototype.hasOwnProperty.call(INSIGHT_PRESET_SECTIONS, presetCandidate)
+    ? presetCandidate
+    : '';
+  const mergeMode = summaryGeneration.mergeMode === 'replace_all' ? 'replace_all' : 'merge_selected';
+
+  if (!preset && selectedSections.length === 0) return null;
+
+  return {
+    preset: preset || 'custom',
+    selectedSections: selectedSections.length > 0 ? selectedSections : [...DEFAULT_INSIGHT_SECTIONS],
+    mergeMode,
+  };
 };
 
 export default function InterviewRoom({ userProfile, currentWorkspace }) {
@@ -269,11 +334,51 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   // AI Summary State
   const [generatingAI, setGeneratingAI] = useState(false);
   const [insightStage, setInsightStage] = useState(1);
+  const [isInsightsConfigOpen, setIsInsightsConfigOpen] = useState(false);
+  const [selectedInsightPreset, setSelectedInsightPreset] = useState(DEFAULT_INSIGHT_PRESET);
+  const [selectedInsightSections, setSelectedInsightSections] = useState(DEFAULT_INSIGHT_SECTIONS);
+  const [insightMergeMode, setInsightMergeMode] = useState('merge_selected');
   
   // Title Editing State
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState('');
   const normalizedSummary = useMemo(() => normalizeInterviewSummary(interview?.summary_data), [interview?.summary_data]);
+  const persistedInsightConfig = useMemo(() => normalizeInsightConfigFromSummary(interview?.summary_data), [interview?.summary_data]);
+  const insightPresets = useMemo(() => ([
+    {
+      key: 'quick_summary',
+      label: t('interviews.presetQuickSummary'),
+      description: t('interviews.presetQuickSummaryDesc'),
+    },
+    {
+      key: 'research_insights',
+      label: t('interviews.presetResearchInsights'),
+      description: t('interviews.presetResearchInsightsDesc'),
+    },
+    {
+      key: 'journey_mapping',
+      label: t('interviews.presetJourneyMapping'),
+      description: t('interviews.presetJourneyMappingDesc'),
+    },
+    {
+      key: 'jtbd_analysis',
+      label: t('interviews.presetJtbdAnalysis'),
+      description: t('interviews.presetJtbdAnalysisDesc'),
+    },
+  ]), [t]);
+  const insightSectionOptions = useMemo(() => ([
+    { key: 'summary', label: t('interviews.sectionSummary'), description: t('interviews.sectionSummaryDesc') },
+    { key: 'journeyDraft', label: t('interviews.journeyDraft'), description: t('interviews.sectionJourneyDraftDesc') },
+    { key: 'jtbdProfile', label: t('interviews.jtbdProfile'), description: t('interviews.sectionJtbdProfileDesc') },
+    { key: 'forcesOfProgress', label: t('interviews.forcesOfProgress'), description: t('interviews.sectionForcesOfProgressDesc') },
+    { key: 'painPoints', label: t('interviews.painPoints'), description: t('interviews.sectionPainPointsDesc') },
+    { key: 'momentsOfFriction', label: t('interviews.momentsOfFriction'), description: t('interviews.sectionMomentsOfFrictionDesc') },
+    { key: 'unmetNeeds', label: t('interviews.unmetNeeds'), description: t('interviews.sectionUnmetNeedsDesc') },
+    { key: 'workarounds', label: t('interviews.workarounds'), description: t('interviews.sectionWorkaroundsDesc') },
+    { key: 'opportunityAreas', label: t('interviews.opportunityAreas'), description: t('interviews.sectionOpportunityAreasDesc') },
+    { key: 'strengths', label: t('interviews.strengths'), description: t('interviews.sectionStrengthsDesc') },
+    { key: 'quotes', label: t('interviews.keyQuotes'), description: t('interviews.sectionQuotesDesc') },
+  ]), [t]);
   const uploadFailureShownRef = useRef(false);
   const interviewStatusLabel = useMemo(() => {
     switch (interview?.status) {
@@ -294,6 +399,23 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       saveInterview({ title: editedTitle.trim() });
     }
     setIsEditingTitle(false);
+  };
+
+  const applyInsightPreset = (presetKey) => {
+    const presetSections = INSIGHT_PRESET_SECTIONS[presetKey];
+    if (!presetSections) return;
+    setSelectedInsightPreset(presetKey);
+    setSelectedInsightSections([...presetSections]);
+  };
+
+  const toggleInsightSection = (sectionKey) => {
+    setSelectedInsightPreset('custom');
+    setSelectedInsightSections((current) => {
+      const next = current.includes(sectionKey)
+        ? current.filter((item) => item !== sectionKey)
+        : [...current, sectionKey];
+      return INSIGHT_SECTION_ORDER.filter((item) => next.includes(item));
+    });
   };
 
   const fetchInterview = useCallback(async ({ redirectOnMissing = true, settleLoading = false } = {}) => {
@@ -329,6 +451,13 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   useEffect(() => {
     fetchInterview({ settleLoading: true });
   }, [fetchInterview]);
+
+  useEffect(() => {
+    if (!persistedInsightConfig || isInsightsConfigOpen) return;
+    setSelectedInsightPreset(persistedInsightConfig.preset);
+    setSelectedInsightSections(persistedInsightConfig.selectedSections);
+    setInsightMergeMode(persistedInsightConfig.mergeMode);
+  }, [isInsightsConfigOpen, persistedInsightConfig]);
 
   useEffect(() => {
     if (loading || !isUploadMode || !interview || interview.status !== 'processing') {
@@ -562,7 +691,17 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     };
   }, []);
 
-  const generateAIInsights = async () => {
+  const generateAIInsights = async ({
+    preset = selectedInsightPreset,
+    selectedSections = selectedInsightSections,
+    mergeMode = insightMergeMode,
+  } = {}) => {
+    const normalizedSections = INSIGHT_SECTION_ORDER.filter((sectionKey) => selectedSections.includes(sectionKey));
+    if (normalizedSections.length === 0) {
+      alert(t('interviews.selectAtLeastOneSection'));
+      return;
+    }
+
     setGeneratingAI(true);
     setInsightStage(1);
     
@@ -577,7 +716,15 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}/interviews/${id}/generate-summary`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          preset,
+          selectedSections: normalizedSections,
+          mergeMode,
+        }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -593,6 +740,24 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       setGeneratingAI(false);
       setInsightStage(1);
     }
+  };
+
+  const openInsightsConfig = () => {
+    if (transcriptData.length === 0 || isRecording || generatingAI) return;
+    setIsInsightsConfigOpen(true);
+  };
+
+  const handleGenerateConfiguredInsights = async () => {
+    if (selectedInsightSections.length === 0) {
+      alert(t('interviews.selectAtLeastOneSection'));
+      return;
+    }
+    setIsInsightsConfigOpen(false);
+    await generateAIInsights({
+      preset: selectedInsightPreset,
+      selectedSections: selectedInsightSections,
+      mergeMode: insightMergeMode,
+    });
   };
 
   const handleEditSave = (index) => {
@@ -718,6 +883,8 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
 
   const isCompleted = interview.status === 'completed';
   const isUploadProcessing = isUploadMode && transcriptData.length === 0 && (isUploading || interview.status === 'processing');
+  const canConfigureInsights = transcriptData.length > 0 && !isRecording && !generatingAI;
+  const selectedInsightsCount = selectedInsightSections.length;
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white">
@@ -988,9 +1155,19 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
           className="w-1/3 flex min-w-0 flex-shrink-0 flex-col border-l border-gray-200 bg-gray-50 z-10 relative lg:w-auto"
           style={isDesktopLayout ? { width: `${insightsWidth}px` } : undefined}
         >
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2 bg-white">
-            <Sparkles className="text-amber-500" size={20} />
-            <h2 className="font-semibold text-gray-900">{t('interviews.aiInsights')}</h2>
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 bg-white">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles className="text-amber-500" size={20} />
+              <h2 className="font-semibold text-gray-900">{t('interviews.aiInsights')}</h2>
+            </div>
+            <button
+              onClick={openInsightsConfig}
+              disabled={!canConfigureInsights}
+              className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Sparkles size={14} />
+              {normalizedSummary ? t('interviews.updateInsights') : t('interviews.configureInsights')}
+            </button>
           </div>
           
           <div className="flex-1 overflow-y-auto p-6">
@@ -1195,6 +1372,35 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                   </div>
                 )}
 
+                {normalizedSummary.strengths.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-500" />
+                      {t('interviews.strengths')}
+                    </h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.strengths.map((item, i) => (
+                        <div key={`${item.title || item.description}-${i}`} className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm space-y-2">
+                          <div className="text-sm font-semibold text-emerald-950">{item.title || item.description}</div>
+                          {item.title && item.description && (
+                            <p className="text-sm text-emerald-900 leading-relaxed">{item.description}</p>
+                          )}
+                          {item.whyItWorks && (
+                            <div className="text-xs text-emerald-800">
+                              <span className="font-semibold text-emerald-950">{t('interviews.whyItWorks')}:</span> {item.whyItWorks}
+                            </div>
+                          )}
+                          {item.evidenceQuote && (
+                            <blockquote className="rounded-r-lg border-l-4 border-emerald-300 bg-white/70 pl-4 py-2 text-sm italic text-emerald-900">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Pain Points */}
                 {normalizedSummary.painPoints.length > 0 && (
                   <div className="space-y-3">
@@ -1317,7 +1523,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                 <Sparkles size={48} className="text-gray-200" />
                 <p className="px-8 text-sm">{t('interviews.aiInsightsDesc')}</p>
                 <button 
-                  onClick={generateAIInsights}
+                  onClick={openInsightsConfig}
                   disabled={transcriptData.length === 0 || isRecording}
                   className="px-6 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed shadow-sm"
                 >
@@ -1350,6 +1556,153 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
           </div>
         )}
       </div>
+
+      {isInsightsConfigOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onClick={() => setIsInsightsConfigOpen(false)}>
+          <div className="w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-500">{t('interviews.recommended')}</div>
+                  <h3 className="text-xl font-bold text-gray-900">{t('interviews.insightSetupTitle')}</h3>
+                  <p className="max-w-2xl text-sm text-gray-600">{t('interviews.insightSetupDesc')}</p>
+                </div>
+                <button
+                  onClick={() => setIsInsightsConfigOpen(false)}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                >
+                  {t('interviews.cancel')}
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[75vh] overflow-y-auto px-6 py-6 space-y-8 bg-gray-50">
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">{t('interviews.presets')}</h4>
+                    <p className="mt-1 text-sm text-gray-600">{t('interviews.presetsDesc')}</p>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-gray-500 shadow-sm">
+                    {t('interviews.selectedCount', { count: selectedInsightsCount })}
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {insightPresets.map((preset) => {
+                    const isActive = selectedInsightPreset === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        onClick={() => applyInsightPreset(preset.key)}
+                        className={`rounded-2xl border p-4 text-left shadow-sm transition-all ${
+                          isActive
+                            ? 'border-blue-300 bg-blue-50 text-blue-950 ring-2 ring-blue-100'
+                            : 'border-gray-200 bg-white text-gray-900 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold">{preset.label}</div>
+                          {isActive && <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">{t('interviews.activePreset')}</span>}
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-gray-600">{preset.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">{t('interviews.customSections')}</h4>
+                  <p className="mt-1 text-sm text-gray-600">{t('interviews.customSectionsDesc')}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {insightSectionOptions.map((section) => {
+                    const isSelected = selectedInsightSections.includes(section.key);
+                    return (
+                      <button
+                        key={section.key}
+                        type="button"
+                        onClick={() => toggleInsightSection(section.key)}
+                        className={`rounded-2xl border p-4 text-left shadow-sm transition-all ${
+                          isSelected
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-100'
+                            : 'border-gray-200 bg-white text-gray-900 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="text-sm font-semibold">{section.label}</div>
+                          <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
+                            isSelected
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-gray-300 bg-white text-transparent'
+                          }`}>
+                            ✓
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-gray-600">{section.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">{t('interviews.regenerationMode')}</h4>
+                  <p className="mt-1 text-sm text-gray-600">{t('interviews.regenerationModeDesc')}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setInsightMergeMode('merge_selected')}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition-all ${
+                      insightMergeMode === 'merge_selected'
+                        ? 'border-blue-300 bg-blue-50 text-blue-950 ring-2 ring-blue-100'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{t('interviews.mergeSelected')}</div>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{t('interviews.mergeSelectedDesc')}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInsightMergeMode('replace_all')}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition-all ${
+                      insightMergeMode === 'replace_all'
+                        ? 'border-blue-300 bg-blue-50 text-blue-950 ring-2 ring-blue-100'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="text-sm font-semibold">{t('interviews.replaceAllInsights')}</div>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{t('interviews.replaceAllInsightsDesc')}</p>
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 border-t border-gray-200 bg-white px-6 py-4">
+              <div className="text-sm text-gray-500">{t('interviews.selectedCount', { count: selectedInsightsCount })}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsInsightsConfigOpen(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                >
+                  {t('interviews.cancel')}
+                </button>
+                <button
+                  onClick={handleGenerateConfiguredInsights}
+                  disabled={selectedInsightsCount === 0}
+                  className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {normalizedSummary ? t('interviews.updateInsights') : t('interviews.generateInsights')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
