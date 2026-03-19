@@ -6,7 +6,7 @@ CREATE TABLE public.interviews (
   user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   title text NOT NULL,
   type text CHECK (type IN ('live', 'upload')) DEFAULT 'live',
-  status text CHECK (status IN ('draft', 'completed')) DEFAULT 'draft',
+  status text CHECK (status IN ('draft', 'processing', 'completed', 'failed')) DEFAULT 'draft',
   transcript_data jsonb DEFAULT '[]'::jsonb,
   summary_data jsonb DEFAULT '{}'::jsonb,
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,

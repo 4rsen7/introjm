@@ -200,6 +200,119 @@ const allowedOrigins = [
   'https://iterojm-admin.vercel.app',
 ];
 
+const INTERVIEW_SYSTEM_KEY = '_system';
+const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
+
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getInterviewSystemState(summaryData) {
+    if (!isPlainObject(summaryData)) return {};
+    const systemState = summaryData[INTERVIEW_SYSTEM_KEY];
+    return isPlainObject(systemState) ? systemState : {};
+}
+
+function withInterviewSystemState(summaryData, nextSystemState) {
+    const baseSummary = isPlainObject(summaryData) ? { ...summaryData } : {};
+    if (!nextSystemState || Object.keys(nextSystemState).length === 0) {
+        delete baseSummary[INTERVIEW_SYSTEM_KEY];
+        return baseSummary;
+    }
+    baseSummary[INTERVIEW_SYSTEM_KEY] = nextSystemState;
+    return baseSummary;
+}
+
+function getEffectiveInterviewStatus(interview) {
+    const persistedStatus = typeof interview?.status === 'string' ? interview.status : 'draft';
+    if (persistedStatus === 'processing' || persistedStatus === 'failed' || persistedStatus === 'completed') {
+        return persistedStatus;
+    }
+
+    const systemState = getInterviewSystemState(interview?.summary_data);
+    if (systemState.uploadStatus === 'processing' || systemState.uploadStatus === 'failed') {
+        return systemState.uploadStatus;
+    }
+
+    return persistedStatus || 'draft';
+}
+
+function sanitizeInterviewForClient(interview) {
+    if (!interview) return interview;
+    const effectiveStatus = getEffectiveInterviewStatus(interview);
+    return {
+        ...interview,
+        status: effectiveStatus,
+    };
+}
+
+function isInterviewStatusConstraintError(error) {
+    if (!error) return false;
+    return error.constraint === 'interviews_status_check' || String(error.message || '').includes('interviews_status_check');
+}
+
+async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates = {}, existingSummaryData = null) {
+    const basePayload = {
+        ...extraUpdates,
+        updated_at: new Date().toISOString(),
+    };
+    delete basePayload.upload_error_message;
+
+    const directStatusPayload = {
+        ...basePayload,
+        status: nextStatus,
+    };
+
+    const { data, error } = await supabaseAdmin
+        .from('interviews')
+        .update(directStatusPayload)
+        .eq('id', interviewId)
+        .select()
+        .single();
+
+    if (!error) {
+        return { data: sanitizeInterviewForClient(data), persistedViaFallback: false };
+    }
+
+    if (!isInterviewStatusConstraintError(error) || (nextStatus !== 'processing' && nextStatus !== 'failed')) {
+        throw error;
+    }
+
+    const currentSummaryData = existingSummaryData !== null ? existingSummaryData : null;
+    const currentSystemState = getInterviewSystemState(currentSummaryData);
+    const fallbackSystemState = {
+        ...currentSystemState,
+        uploadStatus: nextStatus,
+    };
+
+    if (nextStatus === 'failed') {
+        fallbackSystemState.uploadError = extraUpdates.upload_error_message || INTERVIEW_UPLOAD_ERROR_FALLBACK;
+        fallbackSystemState.failedAt = new Date().toISOString();
+    } else {
+        delete fallbackSystemState.uploadError;
+        delete fallbackSystemState.failedAt;
+        fallbackSystemState.startedAt = new Date().toISOString();
+    }
+
+    const fallbackSummaryData = withInterviewSystemState(currentSummaryData, fallbackSystemState);
+    const fallbackPayload = {
+        ...basePayload,
+        status: 'draft',
+        summary_data: fallbackSummaryData,
+    };
+
+    const fallbackResult = await supabaseAdmin
+        .from('interviews')
+        .update(fallbackPayload)
+        .eq('id', interviewId)
+        .select()
+        .single();
+
+    if (fallbackResult.error) throw fallbackResult.error;
+
+    return { data: sanitizeInterviewForClient(fallbackResult.data), persistedViaFallback: true };
+}
+
 app.use(cors({
   origin: (origin, callback) => {
       // 1. Дозволяємо запити без origin (Postman, серверні скрипти)
@@ -3419,7 +3532,7 @@ app.get('/api/interviews', async (req, res) => {
             if (profiles) profiles.forEach(p => { profilesMap[p.id] = p.full_name || p.email; });
         }
 
-        const interviewsWithOwners = data.map(i => ({
+        const interviewsWithOwners = data.map(i => sanitizeInterviewForClient({
             ...i,
             owner: profilesMap[i.user_id] || 'Unknown'
         }));
@@ -3448,7 +3561,7 @@ app.get('/api/interviews/:id', async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Interview not found or access denied' });
         }
 
-        res.json({ status: 'success', data: interview });
+        res.json({ status: 'success', data: sanitizeInterviewForClient(interview) });
     } catch (err) {
         logSystemError(err, `GET /api/interviews/${id}`);
         res.status(500).json({ status: 'error', error: err.message });
@@ -3859,12 +3972,18 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
         if (error) throw error;
     } catch (err) {
         logSystemError(err, `ASYNC interview upload ${interviewId}`);
-        await supabaseAdmin.from('interviews')
-            .update({
-                status: 'failed',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', interviewId);
+        const { data: latestInterview } = await supabaseAdmin
+            .from('interviews')
+            .select('summary_data')
+            .eq('id', interviewId)
+            .maybeSingle();
+
+        await updateInterviewStatusCompat(
+            interviewId,
+            'failed',
+            { upload_error_message: err.message || INTERVIEW_UPLOAD_ERROR_FALLBACK },
+            latestInterview?.summary_data ?? null
+        );
     } finally {
         safeDeleteFile(file.path);
 
@@ -3907,17 +4026,15 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
         const processingPayload = {
             transcript_data: [],
             summary_data: null,
-            status: 'processing',
             updated_at: new Date().toISOString()
         };
 
-        const { data: updatedInterview, error: updateError } = await supabaseAdmin.from('interviews')
-            .update(processingPayload)
-            .eq('id', existing.id)
-            .select()
-            .single();
-
-        if (updateError) throw updateError;
+        const { data: updatedInterview } = await updateInterviewStatusCompat(
+            existing.id,
+            'processing',
+            processingPayload,
+            existing.summary_data ?? null
+        );
 
         const uploadFile = {
             path: req.file.path,
