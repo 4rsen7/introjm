@@ -202,7 +202,7 @@ const allowedOrigins = [
 
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
-const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
 const INTERVIEW_SUMMARY_SECTION_ORDER = [
     'summary',
     'journeyDraft',
@@ -4626,6 +4626,13 @@ const transcribeAudioWithOpenAI = async (file) => {
     }
 
     const normalized = normalizeOpenAiTranscript(transcriptionResponse.payload);
+    console.info('[transcription:openai]', {
+        model,
+        responseFormat: transcriptionResponse.responseFormat,
+        usedFallbackSegmentation: normalized.usedFallbackSegmentation,
+        transcriptTurns: Array.isArray(normalized.transcript) ? normalized.transcript.length : 0,
+        durationSeconds: normalized.durationSeconds,
+    });
     return {
         transcript: normalized.transcript,
         systemState: buildInterviewTranscriptionSystemState({
@@ -4653,6 +4660,14 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
                 ...openAiResult.systemState,
                 uploadStatus: 'completed',
             };
+            console.info('[interview-upload] completed with OpenAI transcription', {
+                interviewId,
+                model: transcriptionSystemState.model,
+                provider: transcriptionSystemState.provider,
+                responseFormat: transcriptionSystemState.responseFormat,
+                usedFallbackSegmentation: transcriptionSystemState.usedFallbackSegmentation,
+                transcriptTurns: Array.isArray(newTranscriptData) ? newTranscriptData.length : 0,
+            });
         } else {
             if (!process.env.GEMINI_API_KEY) {
                 throw new Error("Neither OPENAI_API_KEY nor GEMINI_API_KEY is configured.");
