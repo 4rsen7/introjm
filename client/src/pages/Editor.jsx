@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2, History } from 'lucide-react'
 import { MemoryRouter, useParams, useNavigate, useLocation } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -139,8 +139,68 @@ function SortableLaneItem({ id, children, zIndexOverride, isPinned, stickyTop })
   );
 }
 
-export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric }) {
-  const { t } = useTranslation();
+const ATTRIBUTED_CARD_TYPES = new Set(['text', 'pain_point', 'opportunity', 'solution']);
+
+function normalizeActorName(userProfile) {
+  const rawName = userProfile?.full_name?.trim() || userProfile?.email?.trim() || '';
+  if (!rawName) return '';
+  return rawName;
+}
+
+function decorateCardWithAttribution(card, actor) {
+  if (!card || !ATTRIBUTED_CARD_TYPES.has(card.type)) return card;
+
+  const timestamp = new Date().toISOString();
+  const next = { ...card };
+
+  if (actor?.id) {
+    next.updatedById = actor.id;
+    next.updatedAt = timestamp;
+    if (!next.createdById) next.createdById = actor.id;
+  }
+
+  if (actor?.name) {
+    next.updatedByName = actor.name;
+    if (!next.createdByName) next.createdByName = actor.name;
+  }
+
+  if (!next.createdAt) next.createdAt = timestamp;
+  if (!next.updatedAt) next.updatedAt = timestamp;
+
+  return next;
+}
+
+function formatActorDisplayName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+
+  if (raw.includes('@')) {
+    const local = raw.split('@')[0] || '';
+    return local ? `${local.slice(0, 1).toUpperCase()}${local.slice(1)}` : '';
+  }
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return parts[0] || '';
+
+  const [firstName, ...rest] = parts;
+  const lastInitial = rest[0]?.[0]?.toUpperCase();
+  return lastInitial ? `${firstName} ${lastInitial}.` : firstName;
+}
+
+function formatHistoryTimestamp(isoString, locale) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(locale === 'uk' ? 'uk-UA' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: 'short',
+  }).format(date);
+}
+
+export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric, userProfile = null }) {
+  const { t, i18n } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -238,6 +298,44 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const [loadError, setLoadError] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isMinLoadComplete, setIsMinLoadComplete] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const currentActor = useMemo(() => ({
+    id: userProfile?.id || '',
+    name: normalizeActorName(userProfile),
+  }), [userProfile]);
+  const currentLang = i18n.language?.startsWith('uk') ? 'uk' : 'en';
+  const cardTypeLabels = useMemo(() => ({
+    text: t('editor.cardText'),
+    pain_point: t('editor.cardPainPoint'),
+    opportunity: t('editor.cardOpportunity'),
+    solution: t('editor.cardSolution'),
+  }), [t]);
+  const recentCardUpdates = useMemo(() => {
+    const entries = [];
+    Object.values(cells || {}).forEach((laneCells) => {
+      Object.values(laneCells || {}).forEach((colData) => {
+        (colData?.cards || []).forEach((card) => {
+          if (!ATTRIBUTED_CARD_TYPES.has(card?.type)) return;
+          if (!card?.updatedAt || !(card?.updatedByName || card?.createdByName)) return;
+          entries.push({
+            id: card.id,
+            type: card.type,
+            actorName: card.updatedByName || card.createdByName,
+            updatedAt: card.updatedAt,
+            preview: String(card.content || '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim(),
+          });
+        });
+      });
+    });
+
+    return entries
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 8);
+  }, [cells]);
+  const latestCardUpdate = recentCardUpdates[0] || null;
 
   // Sync local persona with global data (DB source of truth) whenever globalPersonas updates
   useEffect(() => {
@@ -472,6 +570,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     return () => container.removeEventListener('wheel', onWheel);
   }, []);
 
+  useEffect(() => {
+    setIsHistoryOpen(false);
+  }, [selectedCardId, journeyId]);
+
   const handleMouseDown = (e) => {
     hasMoved.current = false;
     if (e.button === 1 || (isHandMode && e.button === 0)) {
@@ -505,7 +607,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         break
       case 'text':
         newLane = { ...newLane, title: 'Text', type: 'text' }
-        initialCard = { id: `c-${Date.now()}`, type: 'text', content: '' }
+        initialCard = decorateCardWithAttribution({ id: `c-${Date.now()}`, type: 'text', content: '' }, currentActor)
         break
       case 'image':
         newLane = { ...newLane, title: 'Images', type: 'text' }
@@ -559,7 +661,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         return;
     }
 
-    const newCard = { id: `c-${Date.now()}`, type, content: '', color: type === 'stage' ? 'bg-purple-100' : undefined };
+    const newCard = decorateCardWithAttribution(
+      { id: `c-${Date.now()}`, type, content: '', color: type === 'stage' ? 'bg-purple-100' : undefined },
+      currentActor
+    );
     setCells(prev => {
       const laneCells = prev[laneId] || {};
       const colData = laneCells[colId] || { cards: [] };
@@ -601,10 +706,11 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   }
 
   const handleUpdateCard = (laneId, colId, updatedCard) => {
+    const nextCard = decorateCardWithAttribution(updatedCard, currentActor);
     setCells(prev => {
       const laneCells = prev[laneId] || {};
       const colData = laneCells[colId] || { cards: [] };
-      return { ...prev, [laneId]: { ...laneCells, [colId]: { ...colData, cards: colData.cards.map(c => c.id === updatedCard.id ? updatedCard : c) } } }
+      return { ...prev, [laneId]: { ...laneCells, [colId]: { ...colData, cards: colData.cards.map(c => c.id === nextCard.id ? nextCard : c) } } }
     })
   }
   const handleDeleteCard = (laneId, colId, cardId) => {
@@ -1137,6 +1243,64 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
             {/* Save Status Indicator */}
             <div className="flex items-center gap-2 text-xs font-medium text-gray-400 hide-on-export min-w-[80px] justify-end ml-auto">
+                {latestCardUpdate && !isSaving && (
+                  <>
+                    <span className="hidden xl:inline text-xs text-gray-400 whitespace-nowrap">
+                      {t('editor.lastEditBy', { name: formatActorDisplayName(latestCardUpdate.actorName) })}
+                    </span>
+                    <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryOpen((value) => !value)}
+                      className={`flex items-center gap-1 text-xs transition rounded-full px-2 py-1 ${isHistoryOpen ? 'bg-gray-100 text-gray-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'}`}
+                      title={t('editor.recentChanges')}
+                      aria-label={t('editor.recentChanges')}
+                    >
+                      <History size={13} />
+                    </button>
+                    {isHistoryOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsHistoryOpen(false)}></div>
+                        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 z-[100] overflow-hidden">
+                          <div className="px-4 py-3 border-b border-gray-100">
+                            <div className="text-sm font-semibold text-gray-900">{t('editor.recentChanges')}</div>
+                          </div>
+                          <div className="max-h-80 overflow-y-auto">
+                            {recentCardUpdates.length > 0 ? (
+                              recentCardUpdates.map((entry) => (
+                                <div key={entry.id} className="px-4 py-3 border-b border-gray-50 last:border-b-0">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-medium text-gray-800">
+                                        {t('editor.historyCardUpdated', {
+                                          name: formatActorDisplayName(entry.actorName),
+                                          cardType: cardTypeLabels[entry.type] || t('editor.cardText')
+                                        })}
+                                      </div>
+                                      {entry.preview && (
+                                        <div className="mt-1 text-xs text-gray-500 line-clamp-2">
+                                          {entry.preview}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="shrink-0 text-[11px] text-gray-400">
+                                      {formatHistoryTimestamp(entry.updatedAt, currentLang)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="px-4 py-6 text-sm text-gray-400">
+                                {t('editor.noRecentChanges')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    </div>
+                  </>
+                )}
                 {isSaving ? (
                     <><div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div> {t('editor.saving')}</>
                 ) : lastSaved ? (

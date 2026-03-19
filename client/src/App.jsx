@@ -861,6 +861,7 @@ function App() {
                 globalJourneys={filteredJourneys}
                 onSaveGlobalPersona={handleSaveGlobalPersona}
                 onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
+                userProfile={userProfile}
               />
           } />
 
