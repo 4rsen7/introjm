@@ -69,6 +69,8 @@ PUBLIC_HTML_DIR="${PUBLIC_HTML_DIR:-}"
 if [[ -z "$PUBLIC_HTML_DIR" ]]; then
   if [[ "$REPO_DIR" == *"/.builds/source/repository" ]]; then
     PUBLIC_HTML_DIR="$(cd "$REPO_DIR/../../.." && pwd)"
+  elif [[ "$REPO_DIR" == *"/nodejs" ]] && [[ -d "$REPO_DIR/../public_html" ]]; then
+    PUBLIC_HTML_DIR="$(cd "$REPO_DIR/../public_html" && pwd)"
   elif [[ -d "$REPO_DIR/public_html" ]]; then
     PUBLIC_HTML_DIR="$REPO_DIR/public_html"
   else

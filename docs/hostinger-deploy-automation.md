@@ -75,7 +75,7 @@ From your local machine over SSH:
 export HOSTINGER_SSH_HOST=your.host
 export HOSTINGER_SSH_USER=your-user
 export HOSTINGER_SSH_PORT=22
-export HOSTINGER_REPO_DIR=/home/your-user/domains/iterojm.com/public_html/.builds/source/repository
+export HOSTINGER_REPO_DIR=/home/your-user/domains/iterojm.com/nodejs
 export HOSTINGER_PUBLIC_HTML_DIR=/home/your-user/domains/iterojm.com/public_html
 bash scripts/deploy-hostinger-over-ssh.sh
 ```
@@ -104,8 +104,9 @@ Required GitHub secrets:
 
 Recommended values:
 
-- `HOSTINGER_REPO_DIR=/home/<user>/domains/iterojm.com/public_html/.builds/source/repository`
+- `HOSTINGER_REPO_DIR=/home/<user>/domains/iterojm.com/nodejs`
 - `HOSTINGER_PUBLIC_HTML_DIR=/home/<user>/domains/iterojm.com/public_html`
+- `HOSTINGER_DEPLOY_SETTLE_SECONDS=120` (optional, useful if Hostinger updates the `nodejs` checkout shortly after push)
 
 If you accidentally set `HOSTINGER_REPO_DIR` to `public_html`, the workflow now tries to auto-detect `.builds/source/repository`, but it is still better to store the exact repository path in the secret.
 
@@ -115,7 +116,8 @@ On every push to `main`, GitHub Actions:
 
 1. connects to the Hostinger server over SSH
 2. enters the deployment repo
-3. runs `bash scripts/deploy-hostinger.sh`
+3. optionally waits a bit for Hostinger's own git sync to settle
+4. runs `bash scripts/deploy-hostinger.sh`
 
 This means:
 
@@ -128,4 +130,5 @@ This means:
 - The script uses `rsync --delete` when available, so old hashed assets are removed automatically.
 - If `rsync` is unavailable, it falls back to cleaning the target directory and copying files.
 - The backend restart is intentionally optional because Hostinger setups vary.
-- If you see `fatal: not a git repository`, it usually means `HOSTINGER_REPO_DIR` points to `public_html` instead of `.builds/source/repository`.
+- If you see `fatal: not a git repository`, it usually means `HOSTINGER_REPO_DIR` points to the wrong folder. For your Hostinger setup, the correct repository path is `/home/<user>/domains/iterojm.com/nodejs`.
+- The workflow intentionally skips `git fetch/pull` on the server because the Hostinger-managed `nodejs` checkout may not have non-interactive GitHub credentials. It builds from whatever revision Hostinger has already synced there.

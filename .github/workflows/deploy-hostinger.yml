@@ -24,14 +24,20 @@ jobs:
             if [ ! -d "$REPO_DIR/.git" ] && [ -d "$REPO_DIR/.builds/source/repository/.git" ]; then
               REPO_DIR="$REPO_DIR/.builds/source/repository"
             fi
+            if [ ! -d "$REPO_DIR/.git" ] && [ -d "$(dirname "$REPO_DIR")/nodejs/.git" ]; then
+              REPO_DIR="$(dirname "$REPO_DIR")/nodejs"
+            fi
             if [ ! -d "$REPO_DIR/.git" ]; then
               echo "HOSTINGER_REPO_DIR is not a git repository: $REPO_DIR" >&2
               exit 1
             fi
             export PUBLIC_HTML_DIR="${{ secrets.HOSTINGER_PUBLIC_HTML_DIR }}"
             export SERVER_RESTART_COMMAND="${{ secrets.HOSTINGER_SERVER_RESTART_COMMAND }}"
+            export HOSTINGER_DEPLOY_SETTLE_SECONDS="${{ secrets.HOSTINGER_DEPLOY_SETTLE_SECONDS }}"
             cd "$REPO_DIR"
-            git fetch origin main
-            git pull --ff-only origin main
+            if [ -n "$HOSTINGER_DEPLOY_SETTLE_SECONDS" ]; then
+              echo "Waiting $HOSTINGER_DEPLOY_SETTLE_SECONDS seconds for Hostinger repo sync..."
+              sleep "$HOSTINGER_DEPLOY_SETTLE_SECONDS"
+            fi
             export SKIP_GIT_PULL=1
             bash scripts/deploy-hostinger.sh
