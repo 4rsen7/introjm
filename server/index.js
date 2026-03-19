@@ -202,7 +202,7 @@ const allowedOrigins = [
 
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
-const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
+const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe';
 const INTERVIEW_SUMMARY_SECTION_ORDER = [
     'summary',
     'journeyDraft',

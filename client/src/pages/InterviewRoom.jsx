@@ -973,7 +973,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
           className="w-2/3 min-w-0 flex flex-col bg-white lg:w-auto"
           style={isDesktopLayout ? { width: `calc(100% - ${insightsWidth}px)` } : undefined}
         >
-          <div className="flex-none bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+          <div className="flex-none bg-white border-b border-gray-200 px-6 py-3 flex min-h-[64px] items-center justify-between z-10">
             <div className="flex items-center gap-2">
                {isUploadMode && transcriptData.length === 0 ? <UploadCloud className="text-emerald-500" size={20} /> : <Volume2 className="text-emerald-500" size={20} />}
                <h2 className="font-semibold text-gray-900">{isUploadMode && transcriptData.length === 0 ? t('interviews.uploadAudioVideo') : t('interviews.liveTranscript')}</h2>
@@ -1155,7 +1155,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
           className="w-1/3 flex min-w-0 flex-shrink-0 flex-col border-l border-gray-200 bg-gray-50 z-10 relative lg:w-auto"
           style={isDesktopLayout ? { width: `${insightsWidth}px` } : undefined}
         >
-          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3 bg-white">
+          <div className="border-b border-gray-200 bg-white px-6 py-3 flex min-h-[64px] items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <Sparkles className="text-amber-500" size={20} />
               <h2 className="font-semibold text-gray-900">{t('interviews.aiInsights')}</h2>
