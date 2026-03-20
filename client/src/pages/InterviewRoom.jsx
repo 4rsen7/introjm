@@ -205,10 +205,11 @@ const normalizeInterviewSummary = (raw) => {
               if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
               const stage = cleanString(item.stage);
               const customerActions = normalizeStringArray(item.customerActions, 6);
+              const drivers = normalizeStringArray(item.drivers, 5);
               const touchpoints = normalizeTouchpoints(item.touchpoints, 6);
               const painPoints = normalizeStagePainPoints(item.painPoints, 5);
-              if (!stage && customerActions.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
-              return { stage, customerActions, touchpoints, painPoints };
+              if (!stage && customerActions.length === 0 && drivers.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
+              return { stage, customerActions, drivers, touchpoints, painPoints };
             })
             .filter(Boolean)
             .slice(0, 8)
@@ -1285,6 +1286,17 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                               <ul className="space-y-1">
                                 {stage.customerActions.map((action, actionIndex) => (
                                   <li key={`${action}-${actionIndex}`} className="text-sm text-gray-800 leading-relaxed">• {action}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {stage.drivers.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">{t('interviews.stageDrivers')}</div>
+                              <ul className="space-y-1">
+                                {stage.drivers.map((driver, driverIndex) => (
+                                  <li key={`${driver}-${driverIndex}`} className="text-sm text-gray-800 leading-relaxed">• {driver}</li>
                                 ))}
                               </ul>
                             </div>

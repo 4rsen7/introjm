@@ -274,7 +274,7 @@ const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
     journeyDraft: {
         focus: [
             'the customer journey they are moving through',
-            'stages, customer actions, touchpoints, and pain points at each stage',
+            'stages, customer actions, drivers, touchpoints, and pain points at each stage',
         ],
         schema: `"journeyDraft": {
     "jobContext": "string",
@@ -282,6 +282,7 @@ const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
       {
         "stage": "string",
         "customerActions": ["string"],
+        "drivers": ["string"],
         "touchpoints": [
           {
             "touchpoint": "string",
@@ -302,6 +303,7 @@ const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
         limits: [
             'journeyDraft.stages: up to 8',
             'journeyDraft.customerActions: up to 6 per stage',
+            'journeyDraft.drivers: up to 5 per stage',
             'journeyDraft.touchpoints: up to 6 per stage',
             'journeyDraft.painPoints: up to 5 per stage',
         ],
@@ -517,6 +519,7 @@ CRITICAL RULES:
 - Merge duplicate observations.
 - Be specific, concise, and insight-rich.
 - Highlight not only problems, but also what already works well when that section is requested.
+- In journeyDraft, keep customerActions limited to observable steps or decisions, and place motivations, delights, incentives, or reasons in drivers instead of customerActions.
 - If something is unclear, prefer an empty string or empty array instead of guessing.
 - Return only the requested top-level keys and omit everything else.
 
@@ -2653,10 +2656,11 @@ function normalizeInterviewSummaryData(raw) {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
           const stage = cleanString(item.stage);
           const customerActions = normalizeStringArray(item.customerActions, 6);
+          const drivers = normalizeStringArray(item.drivers, 5);
           const touchpoints = normalizeTouchpoints(item.touchpoints, 6);
           const painPoints = normalizeStagePainPoints(item.painPoints, 5);
-          if (!stage && customerActions.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
-          return { stage, customerActions, touchpoints, painPoints };
+          if (!stage && customerActions.length === 0 && drivers.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
+          return { stage, customerActions, drivers, touchpoints, painPoints };
         },
         8
       ),
