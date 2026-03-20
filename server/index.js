@@ -575,6 +575,85 @@ function buildInterviewSummarySystemState(currentSystemState, { provider, model,
     };
 }
 
+function buildInterviewPortraitPrompt({ interviewTitles, conversationText, summaryContext }) {
+    const summaryJson = summaryContext ? JSON.stringify(summaryContext, null, 2) : 'null';
+    const titlesBlock = Array.isArray(interviewTitles) && interviewTitles.length > 0
+        ? interviewTitles.map((title, index) => `${index + 1}. ${title || 'Untitled interview'}`).join('\n')
+        : '1. Untitled interview';
+
+    return `You are a senior JTBD strategist and customer research lead.
+Your task is to create ONE progress-driven customer portrait from a set of interviews.
+
+This portrait is not a demographic persona.
+It must describe how this customer moves toward progress using the Forces of Progress methodology:
+- pushes
+- pulls
+- anxieties
+- habits
+
+CRITICAL RULES:
+- Detect the dominant language of the source material and write the entire output in that same language.
+- Base every conclusion only on evidence from the transcript or structured summary.
+- Prefer the structured summary when it is present, but use the transcript as the final source of truth.
+- Synthesize repeatable patterns across the full interview set, not one-off anecdotes.
+- Do not invent demographics, job titles, company facts, budgets, or behaviors that are not supported.
+- Keep the portrait actionable for product, research, and messaging teams.
+- If something is unclear, prefer an empty string or empty array instead of guessing.
+- Return only JSON.
+
+Return EXACTLY one valid JSON object with this schema:
+{
+  "title": "string",
+  "archetype": "string",
+  "summary": "string",
+  "jobToBeDone": "string",
+  "progressMoment": "string",
+  "decisionStyle": "string",
+  "dominantForce": "pushes|pulls|anxieties|habits|balanced",
+  "forcesOfProgress": {
+    "pushes": ["string"],
+    "pulls": ["string"],
+    "anxieties": ["string"],
+    "habits": ["string"]
+  },
+  "personalityTraits": ["string"],
+  "opportunityAngles": ["string"],
+  "evidenceQuotes": ["string"]
+}
+
+LIMITS:
+- title: 2 to 6 words
+- archetype: 2 to 4 words
+- summary: 1 concise paragraph
+- pushes/pulls/anxieties/habits: up to 5 each
+- personalityTraits: up to 5
+- opportunityAngles: up to 5
+- evidenceQuotes: up to 3
+
+Interview set:
+${titlesBlock}
+
+Structured summary context:
+${summaryJson}
+
+Transcript:
+"""
+${conversationText}
+"""`;
+}
+
+function buildInterviewPortraitSystemState({ provider, model, sourceInterviewId, sourceInterviewIds }) {
+    return {
+        portraitGeneration: {
+            provider,
+            model,
+            sourceInterviewId,
+            sourceInterviewIds: Array.isArray(sourceInterviewIds) ? sourceInterviewIds : (sourceInterviewId ? [sourceInterviewId] : []),
+            generatedAt: new Date().toISOString(),
+        },
+    };
+}
+
 function formatTranscriptTimestamp(totalSeconds) {
     const safeSeconds = Number.isFinite(totalSeconds) ? Math.max(0, totalSeconds) : 0;
     const hours = Math.floor(safeSeconds / 3600);
@@ -2237,6 +2316,236 @@ app.put('/api/personas/:id', async (req, res) => {
   }
 });
 
+// --- РОУТИ ДЛЯ PORTRAITS ---
+
+app.get('/api/portraits', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    await applyPendingInvitesForUser(user.id, user.email);
+
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+
+    let query = supabaseAdmin.from('portraits').select('*');
+    if (workspaceIds.length > 0) {
+      query = query.in('workspace_id', workspaceIds);
+    } else {
+      query = query.eq('user_id', user.id);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+
+    res.json({ status: 'success', data: await enrichPortraitRows(data || []) });
+  } catch (err) {
+    logSystemError(err, 'GET /api/portraits');
+    console.error('Error fetching portraits:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/portraits/generate-from-interview', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  const requestedInterviewIds = Array.isArray(req.body?.interviewIds)
+    ? req.body.interviewIds
+    : [req.body?.interviewId];
+  const interviewIds = [...new Set(
+    requestedInterviewIds
+      .map((value) => cleanString(value))
+      .filter(Boolean)
+  )];
+  const requestedTitle = cleanString(req.body?.title);
+
+  if (interviewIds.length === 0) {
+    return res.status(400).json({ status: 'error', message: 'At least one interviewId is required.' });
+  }
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { data: interviews, error: fetchErr } = await supabaseAdmin
+      .from('interviews')
+      .select('id, title, workspace_id, transcript_data, summary_data')
+      .in('id', interviewIds);
+
+    if (fetchErr) {
+      throw fetchErr;
+    }
+
+    if (!Array.isArray(interviews) || interviews.length !== interviewIds.length) {
+      return res.status(404).json({ status: 'error', message: 'One or more interviews were not found' });
+    }
+
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+    const workspaceId = interviews[0]?.workspace_id;
+
+    if (!workspaceId || !workspaceIds.includes(workspaceId)) {
+      return res.status(403).json({ status: 'error', message: 'Access denied' });
+    }
+
+    const hasMixedWorkspaces = interviews.some((interview) => interview.workspace_id !== workspaceId);
+    if (hasMixedWorkspaces) {
+      return res.status(400).json({ status: 'error', message: 'All interviews must belong to the same workspace.' });
+    }
+
+    const orderedInterviews = interviewIds
+      .map((id) => interviews.find((interview) => interview.id === id))
+      .filter(Boolean);
+
+    const interviewContexts = orderedInterviews.map((interview) => ({
+      id: interview.id,
+      title: interview.title || 'Untitled interview',
+      transcriptData: Array.isArray(interview.transcript_data) ? interview.transcript_data : [],
+      summaryContext: normalizeInterviewSummaryData(interview.summary_data),
+    }));
+
+    const hasUsableContext = interviewContexts.some((interview) => interview.transcriptData.length > 0 || interview.summaryContext);
+    if (!hasUsableContext) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Generate transcript or summary insights for at least one selected interview first.',
+      });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error('GEMINI_API_KEY is not configured on the server.');
+    }
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    const conversationText = interviewContexts
+      .map((interview) => {
+        const transcriptBlock = interview.transcriptData.length > 0
+          ? interview.transcriptData.map(
+              (line) => `[${line.timestamp}] ${line.speaker}: ${line.text}`
+            ).join('\n')
+          : '[No transcript available]';
+
+        return `## Interview: ${interview.title}\n${transcriptBlock}`;
+      })
+      .join('\n\n');
+
+    const summaryContext = interviewContexts
+      .filter((interview) => interview.summaryContext)
+      .map((interview) => ({
+        interviewId: interview.id,
+        interviewTitle: interview.title,
+        summary: interview.summaryContext,
+      }));
+
+    const prompt = buildInterviewPortraitPrompt({
+      interviewTitles: interviewContexts.map((interview) => interview.title),
+      conversationText,
+      summaryContext: summaryContext.length > 0 ? summaryContext : null,
+    });
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    let portraitData;
+    try {
+      const cleanJsonString = cleanModelJson(responseText);
+      portraitData = normalizeInterviewPortraitData(JSON.parse(cleanJsonString));
+    } catch (parseError) {
+      console.error('Failed to parse Gemini portrait response as JSON:', responseText);
+      throw new Error('AI returned an invalid portrait format.');
+    }
+
+    if (!portraitData) {
+      throw new Error('AI returned an empty or unsupported portrait format.');
+    }
+
+    const primaryInterview = orderedInterviews[0];
+    const finalTitle = requestedTitle || portraitData.title || (
+      orderedInterviews.length === 1
+        ? `${primaryInterview?.title || 'Interview'} portrait`
+        : `Combined portrait (${orderedInterviews.length} interviews)`
+    );
+    const portraitPayload = withInterviewSystemState(
+      {
+        ...portraitData,
+        title: finalTitle,
+      },
+      buildInterviewPortraitSystemState({
+        provider: 'gemini',
+        model: 'gemini-2.5-pro',
+        sourceInterviewId: primaryInterview?.id || null,
+        sourceInterviewIds: orderedInterviews.map((interview) => interview.id),
+      })
+    );
+
+    const { data, error } = await supabaseAdmin
+      .from('portraits')
+      .insert([{
+        workspace_id: workspaceId,
+        user_id: user.id,
+        source_interview_id: primaryInterview?.id || null,
+        title: finalTitle,
+        portrait_data: portraitPayload,
+        updated_at: new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const [enrichedPortrait] = await enrichPortraitRows([data]);
+    res.json({ status: 'success', data: enrichedPortrait });
+  } catch (err) {
+    logSystemError(err, 'POST /api/portraits/generate-from-interview');
+    console.error('Error generating portrait:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.delete('/api/portraits/:id', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  const { id } = req.params;
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { data: portrait } = await supabaseAdmin
+      .from('portraits')
+      .select('id, user_id, workspace_id')
+      .eq('id', id)
+      .single();
+
+    if (!portrait) return res.status(404).json({ status: 'error', message: 'Portrait not found' });
+
+    const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+    if (!workspaceIds.includes(portrait.workspace_id)) {
+      return res.status(403).json({ status: 'error', message: 'Access denied' });
+    }
+
+    const isCreator = portrait.user_id === user.id;
+    const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', portrait.workspace_id).maybeSingle();
+    const isOwner = ws && ws.owner_id === user.id;
+    if (!isCreator && !isOwner) {
+      return res.status(403).json({ status: 'error', message: 'Only the creator or workspace owner can delete this portrait' });
+    }
+
+    const { error } = await supabaseAdmin.from('portraits').delete().eq('id', id);
+    if (error) throw error;
+
+    res.json({ status: 'success', message: 'Portrait deleted successfully' });
+  } catch (err) {
+    logSystemError(err, 'DELETE /api/portraits/:id');
+    console.error('Error deleting portrait:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- РОУТИ ДЛЯ МЕТРИК (METRICS) ---
 
 const SERIES_CHART_TYPES = ['bar', 'line', 'area', 'pie', 'donut'];
@@ -2814,6 +3123,115 @@ function normalizeInterviewSummaryData(raw) {
     normalized.quotes.length > 0;
 
   return hasContent ? normalized : null;
+}
+
+function normalizeInterviewPortraitData(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress)
+    ? raw.forcesOfProgress
+    : {};
+
+  const normalized = {
+    title: cleanString(raw.title || raw.name || raw.portraitName),
+    archetype: cleanString(raw.archetype || raw.portraitType || raw.segment),
+    summary: cleanString(raw.summary || raw.description || raw.narrative),
+    jobToBeDone: cleanString(raw.jobToBeDone || raw.mainJob),
+    progressMoment: cleanString(raw.progressMoment || raw.triggerMoment || raw.switchMoment),
+    decisionStyle: cleanString(raw.decisionStyle),
+    dominantForce: normalizeEnum(raw.dominantForce, ['pushes', 'pulls', 'anxieties', 'habits', 'balanced']),
+    forcesOfProgress: {
+      pushes: normalizeStringArray(forcesOfProgress.pushes, 5),
+      pulls: normalizeStringArray(forcesOfProgress.pulls, 5),
+      anxieties: normalizeStringArray(forcesOfProgress.anxieties, 5),
+      habits: normalizeStringArray(forcesOfProgress.habits, 5),
+    },
+    personalityTraits: normalizeStringArray(raw.personalityTraits || raw.traits, 5),
+    opportunityAngles: normalizeStringArray(raw.opportunityAngles || raw.opportunities, 5),
+    evidenceQuotes: normalizeStringArray(raw.evidenceQuotes || raw.quotes, 3),
+  };
+
+  const hasContent =
+    normalized.title ||
+    normalized.archetype ||
+    normalized.summary ||
+    normalized.jobToBeDone ||
+    normalized.progressMoment ||
+    normalized.decisionStyle ||
+    normalized.dominantForce ||
+    normalized.forcesOfProgress.pushes.length > 0 ||
+    normalized.forcesOfProgress.pulls.length > 0 ||
+    normalized.forcesOfProgress.anxieties.length > 0 ||
+    normalized.forcesOfProgress.habits.length > 0 ||
+    normalized.personalityTraits.length > 0 ||
+    normalized.opportunityAngles.length > 0 ||
+    normalized.evidenceQuotes.length > 0;
+
+  return hasContent ? normalized : null;
+}
+
+async function enrichPortraitRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
+  const interviewIds = [...new Set(rows.flatMap((row) => {
+    const generationState = isPlainObject(row?.portrait_data?.[INTERVIEW_SYSTEM_KEY]?.portraitGeneration)
+      ? row.portrait_data[INTERVIEW_SYSTEM_KEY].portraitGeneration
+      : null;
+    const ids = Array.isArray(generationState?.sourceInterviewIds)
+      ? generationState.sourceInterviewIds
+      : [];
+    const primaryId = row.source_interview_id ? [row.source_interview_id] : [];
+    return [...ids, ...primaryId].filter(Boolean);
+  }))];
+  const profilesMap = {};
+  const interviewsMap = {};
+
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', userIds);
+
+    if (profiles) {
+      profiles.forEach((profile) => {
+        profilesMap[profile.id] = profile.full_name || profile.email || 'Unknown';
+      });
+    }
+  }
+
+  if (interviewIds.length > 0) {
+    const { data: interviews } = await supabaseAdmin
+      .from('interviews')
+      .select('id, title')
+      .in('id', interviewIds);
+
+    if (interviews) {
+      interviews.forEach((interview) => {
+        interviewsMap[interview.id] = interview.title || 'Untitled interview';
+      });
+    }
+  }
+
+  return rows.map((row) => {
+    const generationState = isPlainObject(row?.portrait_data?.[INTERVIEW_SYSTEM_KEY]?.portraitGeneration)
+      ? row.portrait_data[INTERVIEW_SYSTEM_KEY].portraitGeneration
+      : null;
+    const sourceInterviewIds = Array.isArray(generationState?.sourceInterviewIds) && generationState.sourceInterviewIds.length > 0
+      ? generationState.sourceInterviewIds.filter(Boolean)
+      : (row.source_interview_id ? [row.source_interview_id] : []);
+
+    return {
+      ...row,
+      owner: profilesMap[row.user_id] || 'Unknown',
+      source_interview_ids: sourceInterviewIds,
+      source_interview_titles: sourceInterviewIds
+        .map((id) => interviewsMap[id] || '')
+        .filter(Boolean),
+      source_interview_title: row.source_interview_id ? (interviewsMap[row.source_interview_id] || '') : '',
+      updated_at: row.updated_at || row.created_at,
+    };
+  });
 }
 
 const clientOrigin = CLIENT_ORIGIN;

@@ -29,7 +29,7 @@ import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuth
 import { API_BASE_URL } from './config/api'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
@@ -388,11 +388,13 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
     } else if (path === '/personas') {
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
     } else if (path === '/metrics' || path.startsWith('/metrics')) {
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     } else if (path === '/archive') {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     }
   }, [location.pathname, queryClient]);
@@ -406,6 +408,7 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     }
   }, [authReady, isAuthenticated, queryClient]);
@@ -418,6 +421,7 @@ function App() {
   const queriesEnabled = authReady && isAuthenticated;
   const { data: globalJourneys = [], isFetched: journeysFetched } = useJourneys(queriesEnabled);
   const { data: globalPersonas = [] } = usePersonas(queriesEnabled);
+  const { data: globalPortraits = [] } = usePortraits(queriesEnabled);
   const { data: globalMetrics = [] } = useMetrics(queriesEnabled);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
   const workspaces = useWorkspaceList(queriesEnabled).data ?? [];
@@ -454,6 +458,7 @@ function App() {
     localStorage.setItem(SELECTED_WORKSPACE_KEY, id);
     queryClient.invalidateQueries({ queryKey: ['journeys'] });
     queryClient.invalidateQueries({ queryKey: ['personas'] });
+    queryClient.invalidateQueries({ queryKey: ['portraits'] });
     queryClient.invalidateQueries({ queryKey: ['metrics'] });
     queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
   };
@@ -465,6 +470,10 @@ function App() {
   const filteredPersonas = useMemo(() =>
     currentWorkspace ? globalPersonas.filter((p) => p.workspace_id === currentWorkspace.id) : globalPersonas,
     [globalPersonas, currentWorkspace]
+  );
+  const filteredPortraits = useMemo(() =>
+    currentWorkspace ? globalPortraits.filter((p) => p.workspace_id === currentWorkspace.id) : globalPortraits,
+    [globalPortraits, currentWorkspace]
   );
   const filteredMetrics = useMemo(() =>
     currentWorkspace ? globalMetrics.filter((m) => m.workspace_id === currentWorkspace.id) : globalMetrics,
@@ -608,6 +617,52 @@ function App() {
   const handleDuplicatePersona = (persona) => {
       // Logic moved to Personas.jsx or needs API implementation
       // For now, just refresh
+  }
+
+  const handleGeneratePortrait = async ({ interviewIds, title }) => {
+      const token = await getAuthToken();
+      try {
+          const response = await fetch(`${API_URL}/portraits/generate-from-interview`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                  interviewIds,
+                  ...(title ? { title } : {}),
+              })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+              throw new Error(data.error || data.message || 'Failed to generate portrait');
+          }
+
+          queryClient.invalidateQueries(['portraits']);
+          return data.data;
+      } catch (error) {
+          console.error('Error generating portrait:', error);
+          throw error;
+      }
+  }
+
+  const handleDeletePortrait = async (id) => {
+      const token = await getAuthToken();
+      try {
+          const response = await fetch(`${API_URL}/portraits/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              throw new Error(data.error || data.message || 'Failed to delete portrait');
+          }
+          queryClient.invalidateQueries(['portraits']);
+      } catch (error) {
+          console.error('Error deleting portrait:', error);
+          throw error;
+      }
   }
 
   const handleCreateJourney = async () => {
@@ -904,6 +959,8 @@ function App() {
             />} />
             <Route path="/personas" element={<Personas 
                 personas={personasWithUsage.filter(p => p.status !== 'archived')} 
+                portraits={filteredPortraits}
+                interviews={filteredInterviews}
                 currentUserId={userProfile?.id}
                 isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onCreate={() => { setEditingPersona(null); setIsPersonaModalOpen(true); }} 
@@ -911,6 +968,8 @@ function App() {
                 onDelete={handleDeletePersona}
                 onDuplicate={handleDuplicatePersona}
                 onArchive={handleArchivePersona}
+                onGeneratePortrait={handleGeneratePortrait}
+                onDeletePortrait={handleDeletePortrait}
             />} />
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
