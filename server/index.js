@@ -808,6 +808,21 @@ async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates
     };
     delete basePayload.upload_error_message;
 
+    if (nextStatus === 'failed') {
+        const currentSummaryData = extraUpdates.summary_data !== undefined
+            ? extraUpdates.summary_data
+            : existingSummaryData;
+        const currentSystemState = getInterviewSystemState(currentSummaryData);
+        const failedSystemState = {
+            ...currentSystemState,
+            uploadStatus: 'failed',
+            uploadError: extraUpdates.upload_error_message || INTERVIEW_UPLOAD_ERROR_FALLBACK,
+            failedAt: new Date().toISOString(),
+        };
+
+        basePayload.summary_data = withInterviewSystemState(currentSummaryData, failedSystemState);
+    }
+
     const directStatusPayload = {
         ...basePayload,
         status: nextStatus,
