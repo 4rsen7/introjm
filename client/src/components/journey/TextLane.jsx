@@ -25,26 +25,25 @@ function getScrollParent(node) {
 function CardPicker({ onPick, isOpen, onOpenChange }) {
   const { t } = useTranslation()
   const containerRef = useRef(null)
-  const triggerRectRef = useRef(null)
   const [openUpward, setOpenUpward] = useState(false)
+  const [pickerRect, setPickerRect] = useState(null)
 
-  const openPicker = () => {
+  const updatePickerPosition = () => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    triggerRectRef.current = { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }
+    setPickerRect({ left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width })
     const spaceBelow = window.innerHeight - rect.bottom
     setOpenUpward(spaceBelow < DROPDOWN_APPROX_HEIGHT + SPACE_MARGIN)
+  }
+
+  const openPicker = () => {
+    updatePickerPosition()
     onOpenChange(true)
   }
 
   useLayoutEffect(() => {
-    if (!isOpen || !containerRef.current) return
-    if (!triggerRectRef.current) {
-      const rect = containerRef.current.getBoundingClientRect()
-      triggerRectRef.current = { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }
-      const spaceBelow = window.innerHeight - rect.bottom
-      setOpenUpward(spaceBelow < DROPDOWN_APPROX_HEIGHT + SPACE_MARGIN)
-    }
+    if (!isOpen) return
+    updatePickerPosition()
   }, [isOpen])
 
   useEffect(() => {
@@ -71,17 +70,16 @@ function CardPicker({ onPick, isOpen, onOpenChange }) {
     { type: 'stage', label: t('editor.cardStage'), icon: List, color: 'text-purple-500' },
   ]
 
-  const rect = triggerRectRef.current
-  const portalContent = isOpen && rect && typeof document !== 'undefined' && (
+  const portalContent = isOpen && pickerRect && typeof document !== 'undefined' && (
     <>
       <div className="fixed inset-0 cursor-pointer" style={{ zIndex: PICKER_PORTAL_Z }} onClick={(e) => { e.stopPropagation(); onOpenChange(false); }} aria-hidden="true" />
       <div
         className="fixed bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden py-1 min-w-[140px]"
         style={{
           zIndex: PICKER_PORTAL_Z + 1,
-          left: rect.left,
-          width: rect.width,
-          ...(openUpward ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+          left: pickerRect.left,
+          width: pickerRect.width,
+          ...(openUpward ? { bottom: window.innerHeight - pickerRect.top + 4 } : { top: pickerRect.bottom + 4 }),
         }}
       >
         {options.map(opt => (
@@ -188,7 +186,7 @@ function LaneCell({ colId, laneId, cards, globalMetrics, globalJourneys, onAddCa
   )
 }
 
-export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, isMenuOpen, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
+export default function TextLane({ lane, gridColumns, laneData, globalMetrics, globalJourneys = [], onAddCard, onUpdateCard, onDeleteCard, dragHandleProps, onDelete, onDuplicate, onUpdate, onToggleMenu, selectedCardId, onSelectCard, onTogglePin, activePickerId, onSetActivePicker, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
   const { t } = useTranslation()
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 

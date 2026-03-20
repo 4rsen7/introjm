@@ -1,16 +1,27 @@
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, MapPin, Calendar, Plus, Target, AlertCircle, Edit2, User, Briefcase, GraduationCap, Smile, Bot, Baby, Trash2, Quote } from 'lucide-react'
 
-const getAvatarIcon = (id) => {
-  switch(id) {
-      case 'man': return User;
-      case 'woman': return Smile;
-      case 'student': return GraduationCap;
-      case 'worker': return Briefcase;
-      case 'parent': return Baby;
-      case 'tech': return Bot;
-      default: return null;
+const AVATAR_ICONS = {
+  man: User,
+  woman: Smile,
+  student: GraduationCap,
+  worker: Briefcase,
+  parent: Baby,
+  tech: Bot,
+}
+
+function PersonaAvatar({ image, name, size, className = '' }) {
+  const AvatarIcon = AVATAR_ICONS[image] || null
+
+  if (AvatarIcon) {
+    return <AvatarIcon size={size} className={className} />
   }
+
+  if (image && image.startsWith('http')) {
+    return <img src={image} className="w-full h-full rounded-full object-cover" alt={name} />
+  }
+
+  return <span className="font-bold text-xl">{name.charAt(0)}</span>
 }
 
 export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, onDisconnect, isExporting }) {
@@ -27,20 +38,12 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
     )
   }
 
-  const AvatarIcon = getAvatarIcon(persona.image)
-
   if (isExporting) {
     return (
       <div className="w-full border-b border-gray-200 pb-6 mb-8">
         <div className="flex items-start gap-6">
            <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 border-4 border-white shadow-sm shrink-0">
-              {AvatarIcon ? (
-                <AvatarIcon size={40} />
-              ) : persona.image && persona.image.startsWith('http') ? (
-                <img src={persona.image} className="w-full h-full rounded-full object-cover" alt={persona.name} />
-              ) : (
-                <span className="font-bold text-xl">{persona.name.charAt(0)}</span>
-              )}
+              <PersonaAvatar image={persona.image} name={persona.name} size={40} />
            </div>
            <div className="flex-1">
               <h1 className="text-2xl font-bold text-gray-900 leading-tight">{persona.name}</h1>
@@ -77,13 +80,7 @@ export default function PersonaPanel({ persona, isExpanded, onToggle, onEdit, on
         className={`flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors border border-transparent cursor-pointer ${isExpanded ? 'bg-gray-100 border-gray-200' : 'hover:bg-gray-50'}`}
       >
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center text-orange-600 border border-white shadow-sm shrink-0">
-          {AvatarIcon ? (
-            <AvatarIcon size={18} />
-          ) : persona.image && persona.image.startsWith('http') ? (
-            <img src={persona.image} alt={persona.name} className="w-full h-full rounded-full object-cover" />
-          ) : (
-            <span className="font-bold text-xs">{persona.name.charAt(0)}</span>
-          )}
+          <PersonaAvatar image={persona.image} name={persona.name} size={18} className="text-orange-600" />
         </div>
         <div className="text-left hidden md:flex items-center gap-2">
           <div className="text-sm font-bold text-gray-900 leading-none">{persona.name}</div>

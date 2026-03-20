@@ -8,7 +8,7 @@ const InfoModal = ({ isOpen, onClose, title, message, buttonText = 'OK', variant
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-scaleIn p-6" onClick={e => e.stopPropagation()}>
+      <div className="app-modal-panel rounded-2xl w-full max-w-md overflow-hidden animate-scaleIn p-6" onClick={e => e.stopPropagation()}>
         <div className="flex justify-center mb-4">
           {isError ? (
             <AlertCircle className="w-12 h-12 text-red-500" strokeWidth={1.5} />

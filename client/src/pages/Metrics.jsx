@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Search, Filter, Plus, BarChart3, MoreHorizontal, ArrowUpRight, Hash, LineChart, Trash2, Edit, X } from 'lucide-react';
@@ -14,18 +14,26 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedType, setSelectedType] = useState('');
+  const integration = searchParams.get('integration');
+  const integrationMessage = searchParams.get('message');
 
   useEffect(() => {
-    const integration = searchParams.get('integration');
-    if (integration === 'connected') {
-      setIntegrationBanner({ type: 'success', text: t('metrics.integrationConnected') });
-      setSearchParams((p) => { p.delete('integration'); return p; }, { replace: true });
-    } else if (integration === 'error') {
-      const message = searchParams.get('message') || t('metrics.integrationError');
-      setIntegrationBanner({ type: 'error', text: message });
-      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
-    }
-  }, [searchParams, setSearchParams, t]);
+    if (integration !== 'connected' && integration !== 'error') return;
+
+    const nextBanner = integration === 'connected'
+      ? { type: 'success', text: t('metrics.integrationConnected') }
+      : { type: 'error', text: integrationMessage || t('metrics.integrationError') };
+
+    queueMicrotask(() => {
+      setIntegrationBanner(nextBanner);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('integration');
+        next.delete('message');
+        return next;
+      }, { replace: true });
+    });
+  }, [integration, integrationMessage, setSearchParams, t]);
 
   const filteredMetrics = metrics.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -54,7 +62,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="metrics-page">
+    <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900" data-testid="metrics-page">
       {integrationBanner && (
         <div className={`mb-4 px-4 py-3 rounded-lg flex items-center justify-between ${integrationBanner.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
           <span>{integrationBanner.text}</span>
@@ -82,14 +90,14 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
             <input 
                 type="text" 
                 placeholder={t('metrics.searchMetrics')} 
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                className="app-input w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
         </div>
         <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'app-surface-soft text-gray-600 hover:bg-gray-50'}`}
         >
             <Filter size={16} />
             <span>{t('dashboard.filters')}</span>
@@ -99,11 +107,11 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
       <div className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="overflow-hidden">
           <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
-            <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="app-surface-soft flex items-center gap-4 p-4 rounded-lg">
                 <div className="flex flex-col gap-1">
                     <label className="text-xs font-bold text-gray-500">{t('metrics.type')}</label>
                     <select 
-                        className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
+                        className="app-select text-sm rounded-md px-2 py-1.5 outline-none min-w-[150px]"
                         value={selectedType}
                         onChange={(e) => setSelectedType(e.target.value)}
                     >
@@ -124,7 +132,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
       </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="app-surface rounded-xl overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>

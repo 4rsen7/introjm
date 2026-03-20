@@ -925,7 +925,7 @@ function AiPipelineSection({ copy }) {
                 </div>
               </div>
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                {copy.aiSection.cards.map(([label, text, tone], index) => (
+                {copy.aiSection.cards.map(([label, text, tone]) => (
                   <div key={label} className={cn('min-w-0 rounded-[1.4rem] border p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]', tone)}>
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">{label}</div>
@@ -1101,22 +1101,41 @@ export default function LandingPage() {
   );
 
   useEffect(() => {
-    setPlansLoading(true);
-    setPlansError(null);
-    fetch(`${API_URL}/plans?locale=${currentLang}`)
-      .then((res) => {
+    let active = true;
+
+    const loadPlans = async () => {
+      setPlansLoading(true);
+      setPlansError(null);
+
+      try {
+        const res = await fetch(`${API_URL}/plans?locale=${currentLang}`);
         if (!res.ok) throw new Error(res.statusText || 'Failed to load plans');
-        return res.json();
-      })
-      .then((body) => {
+
+        const body = await res.json();
+        if (!active) return;
+
         const list = body.status === 'success' && Array.isArray(body.data) ? body.data : [];
         setPlans(list);
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (!active) return;
         setPlansError(err.message);
         setPlans([]);
-      })
-      .finally(() => setPlansLoading(false));
+      } finally {
+        if (active) {
+          setPlansLoading(false);
+        }
+      }
+    };
+
+    queueMicrotask(() => {
+      if (active) {
+        void loadPlans();
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, [currentLang]);
 
   useEffect(() => {

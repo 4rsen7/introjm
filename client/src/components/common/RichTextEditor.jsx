@@ -1,7 +1,7 @@
 import { useState, useLayoutEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const RichTextEditor = forwardRef(({ initialContent, onUpdate, onDelete, cardType, onFocusChange, onFontSizeChange, compact = false }, ref) => {
+const RichTextEditor = forwardRef(({ initialContent, onUpdate, onFocusChange, onFontSizeChange, compact = false }, ref) => {
   const { t } = useTranslation()
   const contentRef = useRef(initialContent)
   const editorRef = useRef(null)

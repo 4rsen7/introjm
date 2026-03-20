@@ -99,7 +99,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="journeys-page">
+    <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900" data-testid="journeys-page">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
            <Map className="text-gray-400" /> {t('journeys.title')}
@@ -121,14 +121,14 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
             <input 
                 type="text" 
                 placeholder={t('journeys.searchMaps')} 
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                className="app-input w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
             />
         </div>
         <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-3 py-2 border rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium shadow-sm transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'app-surface-soft text-gray-600 hover:bg-gray-50'}`}
         >
             <Filter size={16} />
             <span>{t('dashboard.filters')}</span>
@@ -138,11 +138,11 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
       <div className={`grid transition-[grid-template-rows] duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="overflow-hidden">
           <div className={`pt-4 transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}`}>
-            <div className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
+            <div className="app-surface-soft flex items-center gap-4 p-4 rounded-lg">
             <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500">{t('journeys.status')}</label>
                 <select 
-                    className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
+                    className="app-select text-sm rounded-md px-2 py-1.5 outline-none min-w-[150px]"
                     value={selectedStatus}
                     onChange={(e) => setSelectedStatus(e.target.value)}
                 >
@@ -153,7 +153,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
             <div className="flex flex-col gap-1">
                 <label className="text-xs font-bold text-gray-500">{t('journeys.owner')}</label>
                 <select 
-                    className="text-sm border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-500 min-w-[150px] bg-white"
+                    className="app-select text-sm rounded-md px-2 py-1.5 outline-none min-w-[150px]"
                     value={selectedOwner}
                     onChange={(e) => setSelectedOwner(e.target.value)}
                 >
@@ -172,7 +172,7 @@ const JourneyMaps = ({ journeys = [], currentUserId, isWorkspaceOwner, onCreate,
       </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="app-surface rounded-xl overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>

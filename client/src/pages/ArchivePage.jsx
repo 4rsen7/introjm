@@ -116,7 +116,7 @@ const ArchivePage = ({
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900">
+    <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
             <ArchiveIcon className="text-gray-400" /> {t('archive.title')}
@@ -125,20 +125,18 @@ const ArchivePage = ({
       </header>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 mb-6">
+      <div className="inline-flex p-1 app-surface-soft rounded-xl mb-6">
         <button
             onClick={() => setActiveTab('journeys')}
-            className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === 'journeys' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-6 py-3 text-sm font-medium transition-colors relative rounded-lg ${activeTab === 'journeys' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
         >
             {t('nav.journeyMaps')} ({archivedJourneys.length})
-            {activeTab === 'journeys' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
         </button>
         <button
             onClick={() => setActiveTab('personas')}
-            className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === 'personas' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-6 py-3 text-sm font-medium transition-colors relative rounded-lg ${activeTab === 'personas' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
         >
             {t('nav.personas')} ({archivedPersonas.length})
-            {activeTab === 'personas' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>}
         </button>
       </div>
 
@@ -148,14 +146,14 @@ const ArchivePage = ({
         <input 
             type="text" 
             placeholder={t('archive.searchPlaceholder', { tab: activeTab === 'journeys' ? t('nav.journeyMaps').toLowerCase() : t('nav.personas').toLowerCase() })} 
-            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+            className="app-input w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
 
       {/* Content */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="app-surface rounded-xl overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
             <thead className="bg-gray-50/50">
                 <tr>

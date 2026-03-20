@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query'
 const API_URL = API_BASE_URL;
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
-export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onEditJourney, onNewPersona, onViewAllJourneys, onNewMetric, onDuplicate, onArchive, onDelete }) {
+export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onNewPersona, onViewAllJourneys, onNewMetric }) {
   const { t } = useTranslation();
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
   const queryClient = useQueryClient();
@@ -41,7 +41,7 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
                   headers: { 'Authorization': `Bearer ${token}` }
               });
               if (!response.ok) throw new Error('Failed to duplicate journey');
-              const { data } = await response.json();
+              await response.json();
               // Refresh list
               queryClient.invalidateQueries(['journeys']);
           } catch (error) {
@@ -70,7 +70,7 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
   };
 
   return (
-    <div className="p-8 h-full overflow-auto bg-gray-50/30" data-testid="dashboard-page">
+    <div className="p-8 h-full overflow-auto app-shell-bg" data-testid="dashboard-page">
       <header className="mb-8 flex items-center justify-between">
         <div>
             <h2 className="text-2xl font-bold text-gray-900 tracking-tight">{t('dashboard.title')}</h2>
@@ -136,7 +136,7 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
             <button 
                 type="button"
                 onClick={onNewJourney}
-                className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer flex flex-col items-center justify-center h-[220px] group text-gray-400 hover:text-orange-600"
+            className="app-surface-soft rounded-xl border-2 border-dashed border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer flex flex-col items-center justify-center h-[220px] group text-gray-400 hover:text-orange-600"
             >
                 <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-2 group-hover:border-orange-200 group-hover:bg-orange-100 transition-colors">
                     <Plus size={20} />
@@ -159,15 +159,17 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
   )
 }
 
-function ActionCard({ icon: Icon, label, subLabel, color, bgColor, onClick }) {
+function ActionCard({ icon, label, subLabel, color, bgColor, onClick }) {
+    const IconComponent = icon;
+
     return (
         <button 
             type="button"
             onClick={onClick}
-            className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all text-left group h-24"
+            className="app-surface rounded-xl flex items-center gap-4 p-4 hover:shadow-md hover:border-gray-300 transition-all text-left group h-24"
         >
             <div className={`w-12 h-12 rounded-lg ${bgColor} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
-                <Icon className={color} size={24} />
+                <IconComponent className={color} size={24} />
             </div>
             <div className="flex-1 min-w-0">
                 <div className="font-bold text-gray-900 truncate">{label}</div>
@@ -189,7 +191,9 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
     try {
         const md = typeof journey.map_data === 'string' ? JSON.parse(journey.map_data) : journey.map_data;
         if (md?.gridColumns) stageCount = md.gridColumns.length;
-    } catch (e) {}
+    } catch {
+        stageCount = 0;
+    }
 
     // Отримуємо унікальний стиль на основі ID
     const style = getJourneyStyle(journey.id); 
@@ -222,7 +226,7 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
 
     return (
         <div 
-            className="group relative bg-white rounded-xl border border-gray-200 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] hover:border-gray-300 transition-all duration-200 ease-out h-[220px] flex flex-col"
+            className="app-surface group relative rounded-xl hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all duration-200 ease-out h-[220px] flex flex-col"
             onMouseLeave={() => setShowMenu(false)}
         >
             {/* Preview Area (The "Tech" Look) */}

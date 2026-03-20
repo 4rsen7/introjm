@@ -16,25 +16,20 @@ const JourneyMetricCard = React.memo(function JourneyMetricCard({ metric, isExpo
   const { t, i18n } = useTranslation();
   const locale = i18n.language || 'en';
   const [animationSeed, setAnimationSeed] = useState(0);
-  if (!metric) {
-    return (
-      <div className="flex flex-col items-center justify-center h-24 text-gray-400">
-        <BarChart3 size={24} className="mb-2 opacity-50" />
-        <span className="text-xs">{t('common.metricNotFound')}</span>
-      </div>
-    );
-  }
-
-  const { name, type, value, suffix, previousValue, reverseColors, seriesData, chartType, seriesLabelFormat = 'text' } = metric;
+  const metricId = metric?.id ?? null;
+  const metricName = metric?.name ?? '';
   const animationDelay = useMemo(() => {
-    const source = String(metric?.id || metric?.name || '');
+    const source = String(metricId || metricName);
     const hash = [...source].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
     return 80 + (hash % 180);
-  }, [metric?.id, metric?.name]);
+  }, [metricId, metricName]);
 
   useEffect(() => {
+    if (!metric) {
+      return undefined;
+    }
+
     if (!animate || isExport) {
-      setAnimationSeed(0);
       return;
     }
 
@@ -50,7 +45,18 @@ const JourneyMetricCard = React.memo(function JourneyMetricCard({ metric, isExpo
         window.clearTimeout(timeoutId);
       }
     };
-  }, [animate, animationDelay, isExport]);
+  }, [animate, animationDelay, isExport, metric]);
+
+  if (!metric) {
+    return (
+      <div className="flex flex-col items-center justify-center h-24 text-gray-400">
+        <BarChart3 size={24} className="mb-2 opacity-50" />
+        <span className="text-xs">{t('common.metricNotFound')}</span>
+      </div>
+    );
+  }
+
+  const { name, type, value, suffix, previousValue, reverseColors, seriesData, chartType, seriesLabelFormat = 'text' } = metric;
 
   const shouldAnimate = animate && !isExport;
 

@@ -97,7 +97,7 @@ export default function InterviewsList({ interviews = [], userProfile, currentWo
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="interviews-page">
+    <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900" data-testid="interviews-page">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-2">
            <Mic className="text-gray-400" /> {t('interviews.title')}
@@ -121,13 +121,13 @@ export default function InterviewsList({ interviews = [], userProfile, currentWo
               placeholder={t('interviews.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+              className="app-input w-full pl-10 pr-4 py-2 rounded-lg focus:outline-none transition-all"
             />
           </div>
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="app-surface rounded-xl overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
           <thead className="bg-gray-50/50">
             <tr>
@@ -148,7 +148,7 @@ export default function InterviewsList({ interviews = [], userProfile, currentWo
                     <p className="text-sm text-gray-500 mt-1 mb-6 text-center max-w-md">{t('interviews.noInterviewsDesc')}</p>
                     <button
                       onClick={openCreationModal}
-                      className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium"
+                    className="app-surface-soft flex items-center gap-2 px-4 py-2 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium"
                     >
                       <Plus size={18} />
                       {t('interviews.startFirst')}

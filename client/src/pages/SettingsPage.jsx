@@ -11,6 +11,13 @@ import { MS_EXCEL_DISABLED } from '../config/features';
 import { API_BASE_URL } from '../config/api';
 
 const API_URL = API_BASE_URL;
+const TAB_DEFINITIONS = [
+  { id: 'workspace', labelKey: 'settings.workspace', restricted: true },
+  { id: 'team', labelKey: 'settings.team', restricted: true },
+  { id: 'profile', labelKey: 'settings.profile', restricted: false },
+];
+
+const getAllowedTabs = (isOwner) => TAB_DEFINITIONS.filter(tab => !tab.restricted || isOwner);
 
 const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, onDeleteWorkspace, userProfile, onUpdateProfile, onOpenPricing, onLimitReached }) => {
   const { t } = useTranslation();
@@ -19,13 +26,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   const isOwner = workspace?.role === 'owner';
 
   // 2. Логіка Вкладок (Tabs Logic)
-  const TABS = [
-    { id: 'workspace', labelKey: 'settings.workspace', restricted: true },
-    { id: 'team', labelKey: 'settings.team', restricted: true },
-    { id: 'profile', labelKey: 'settings.profile', restricted: false },
-  ];
-
-  const allowedTabs = TABS.filter(tab => !tab.restricted || isOwner);
+  const allowedTabs = getAllowedTabs(isOwner);
 
   const [activeTab, setActiveTab] = useState(() => {
     return allowedTabs.find(t => t.id === initialTab) ? initialTab : allowedTabs[0]?.id;
@@ -34,10 +35,12 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   // Sync only when navigation intent or role changes.
   // This keeps manual tab switching responsive instead of snapping back on every re-render.
   useEffect(() => {
-    if (allowedTabs.find(t => t.id === initialTab)) {
+    const nextAllowedTabs = getAllowedTabs(isOwner);
+
+    if (nextAllowedTabs.find(t => t.id === initialTab)) {
       setActiveTab(initialTab);
-    } else if (allowedTabs.length > 0) {
-      setActiveTab(allowedTabs[0].id);
+    } else if (nextAllowedTabs.length > 0) {
+      setActiveTab(nextAllowedTabs[0].id);
     }
   }, [initialTab, isOwner]);
 
@@ -88,10 +91,31 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
 
   // Fetch Team Data
   useEffect(() => {
-    if (activeTab === 'team' && isOwner) {
-        fetchTeam();
-    }
-  }, [activeTab, isOwner]);
+    if (activeTab !== 'team' || !isOwner) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const token = await getAuthToken();
+      try {
+        const res = await fetch(`${API_URL}/workspace/team?workspaceId=${workspace?.id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const json = await res.json();
+        if (!cancelled && json.status === 'success') {
+          setTeamData(json.data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isOwner, workspace?.id]);
 
   // Profile: handle ?integration=connected|error from OAuth callback
   useEffect(() => {
@@ -119,7 +143,11 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         if (cancelled) return;
         if (data.status === 'success' && data.data)
           setIntegrationStatus({ google_sheets: !!data.data.google_sheets, microsoft_excel: !!data.data.microsoft_excel });
-      } catch (e) { if (!cancelled) setIntegrationStatus({ google_sheets: false, microsoft_excel: false }); }
+      } catch {
+        if (!cancelled) {
+          setIntegrationStatus({ google_sheets: false, microsoft_excel: false });
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [activeTab]);
@@ -249,7 +277,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
   };
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-900" data-testid="settings-page">
+    <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900" data-testid="settings-page">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
            <Settings className="text-gray-400" /> {t('settings.settings')}
@@ -257,22 +285,19 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
       </header>
 
       {/* Tabs Navigation */}
-      <div className="flex border-b border-gray-200 mb-8">
+      <div className="inline-flex p-1 app-surface-soft rounded-xl mb-8">
         {allowedTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-6 py-3 text-sm font-medium transition-colors relative cursor-pointer ${
+            className={`px-6 py-3 text-sm font-medium transition-colors relative cursor-pointer rounded-lg ${
               activeTab === tab.id 
-                ? 'text-blue-600' 
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-blue-600 text-white shadow-sm' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
             data-testid={`settings-tab-${tab.id}`}
           >
             {t(tab.labelKey)}
-            {activeTab === tab.id && (
-              <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-t-full"></div>
-            )}
           </button>
         ))}
       </div>
@@ -280,7 +305,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
       <div className="max-w-2xl">
         {/* Security Check for Content */}
         {!allowedTabs.find(t => t.id === activeTab) && (
-           <div className="p-8 flex flex-col items-center justify-center text-center text-gray-500 bg-gray-50 rounded-xl border border-gray-200 border-dashed">
+           <div className="app-surface-soft p-8 flex flex-col items-center justify-center text-center text-gray-500 rounded-xl border border-gray-200 border-dashed">
               <ShieldAlert size={48} className="mb-4 text-gray-300" />
               <h2 className="text-xl font-bold text-gray-900">{t('settings.accessDenied')}</h2>
               <p>{t('settings.noPermission')}</p>
@@ -290,7 +315,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         {/* WORKSPACE TAB */}
         {activeTab === 'workspace' && allowedTabs.find(t => t.id === 'workspace') && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <section className="app-surface rounded-xl p-6">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Building size={20} className="text-gray-400" /> {t('settings.workspaceGeneral')}
               </h2>
@@ -300,7 +325,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                   <input 
                     value={workspaceName}
                     onChange={(e) => setWorkspaceName(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                    className="app-input w-full px-3 py-2 rounded-lg outline-none transition"
                   />
                 </div>
                 <button 
@@ -312,13 +337,13 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
               </div>
             </section>
 
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <section className="app-surface rounded-xl p-6">
                 <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
                     <CreditCard size={20} className="text-gray-400" /> {t('settings.subscriptionBilling')}
                 </h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100" data-testid="current-plan-card">
+                    <div className="app-surface-soft p-4 rounded-lg border border-gray-100" data-testid="current-plan-card">
                         <div className="text-xs font-bold text-gray-500 mb-1">{t('settings.currentPlan')}</div>
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-lg font-bold text-gray-900">{limits?.planName ?? '—'}</span>
@@ -333,7 +358,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                             <div className="text-sm text-gray-500">{t('settings.noPlanAssigned')}</div>
                         )}
                     </div>
-                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
+                    <div className="app-surface-soft p-4 rounded-lg border border-gray-100 space-y-3">
                         <div className="text-xs font-bold text-gray-500 mb-2">{t('settings.usage')}</div>
                         {[
                             { labelKey: 'settings.members', used: usage.members, max: maxMembers },
@@ -377,7 +402,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 </div>
             </section>
 
-            <section className="bg-white rounded-xl shadow-sm border border-red-100 p-6">
+            <section className="app-surface rounded-xl border-red-100 p-6">
               <p className="text-sm text-gray-500 mb-4">{t('settings.deleteWorkspaceWarning')}</p>
               <button 
                 onClick={() => setIsDeleteModalOpen(true)}
@@ -392,7 +417,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
         {/* TEAM TAB */}
         {activeTab === 'team' && allowedTabs.find(t => t.id === 'team') && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <section className="app-surface rounded-xl p-6">
                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Users size={20} className="text-gray-400" /> {t('settings.teamMembers')}
               </h2>
@@ -404,7 +429,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                     placeholder={t('settings.inviteEmailPlaceholder', 'Enter email to invite...')}
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    className="app-input w-full pl-9 pr-3 py-2 rounded-lg outline-none text-sm"
                   />
                 </div>
                 <button 
@@ -486,7 +511,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                 <button type="button" onClick={() => setIntegrationBanner(null)} className="p-1 hover:opacity-70"><X size={18} /></button>
               </div>
             )}
-             <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+             <section className="app-surface rounded-xl p-6">
               <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
                 <User size={20} className="text-gray-400" /> {t('settings.personalProfile')}
               </h2>
@@ -497,7 +522,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                     <input 
                       value={profileName}
                       onChange={(e) => setProfileName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                      className="app-input w-full px-3 py-2 rounded-lg outline-none transition"
                       placeholder={t('settings.yourName')}
                     />
                   </div>
@@ -515,7 +540,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                       <select
                         value={profileLocale}
                         onChange={(e) => setProfileLocale(e.target.value)}
-                        className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white appearance-none"
+                        className="app-select w-full pl-3 pr-10 py-2 rounded-lg outline-none transition appearance-none"
                       >
                         <option value="en">{t('settings.english')}</option>
                         <option value="uk">{t('settings.ukrainian')}</option>
@@ -537,7 +562,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
               </div>
             </section>
 
-            <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <section className="app-surface rounded-xl p-6">
               <h2 className="text-lg font-semibold mb-6">{t('settings.connectedServicesForMetrics')}</h2>
               <div className="space-y-4">
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">

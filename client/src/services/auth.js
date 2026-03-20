@@ -1,12 +1,40 @@
 import { supabase } from '../supabaseClient';
 
 const REACT_QUERY_PERSIST_KEYS = ['REACT_QUERY_OFFLINE_CACHE'];
+const SUPABASE_AUTH_STORAGE_SUFFIX = '-auth-token';
+
+const getSupabaseStorageKeys = () => {
+    try {
+        return Object.keys(localStorage).filter(
+            (key) => key.startsWith('sb-') && key.endsWith(SUPABASE_AUTH_STORAGE_SUFFIX)
+        );
+    } catch {
+        return [];
+    }
+};
+
+const getStoredSupabaseSession = () => {
+    for (const key of getSupabaseStorageKeys()) {
+        try {
+            const rawValue = localStorage.getItem(key);
+            if (!rawValue) continue;
+
+            const parsedValue = JSON.parse(rawValue);
+            const accessToken = parsedValue?.access_token ?? parsedValue?.currentSession?.access_token ?? null;
+            if (accessToken) {
+                return parsedValue;
+            }
+        } catch {
+            // Ignore malformed local storage values and keep looking for a valid Supabase session.
+        }
+    }
+
+    return null;
+};
 
 export const persistStoredAuthState = (session) => {
     try {
         if (!session?.access_token || !session?.user) return null;
-        localStorage.setItem('token', session.access_token);
-        localStorage.setItem('user', JSON.stringify(session.user));
         return session;
     } catch (error) {
         console.error('Error persisting auth state:', error);
@@ -16,8 +44,9 @@ export const persistStoredAuthState = (session) => {
 
 export const getStoredAuthToken = () => {
     try {
-        return localStorage.getItem('token') || null;
-    } catch (error) {
+        const session = getStoredSupabaseSession();
+        return session?.access_token ?? session?.currentSession?.access_token ?? null;
+    } catch {
         return null;
     }
 };
@@ -54,14 +83,10 @@ export const getAuthToken = async () => {
 
 export const clearStoredAuthState = () => {
     try {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
         REACT_QUERY_PERSIST_KEYS.forEach((key) => localStorage.removeItem(key));
 
-        Object.keys(localStorage).forEach((key) => {
-            if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-                localStorage.removeItem(key);
-            }
+        getSupabaseStorageKeys().forEach((key) => {
+            localStorage.removeItem(key);
         });
     } catch (error) {
         console.error('Error clearing auth state:', error);

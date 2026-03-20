@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { login, logout } = require('./helpers/auth');
+const { getAccessToken, login, logout } = require('./helpers/auth');
 const { requiredEnv } = require('./helpers/env');
 
 test.describe('authentication smoke', () => {
@@ -10,6 +10,9 @@ test.describe('authentication smoke', () => {
     });
 
     await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible();
+    await expect.poll(() => getAccessToken(page)).not.toBeNull();
+    await expect(page.evaluate(() => window.localStorage.getItem('token'))).resolves.toBeNull();
+    await expect(page.evaluate(() => window.localStorage.getItem('user'))).resolves.toBeNull();
     await logout(page);
   });
 });

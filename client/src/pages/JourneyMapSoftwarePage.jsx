@@ -5,7 +5,6 @@ import SeoInternalLinksSection from '../components/common/SeoInternalLinksSectio
 
 const LANDING_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_LANDING_ORIGIN) || 'https://iterojm.com').replace(/\/$/, '');
 const APP_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_APP_ORIGIN) || 'https://app.iterojm.com').replace(/\/$/, '');
-const legalHref = (lang, slug) => `${LANDING_ORIGIN}/${lang}/${slug}`;
 const pageHref = (lang) => `${LANDING_ORIGIN}/${lang}/customer-journey-map-software`;
 
 const upsertHeadLink = (selector, attrs) => {
@@ -236,11 +235,13 @@ const relatedCopy = {
   },
 };
 
-function SeoFeaturePageSection({ icon: Icon, title, body, bullets }) {
+function SeoFeaturePageSection({ icon, title, body, bullets }) {
+  const IconComponent = icon;
+
   return (
     <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-2xl sm:p-8">
       <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-300/20 bg-violet-500/10 text-violet-100">
-        <Icon className="h-5 w-5" />
+        <IconComponent className="h-5 w-5" />
       </div>
       <h2 className="text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">{title}</h2>
       <p className="mt-4 text-base leading-8 text-slate-300">{body}</p>

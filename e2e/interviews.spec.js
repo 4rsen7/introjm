@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { login } = require('./helpers/auth');
+const { getAccessToken, login } = require('./helpers/auth');
 const { requiredEnv } = require('./helpers/env');
 
 test.describe('interviews smoke', () => {
@@ -30,7 +30,8 @@ test.describe('interviews smoke', () => {
     await expect(page).toHaveURL(/\/interviews\/[^/?]+$/);
 
     const interviewId = page.url().split('/interviews/')[1];
-    const token = await page.evaluate(() => window.localStorage.getItem('token'));
+    const token = await getAccessToken(page);
+    expect(token).toBeTruthy();
 
     await page.evaluate(async ({ interviewId: id, authToken }) => {
       const response = await fetch(`/api/interviews/${id}`, {

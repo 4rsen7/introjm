@@ -60,7 +60,7 @@ const AuthPage = ({ onLogin }) => {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
-      } catch (e) { /* non-blocking */ }
+      } catch { /* non-blocking */ }
 
       persistStoredAuthState(session);
       queryClient.removeQueries();
@@ -188,7 +188,7 @@ const AuthPage = ({ onLogin }) => {
                  method: 'POST',
                  headers: { 'Authorization': `Bearer ${data.session.access_token}` }
                });
-             } catch (e) { /* non-blocking */ }
+             } catch { /* non-blocking */ }
 
              persistStoredAuthState(data.session);
              queryClient.removeQueries(); // Clear cache for new user

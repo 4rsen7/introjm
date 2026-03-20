@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Plus, Trash2, User, Briefcase, GraduationCap, Smile, Bot, Baby } from 'lucide-react'
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
@@ -12,48 +12,22 @@ const AVATAR_OPTIONS = [
   { id: 'tech', icon: Bot, label: 'Tech' },
 ]
 
+const createFormData = (persona) => ({
+  name: persona?.name || '',
+  role: persona?.role || '',
+  image: persona?.image || '',
+  age: persona?.age || '',
+  location: persona?.location || '',
+  bio: persona?.bio || '',
+  goals: persona?.goals?.length ? persona.goals : [''],
+  frustrations: persona?.frustrations?.length ? persona.frustrations : [''],
+})
+
 export default function PersonaModal({ isOpen, onClose, onSave, initialPersona }) {
   const { t } = useTranslation()
   useBodyScrollLock(isOpen)
-  const [formData, setFormData] = useState({
-    name: '',
-    role: '',
-    image: '',
-    age: '',
-    location: '',
-    bio: '',
-    goals: [''],
-    frustrations: ['']
-  })
+  const [formData, setFormData] = useState(() => createFormData(initialPersona))
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false)
-
-  useEffect(() => {
-    if (isOpen) {
-        if (initialPersona) {
-            setFormData({
-                name: initialPersona.name || '',
-                role: initialPersona.role || '',
-                image: initialPersona.image || '',
-                age: initialPersona.age || '',
-                location: initialPersona.location || '',
-                bio: initialPersona.bio || '',
-                goals: initialPersona.goals?.length ? initialPersona.goals : [''],
-                frustrations: initialPersona.frustrations?.length ? initialPersona.frustrations : ['']
-            })
-        } else {
-             setFormData({
-                name: '',
-                role: '',
-                image: '',
-                age: '',
-                location: '',
-                bio: '',
-                goals: [''],
-                frustrations: ['']
-            })
-        }
-    }
-  }, [isOpen, initialPersona])
 
   if (!isOpen) return null
 

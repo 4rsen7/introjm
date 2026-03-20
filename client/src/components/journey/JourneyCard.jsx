@@ -61,9 +61,8 @@ function LinkedJourneyBlock({ card, globalJourneys = [], onOpenLinkedJourneyPrev
 
 export default function JourneyCard({ card, globalMetrics, globalJourneys = [], onUpdate, onDelete, onMenuToggle, selectedCardId, onSelectCard, onUploadImage, onEditMetric, onOpenLinkedJourneyPreview, readOnly, isExport = false }) {
   const { t } = useTranslation()
-  const [localContent, setLocalContent] = useState(card.content || '')
+  const [stageDraft, setStageDraft] = useState(null)
   const [showMenu, setShowMenu] = useState(false)
-  const [isStageFocused, setIsStageFocused] = useState(false)
   const isActive = selectedCardId === card.id
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
   const [showChannelSettings, setShowChannelSettings] = useState(false)
@@ -97,16 +96,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
   }
   const dragProps = readOnly ? {} : { ...attributes, ...listeners }
 
-  useEffect(() => { setLocalContent(card.content || '') }, [card.content])
-
   // Синхронізуємо цифру розміру шрифту в тулбарі при активації картки
-  useEffect(() => {
-    if (isActive && editorRef.current?.getFontSize) {
-      setToolbarFontSize(editorRef.current.getFontSize() || '3')
-    }
-  }, [isActive])
-
-  // Закрити меню розміру шрифту при кліку зовні
   useEffect(() => {
     if (!showFontSizeMenu) return
     const close = (e) => {
@@ -118,10 +108,14 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
     return () => document.removeEventListener('mousedown', close)
   }, [showFontSizeMenu])
 
+  const stageContent = card.content || ''
+  const stageValue = stageDraft ?? stageContent
+
   const handleBlur = () => {
-    if (localContent !== card.content) {
-      onUpdate({ ...card, content: localContent })
+    if (stageDraft !== null && stageDraft !== stageContent) {
+      onUpdate({ ...card, content: stageDraft })
     }
+    setStageDraft(null)
   }
 
   const toggleMenu = (e) => {
@@ -147,7 +141,7 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
 
     document.addEventListener('mousedown', handleClickOutside, true)
     return () => document.removeEventListener('mousedown', handleClickOutside, true)
-  }, [showMenu, isActive, onMenuToggle, setNodeRef])
+  }, [showMenu, isActive, onMenuToggle, onSelectCard, setNodeRef])
 
   const handleCardClick = (e) => {
     e.stopPropagation()
@@ -157,6 +151,9 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
     
     // If it's a text-based card, focus the editor
     if (['text', 'pain_point', 'opportunity', 'solution'].includes(card.type)) {
+      if (editorRef.current?.getFontSize) {
+        setToolbarFontSize(editorRef.current.getFontSize() || '3')
+      }
       editorRef.current?.focus()
     }
   }
@@ -235,15 +232,15 @@ export default function JourneyCard({ card, globalMetrics, globalJourneys = [], 
           style={{ clipPath: 'polygon(0% 0%, calc(100% - 20px) 0%, 100% 50%, calc(100% - 20px) 100%, 0% 100%)', width: '100%' }}
         >
           {readOnly ? (
-            <span className="font-bold text-gray-800 text-sm truncate block w-full">{localContent || ''}</span>
+            <span className="font-bold text-gray-800 text-sm truncate block w-full">{stageContent}</span>
           ) : (
             <>
           <input
             className="w-full bg-transparent outline-none font-bold text-gray-800 text-sm placeholder-gray-500/50"
-            value={localContent}
-            onChange={(e) => setLocalContent(e.target.value)}
-            onBlur={() => { handleBlur(); setIsStageFocused(false); if (onMenuToggle) onMenuToggle(false); }}
-            onFocus={() => { setIsStageFocused(true); if (onMenuToggle) onMenuToggle(true); }}
+            value={stageValue}
+            onChange={(e) => setStageDraft(e.target.value)}
+            onBlur={() => { handleBlur(); if (onMenuToggle) onMenuToggle(false); }}
+            onFocus={() => { if (onMenuToggle) onMenuToggle(true); }}
             placeholder={t('editor.placeholderStageName')}
             onPointerDown={(e) => e.stopPropagation()}
           />

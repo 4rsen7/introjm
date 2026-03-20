@@ -5,6 +5,7 @@ import { LayoutGrid, Map, Users, BarChart3, Settings, Archive as ArchiveIcon, Ch
 import Dashboard from './pages/Dashboard'
 import Editor from './pages/Editor'
 import Personas from './pages/Personas'
+import PortraitDetails from './pages/PortraitDetails'
 import PersonaModal from './components/personas/PersonaModal'
 import JourneyMaps from './pages/JourneyMaps'
 import Metrics from './pages/Metrics'
@@ -29,7 +30,7 @@ import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuth
 import { API_BASE_URL } from './config/api'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, useMetrics, useInterviews, useWorkspace, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
@@ -79,14 +80,18 @@ const ExternalRedirect = ({ to }) => {
   return null;
 };
 
-const ScrollToTopOnRouteChange = () => {
+const ScrollToTopOnRouteChange = ({ scrollContainerRef }) => {
   const location = useLocation();
 
   useEffect(() => {
+    const scrollContainer = scrollContainerRef?.current;
+    if (scrollContainer && typeof scrollContainer.scrollTo === 'function') {
+      scrollContainer.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     }
-  }, [location.pathname]);
+  }, [location.pathname, scrollContainerRef]);
 
   return null;
 };
@@ -121,7 +126,8 @@ const MainLayout = ({
   userProfile, 
   planName,
   isNavigating, 
-  setSettingsTab 
+  setSettingsTab,
+  mainContentRef,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -136,7 +142,7 @@ const MainLayout = ({
   };
 
   return (
-      <div className="flex h-screen bg-[#F3F4F6] font-sans text-gray-900">
+      <div className="flex h-screen app-shell-bg font-sans text-gray-900">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10">
         <div className="p-6 flex items-center gap-3">
@@ -219,7 +225,7 @@ const MainLayout = ({
                   }}
                 >
                   <MenuItem icon={Map} label={t('nav.journeyMaps')} isActive={location.pathname === '/journeys'} onClick={() => navigate('/journeys')} />
-                  <MenuItem icon={Users} label={t('nav.personas')} isActive={location.pathname === '/personas'} onClick={() => navigate('/personas')} />
+                  <MenuItem icon={Users} label={t('nav.personas')} isActive={location.pathname === '/personas' || location.pathname.startsWith('/portraits')} onClick={() => navigate('/personas')} />
                   <MenuItem icon={BarChart3} label={t('nav.metrics')} isActive={location.pathname.startsWith('/metrics')} onClick={() => navigate('/metrics')} />
                   <MenuItem icon={Mic} label={t('nav.interviews') || 'Interviews'} isActive={location.pathname.startsWith('/interviews')} onClick={() => navigate('/interviews')} />
                   <MenuItem icon={ArchiveIcon} label={t('nav.archive')} isActive={location.pathname === '/archive'} onClick={() => navigate('/archive')} />
@@ -265,7 +271,7 @@ const MainLayout = ({
       </aside>
 
       {/* Main Content — vertical scroll for dashboard sections (Editor has its own scroll) */}
-      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
+      <main ref={mainContentRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
          {isNavigating && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-white animate-in fade-in duration-200">
                 <div className="w-8 h-8 border-2 border-gray-200 border-t-orange-600 rounded-full animate-spin"></div>
@@ -288,6 +294,11 @@ function App() {
   const locationPathRef = useRef(location.pathname);
   const [authReady, setAuthReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [settingsTab, setSettingsTab] = useState('workspace');
+  const navigationResetTimeoutRef = useRef(null);
+  const mainContentRef = useRef(null);
 
   useEffect(() => {
     locationPathRef.current = location.pathname;
@@ -360,10 +371,9 @@ function App() {
 
   // Navigation Loading Animation
   useLayoutEffect(() => {
+    const timers = [];
     setIsNavigating(true);
     setLoadingProgress(20);
-
-    const timers = [];
 
     timers.push(setTimeout(() => setLoadingProgress(70), 200));
     timers.push(setTimeout(() => setLoadingProgress(100), 500));
@@ -371,12 +381,22 @@ function App() {
     // Complete navigation immediately after full width
     timers.push(setTimeout(() => {
       setIsNavigating(false);
-      // Reset width slightly after fading out
-      timers.push(setTimeout(() => setLoadingProgress(0), 150));
+      // Reset width slightly after fading out.
+      if (navigationResetTimeoutRef.current) {
+        clearTimeout(navigationResetTimeoutRef.current);
+      }
+      navigationResetTimeoutRef.current = setTimeout(() => {
+        setLoadingProgress(0);
+        navigationResetTimeoutRef.current = null;
+      }, 150);
     }, 550));
 
     return () => {
       timers.forEach(clearTimeout);
+      if (navigationResetTimeoutRef.current) {
+        clearTimeout(navigationResetTimeoutRef.current);
+        navigationResetTimeoutRef.current = null;
+      }
       setIsNavigating(false);
     };
   }, [location.pathname]);
@@ -386,13 +406,15 @@ function App() {
     const path = location.pathname;
     if (path === '/journeys' || path.startsWith('/journeys/')) {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
-    } else if (path === '/personas') {
+    } else if (path === '/personas' || path.startsWith('/portraits/')) {
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
     } else if (path === '/metrics' || path.startsWith('/metrics')) {
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     } else if (path === '/archive') {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     }
   }, [location.pathname, queryClient]);
@@ -406,11 +428,11 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['profile'] });
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
+      queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
     }
   }, [authReady, isAuthenticated, queryClient]);
 
-  const [activeMenu, setActiveMenu] = useState('dashboard');
   const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(true);
 
   // Global Personas State
@@ -418,9 +440,11 @@ function App() {
   const queriesEnabled = authReady && isAuthenticated;
   const { data: globalJourneys = [], isFetched: journeysFetched } = useJourneys(queriesEnabled);
   const { data: globalPersonas = [] } = usePersonas(queriesEnabled);
+  const { data: globalPortraits = [] } = usePortraits(queriesEnabled);
   const { data: globalMetrics = [] } = useMetrics(queriesEnabled);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
-  const workspaces = useWorkspaceList(queriesEnabled).data ?? [];
+  const workspaceListQuery = useWorkspaceList(queriesEnabled);
+  const workspaces = useMemo(() => workspaceListQuery.data ?? [], [workspaceListQuery.data]);
   const workspaceListInvalidatedRef = useRef(false);
 
   // If journeys loaded but workspace list is still empty (e.g. GET /api/journeys created workspace after list), refetch list once
@@ -431,29 +455,36 @@ function App() {
     }
   }, [journeysFetched, workspaces.length, queryClient]);
 
+  const resolvedSelectedWorkspaceId = useMemo(() => {
+    if (!workspaces.length) return '';
+    if (selectedWorkspaceId && workspaces.some((workspace) => workspace.id === selectedWorkspaceId)) {
+      return selectedWorkspaceId;
+    }
+    return workspaces[0].id;
+  }, [workspaces, selectedWorkspaceId]);
+
   const currentWorkspace = useMemo(() => {
     if (!workspaces.length) return null;
-    const found = workspaces.find((w) => w.id === selectedWorkspaceId);
+    const found = workspaces.find((w) => w.id === resolvedSelectedWorkspaceId);
     return found || workspaces[0];
-  }, [workspaces, selectedWorkspaceId]);
+  }, [workspaces, resolvedSelectedWorkspaceId]);
 
   const { data: userProfile } = useProfile(queriesEnabled);
   const { data: workspaceLimits } = useWorkspaceLimits(currentWorkspace?.id, queriesEnabled);
   const planName = workspaceLimits?.limits?.planName ?? null;
 
   useEffect(() => {
-    if (workspaces.length > 0 && (!selectedWorkspaceId || !workspaces.some((w) => w.id === selectedWorkspaceId))) {
-      const next = workspaces[0].id;
-      setSelectedWorkspaceId(next);
-      localStorage.setItem(SELECTED_WORKSPACE_KEY, next);
+    if (resolvedSelectedWorkspaceId && resolvedSelectedWorkspaceId !== selectedWorkspaceId) {
+      localStorage.setItem(SELECTED_WORKSPACE_KEY, resolvedSelectedWorkspaceId);
     }
-  }, [workspaces, selectedWorkspaceId]);
+  }, [resolvedSelectedWorkspaceId, selectedWorkspaceId]);
 
   const handleSwitchWorkspace = (id) => {
     setSelectedWorkspaceId(id);
     localStorage.setItem(SELECTED_WORKSPACE_KEY, id);
     queryClient.invalidateQueries({ queryKey: ['journeys'] });
     queryClient.invalidateQueries({ queryKey: ['personas'] });
+    queryClient.invalidateQueries({ queryKey: ['portraits'] });
     queryClient.invalidateQueries({ queryKey: ['metrics'] });
     queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
   };
@@ -465,6 +496,10 @@ function App() {
   const filteredPersonas = useMemo(() =>
     currentWorkspace ? globalPersonas.filter((p) => p.workspace_id === currentWorkspace.id) : globalPersonas,
     [globalPersonas, currentWorkspace]
+  );
+  const filteredPortraits = useMemo(() =>
+    currentWorkspace ? globalPortraits.filter((p) => p.workspace_id === currentWorkspace.id) : globalPortraits,
+    [globalPortraits, currentWorkspace]
   );
   const filteredMetrics = useMemo(() =>
     currentWorkspace ? globalMetrics.filter((m) => m.workspace_id === currentWorkspace.id) : globalMetrics,
@@ -480,11 +515,6 @@ function App() {
   const [editingPersona, setEditingPersona] = useState(null);
   const [limitReached, setLimitReached] = useState({ open: false, limit: null });
   const [showPricingModal, setShowPricingModal] = useState(false);
-
-  // Navigation Loading State
-  const [isNavigating, setIsNavigating] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [settingsTab, setSettingsTab] = useState('workspace');
 
   // Calculate usage stats and linked journeys for personas (per current workspace)
   const personasWithUsage = useMemo(() => {
@@ -601,13 +631,59 @@ function App() {
       } catch (error) { console.error(error); }
   }
 
-  const handleRestorePersona = (id) => {
+  const handleRestorePersona = () => {
       queryClient.invalidateQueries(['personas']);
   }
 
-  const handleDuplicatePersona = (persona) => {
+  const handleDuplicatePersona = () => {
       // Logic moved to Personas.jsx or needs API implementation
       // For now, just refresh
+  }
+
+  const handleGeneratePortrait = async ({ interviewIds, title }) => {
+      const token = await getAuthToken();
+      try {
+          const response = await fetch(`${API_URL}/portraits/generate-from-interview`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                  interviewIds,
+                  ...(title ? { title } : {}),
+              })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+              throw new Error(data.error || data.message || 'Failed to generate portrait');
+          }
+
+          queryClient.invalidateQueries(['portraits']);
+          return data.data;
+      } catch (error) {
+          console.error('Error generating portrait:', error);
+          throw error;
+      }
+  }
+
+  const handleDeletePortrait = async (id) => {
+      const token = await getAuthToken();
+      try {
+          const response = await fetch(`${API_URL}/portraits/${id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) {
+              const data = await response.json().catch(() => ({}));
+              throw new Error(data.error || data.message || 'Failed to delete portrait');
+          }
+          queryClient.invalidateQueries(['portraits']);
+      } catch (error) {
+          console.error('Error deleting portrait:', error);
+          throw error;
+      }
   }
 
   const handleCreateJourney = async () => {
@@ -643,19 +719,19 @@ function App() {
     }
   }
 
-  const handleDuplicateJourney = (journey) => {
+  const handleDuplicateJourney = () => {
       queryClient.invalidateQueries(['journeys']);
   }
 
-  const handleDeleteJourney = (id) => {
+  const handleDeleteJourney = () => {
       queryClient.invalidateQueries(['journeys']);
   }
 
-  const handleArchiveJourney = (id) => {
+  const handleArchiveJourney = () => {
       queryClient.invalidateQueries(['journeys']);
   }
 
-  const handleRestoreJourney = (id) => {
+  const handleRestoreJourney = () => {
       queryClient.invalidateQueries(['journeys']);
   }
 
@@ -810,21 +886,9 @@ function App() {
       }
   };
 
-  const getUserInitials = () => {
-      const name = userProfile?.full_name || userProfile?.email || '';
-      if (!name) return 'NA';
-      return name
-        .trim()
-        .split(' ')
-        .map(n => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase();
-  };
-
   return (
     <>
-      <ScrollToTopOnRouteChange />
+      <ScrollToTopOnRouteChange scrollContainerRef={mainContentRef} />
       <div className={`fixed top-0 left-0 h-1 bg-orange-600 z-[9999] transition-all duration-300 ease-out ${isNavigating ? 'opacity-100' : 'opacity-0'}`} style={{ width: `${loadingProgress}%` }}></div>
       <Routes>
         <Route path="/" element={IS_LANDING_HOST ? <Navigate to="/en" replace /> : <Navigate to={isAuthenticated ? "/dashboard" : "/auth"} replace />} />
@@ -876,6 +940,7 @@ function App() {
                planName={planName}
                isNavigating={isNavigating}
                setSettingsTab={setSettingsTab}
+               mainContentRef={mainContentRef}
             />
           }>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -904,6 +969,8 @@ function App() {
             />} />
             <Route path="/personas" element={<Personas 
                 personas={personasWithUsage.filter(p => p.status !== 'archived')} 
+                portraits={filteredPortraits}
+                interviews={filteredInterviews}
                 currentUserId={userProfile?.id}
                 isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onCreate={() => { setEditingPersona(null); setIsPersonaModalOpen(true); }} 
@@ -911,6 +978,14 @@ function App() {
                 onDelete={handleDeletePersona}
                 onDuplicate={handleDuplicatePersona}
                 onArchive={handleArchivePersona}
+                onGeneratePortrait={handleGeneratePortrait}
+                onDeletePortrait={handleDeletePortrait}
+            />} />
+            <Route path="/portraits/:id" element={<PortraitDetails
+                portraits={filteredPortraits}
+                currentUserId={userProfile?.id}
+                isWorkspaceOwner={currentWorkspace?.role === 'owner'}
+                onDeletePortrait={handleDeletePortrait}
             />} />
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
@@ -933,12 +1008,15 @@ function App() {
       </Routes>
 
       {/* Global Persona Modal (Moved outside MainLayout to be persistent) */}
-      <PersonaModal 
-        isOpen={isPersonaModalOpen} 
-        onClose={() => setIsPersonaModalOpen(false)} 
-        onSave={handleSaveGlobalPersona}
-        initialPersona={editingPersona}
-      />
+      {isPersonaModalOpen && (
+        <PersonaModal 
+          key={editingPersona?.id ?? 'new-persona'}
+          isOpen={isPersonaModalOpen} 
+          onClose={() => setIsPersonaModalOpen(false)} 
+          onSave={handleSaveGlobalPersona}
+          initialPersona={editingPersona}
+        />
+      )}
 
       {/* Limit reached modal: owner can upgrade, member is told to contact owner */}
       {limitReached.open && (
@@ -980,10 +1058,12 @@ function App() {
   )
 }
 
-function MenuItem({ icon: Icon, label, isActive, onClick }) {
+function MenuItem({ icon, label, isActive, onClick }) {
+  const IconComponent = icon;
+
   return (
     <div onClick={onClick} className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all duration-200 group ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}>
-      <Icon size={20} strokeWidth={2} className={`${isActive ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-600'}`} />
+      <IconComponent size={20} strokeWidth={2} className={`${isActive ? 'text-gray-900' : 'text-gray-400 group-hover:text-gray-600'}`} />
       {label}
     </div>
   )

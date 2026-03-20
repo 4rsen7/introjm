@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../../config/api';
 const API_URL = API_BASE_URL;
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', UAH: '₴' };
+const EMPTY_PLANS = [];
 function getCurrencySymbol(currency) {
   return CURRENCY_SYMBOLS[currency] ?? CURRENCY_SYMBOLS.USD;
 }
@@ -14,27 +15,51 @@ function getCurrencySymbol(currency) {
 const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
   const { t, i18n } = useTranslation();
   const [billingCycle, setBillingCycle] = useState('monthly');
-  const [plans, setPlans] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [plans, setPlans] = useState(EMPTY_PLANS);
+  const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
-        setLoading(true);
-        const locale = i18n.language || 'en';
-        fetch(`${API_URL}/plans?locale=${locale}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    setPlans(data.data || []);
-                }
-            })
-            .catch(err => console.error("Failed to load plans:", err))
-            .finally(() => setLoading(false));
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUserId(session?.user?.id ?? null);
-        });
-    }
+    if (!isOpen) return undefined;
+
+    let active = true;
+
+    const loadPricingData = async () => {
+      setLoading(true);
+      const locale = i18n.language || 'en';
+
+      try {
+        const [plansResponse, sessionResponse] = await Promise.all([
+          fetch(`${API_URL}/plans?locale=${locale}`).then((res) => res.json()),
+          supabase.auth.getSession(),
+        ]);
+
+        if (!active) return;
+
+        if (plansResponse.status === 'success') {
+          setPlans(plansResponse.data || EMPTY_PLANS);
+        } else {
+          setPlans(EMPTY_PLANS);
+        }
+
+        setUserId(sessionResponse.data.session?.user?.id ?? null);
+      } catch (err) {
+        if (!active) return;
+        console.error('Failed to load plans:', err);
+        setPlans(EMPTY_PLANS);
+        setUserId(null);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadPricingData();
+
+    return () => {
+      active = false;
+    };
   }, [isOpen, i18n.language]);
 
   if (!isOpen) return null;

@@ -41,25 +41,28 @@ export default function MetricsIntegrationSection() {
           </p>
         </div>
         <div className="mt-10 flex gap-4 overflow-x-auto snap-x snap-mandatory md:mt-12 md:grid md:grid-cols-3 md:gap-8 md:overflow-visible">
-          {cards.map(({ id, Icon, title, text }) => (
-            <div
-              key={id}
-              className="min-w-[80%] snap-start rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 md:min-w-0"
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-                <Icon className="h-6 w-6" strokeWidth={2} />
+          {cards.map((card) => {
+            const IconComponent = card.Icon;
+
+            return (
+              <div
+                key={card.id}
+                className="min-w-[80%] snap-start rounded-lg border border-slate-200/60 bg-white p-8 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-200/50 md:min-w-0"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                  <IconComponent className="h-6 w-6" strokeWidth={2} />
+                </div>
+                <h3 className="mt-6 text-xl font-semibold text-slate-900">
+                  {card.title}
+                </h3>
+                <p className="mt-3 text-slate-600 text-sm">
+                  {card.text}
+                </p>
               </div>
-              <h3 className="mt-6 text-xl font-semibold text-slate-900">
-                {title}
-              </h3>
-              <p className="mt-3 text-slate-600 text-sm">
-                {text}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
   );
 }
-

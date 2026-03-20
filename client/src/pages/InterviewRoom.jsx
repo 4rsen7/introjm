@@ -317,7 +317,7 @@ const normalizeInsightConfigFromSummary = (summaryData) => {
   };
 };
 
-export default function InterviewRoom({ userProfile, currentWorkspace }) {
+export default function InterviewRoom() {
   const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -374,6 +374,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   const [editedTitle, setEditedTitle] = useState('');
   const normalizedSummary = useMemo(() => normalizeInterviewSummary(interview?.summary_data), [interview?.summary_data]);
   const persistedInsightConfig = useMemo(() => normalizeInsightConfigFromSummary(interview?.summary_data), [interview?.summary_data]);
+  const interviewStatus = interview?.status;
   const insightPresets = useMemo(() => ([
     {
       key: 'quick_summary',
@@ -430,7 +431,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     setSelectedFile(file);
   }, [validateUploadFile]);
   const interviewStatusLabel = useMemo(() => {
-    switch (interview?.status) {
+    switch (interviewStatus) {
       case 'processing':
         return t('interviews.statusProcessing');
       case 'completed':
@@ -440,7 +441,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       default:
         return t('interviews.statusDraft');
     }
-  }, [interview?.status, t]);
+  }, [interviewStatus, t]);
 
   const handleTitleSave = () => {
     if (editedTitle.trim() !== interview.title && editedTitle.trim() !== '') {
@@ -509,7 +510,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
   }, [isInsightsConfigOpen, persistedInsightConfig]);
 
   useEffect(() => {
-    if (loading || !isUploadMode || !interview || interview.status !== 'processing') {
+    if (loading || !isUploadMode || !interviewStatus || interviewStatus !== 'processing') {
       return undefined;
     }
 
@@ -550,7 +551,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
         window.clearTimeout(timerId);
       }
     };
-  }, [fetchInterview, id, interview?.status, isUploadMode, loading, navigate, queryClient, t]);
+  }, [fetchInterview, id, interviewStatus, isUploadMode, loading, navigate, queryClient, t]);
 
   // Setup Speech Recognition
   useEffect(() => {
@@ -681,7 +682,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.start();
-        } catch (e) {
+        } catch {
           // already started
         }
       }
@@ -703,7 +704,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     saveInterview();
   };
 
-  const saveInterview = async (updates = {}, dataToSave = transcriptData) => {
+  const saveInterview = useCallback(async (updates = {}, dataToSave = transcriptDataRef.current) => {
     setSaving(true);
     try {
       const token = await getAuthToken();
@@ -728,7 +729,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     } finally {
       setSaving(false);
     }
-  };
+  }, [id, queryClient]);
 
   // Auto-save on unmount
   useEffect(() => {
@@ -738,7 +739,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
         saveInterview({}, transcriptDataRef.current);
       }
     };
-  }, []);
+  }, [saveInterview]);
 
   const generateAIInsights = async ({
     preset = selectedInsightPreset,

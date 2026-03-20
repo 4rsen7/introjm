@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../services/auth';
 import { API_BASE_URL } from '../config/api';
+import { normalizePortraitData } from '../utils/normalizePortraitData';
 
 const API_URL = API_BASE_URL;
 
@@ -38,6 +39,16 @@ export const mapPersonaToClient = (p) => ({
   bio: p.bio || '',
   age: p.age || '',
   location: p.location || ''
+});
+
+export const mapPortraitToClient = (p) => ({
+  ...p,
+  portraitData: normalizePortraitData(p.portrait_data || p.portraitData),
+  sourceInterviewId: p.source_interview_id || p.sourceInterviewId || null,
+  sourceInterviewTitle: p.source_interview_title || p.sourceInterviewTitle || '',
+  sourceInterviewIds: p.source_interview_ids || p.sourceInterviewIds || [],
+  sourceInterviewTitles: p.source_interview_titles || p.sourceInterviewTitles || [],
+  updatedAt: formatDate(p.updated_at || p.created_at),
 });
 
 export const mapJourneyToClient = (j) => ({
@@ -95,6 +106,17 @@ export const usePersonas = (enabled = true) => {
     queryFn: async () => {
       const data = await fetchData('/personas');
       return data.map(mapPersonaToClient);
+    },
+    enabled,
+  });
+};
+
+export const usePortraits = (enabled = true) => {
+  return useQuery({
+    queryKey: ['portraits'],
+    queryFn: async () => {
+      const data = await fetchData('/portraits');
+      return data.map(mapPortraitToClient);
     },
     enabled,
   });

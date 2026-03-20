@@ -307,9 +307,9 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
   };
 
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex h-full app-shell-bg">
       {/* Left Panel - Settings (40%) */}
-      <div className="w-2/5 border-r border-gray-200 flex flex-col h-full bg-white">
+      <div className="w-2/5 border-r border-gray-200 flex flex-col h-full app-surface">
         <div className="h-16 border-b border-gray-200 flex items-center px-6 gap-4 shrink-0">
             <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition">
                 <ArrowLeft size={20} />
@@ -328,7 +328,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                         type="text" 
                         value={formData.name}
                         onChange={(e) => handleChange('name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+                        className="app-input w-full px-3 py-2 rounded-lg outline-none transition"
                         placeholder={t('metrics.metricNamePlaceholder')}
                     />
                 </div>
@@ -339,7 +339,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                         <select 
                             value={formData.dataSource}
                             onChange={(e) => handleChange('dataSource', e.target.value)}
-                            className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none"
+                            className="app-select w-full pl-3 pr-10 py-2 rounded-lg outline-none appearance-none"
                         >
                             <option value="manual">{t('metrics.manualEntry')}</option>
                             <option value="google_sheets">{t('metrics.googleSheets')}</option>
@@ -369,14 +369,14 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                     )}
                                     <div className="mt-3 space-y-2">
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.spreadsheetId')}</label>
-                                        <input type="text" value={formData.integrationConfig?.spreadsheetId || ''} onChange={(e) => handleIntegrationConfigChange('spreadsheetId', e.target.value)} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        <input type="text" value={formData.integrationConfig?.spreadsheetId || ''} onChange={(e) => handleIntegrationConfigChange('spreadsheetId', e.target.value)} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms" className="app-input w-full px-3 py-2 rounded-lg text-sm" />
                                         {integrationStatus.google_sheets && formData.integrationConfig?.spreadsheetId?.trim() && (
                                             <button type="button" onClick={handleLoadSheets} disabled={sheetsLoadLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition disabled:opacity-50">
                                                 <RefreshCw size={16} className={sheetsLoadLoading ? 'animate-spin' : ''} /> {sheetsLoadLoading ? t('metrics.loadingSheets') : t('metrics.loadSheets')}
                                             </button>
                                         )}
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.range')}</label>
-                                        <input type="text" value={formData.integrationConfig?.range || ''} onChange={(e) => handleIntegrationConfigChange('range', e.target.value)} placeholder="Sheet1!A1:B10" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        <input type="text" value={formData.integrationConfig?.range || ''} onChange={(e) => handleIntegrationConfigChange('range', e.target.value)} placeholder="Sheet1!A1:B10" className="app-input w-full px-3 py-2 rounded-lg text-sm" />
                                         {sheetSuggestions.length > 0 && (
                                             <div className="mt-2">
                                                 <p className="text-xs font-medium text-gray-500 mb-1">{t('metrics.suggestedRanges')}</p>
@@ -405,11 +405,11 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                     )}
                                     <div className="mt-3 space-y-2">
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.fileId')}</label>
-                                        <input type="text" value={formData.integrationConfig?.fileId || ''} onChange={(e) => handleIntegrationConfigChange('fileId', e.target.value)} placeholder={t('metrics.fileIdPlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        <input type="text" value={formData.integrationConfig?.fileId || ''} onChange={(e) => handleIntegrationConfigChange('fileId', e.target.value)} placeholder={t('metrics.fileIdPlaceholder')} className="app-input w-full px-3 py-2 rounded-lg text-sm" />
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.sheetName')}</label>
-                                        <input type="text" value={formData.integrationConfig?.sheetName || 'Sheet1'} onChange={(e) => handleIntegrationConfigChange('sheetName', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        <input type="text" value={formData.integrationConfig?.sheetName || 'Sheet1'} onChange={(e) => handleIntegrationConfigChange('sheetName', e.target.value)} className="app-input w-full px-3 py-2 rounded-lg text-sm" />
                                         <label className="block text-sm font-medium text-gray-700">{t('metrics.range')}</label>
-                                        <input type="text" value={formData.integrationConfig?.range || ''} onChange={(e) => handleIntegrationConfigChange('range', e.target.value)} placeholder="A1:B10" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                        <input type="text" value={formData.integrationConfig?.range || ''} onChange={(e) => handleIntegrationConfigChange('range', e.target.value)} placeholder="A1:B10" className="app-input w-full px-3 py-2 rounded-lg text-sm" />
                                     </div>
                                 </>
                             )}
@@ -428,7 +428,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                         <select 
                             value={formData.type}
                             onChange={(e) => handleChange('type', e.target.value)}
-                            className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white appearance-none"
+                            className="app-select w-full pl-3 pr-10 py-2 rounded-lg outline-none appearance-none"
                         >
                             <option value="Number">{t('metrics.typeNumber')}</option>
                             <option value="Comparison">{t('metrics.typeComparison')}</option>
@@ -451,7 +451,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                 type="text" 
                                 value={formData.value}
                                 onChange={(e) => handleChange('value', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                className="app-input w-full px-3 py-2 rounded-lg outline-none"
                                 placeholder="0"
                             />
                         </div>
@@ -461,7 +461,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                 type="text" 
                                 value={formData.suffix}
                                 onChange={(e) => handleChange('suffix', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                className="app-input w-full px-3 py-2 rounded-lg outline-none"
                                 placeholder={t('metrics.suffixPlaceholder')}
                             />
                         </div>
@@ -473,7 +473,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                         type="text" 
                                         value={formData.previousValue}
                                         onChange={(e) => handleChange('previousValue', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                        className="app-input w-full px-3 py-2 rounded-lg outline-none"
                                         placeholder="0"
                                     />
                                 </div>
@@ -548,14 +548,14 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                                         title={t('metrics.color')}
                                     />
                                     <input 
-                                        className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:border-blue-500" 
+                                        className="app-input flex-1 min-w-0 px-3 py-1.5 text-sm rounded-lg outline-none" 
                                         value={row.label} 
                                         onChange={(e) => handleSeriesChange(i, 'label', e.target.value)} 
                                         placeholder={t('metrics.labelPlaceholder')}
                                     />
                                     <input 
                                         type="number"
-                                        className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:border-blue-500" 
+                                        className="app-input w-24 px-3 py-1.5 text-sm rounded-lg outline-none" 
                                         value={row.value} 
                                         onChange={(e) => handleSeriesChange(i, 'value', e.target.value)} 
                                         placeholder={t('metrics.valuePlaceholder')}
@@ -586,7 +586,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
             )}
         </div>
 
-        <div className="p-6 border-t border-gray-200 bg-gray-50">
+        <div className="p-6 border-t border-gray-200 app-surface-soft">
             {validationError && (
                 <p className="text-sm text-red-600 mb-3" role="alert">{validationError}</p>
             )}
@@ -608,7 +608,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
 
          <div className="flex-1 flex items-start justify-center pt-32 pb-12">
             {/* Preview Card */}
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 w-full max-w-md flex flex-col items-center text-center transition-all duration-300 transform hover:scale-105">
+            <div className="app-surface rounded-2xl p-8 w-full max-w-md flex flex-col items-center text-center transition-all duration-300 transform hover:scale-105">
                 <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-4">
                     <BarChart3 size={24} />
                 </div>
@@ -701,7 +701,7 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
                         </ResponsiveContainer>
                     </div>
                 ) : (
-                    <div className="h-32 flex flex-col items-center justify-center text-gray-400 italic bg-gray-50 w-full rounded-lg border-2 border-dashed border-gray-200 my-4">
+                    <div className="app-surface-soft h-32 flex flex-col items-center justify-center text-gray-400 italic w-full rounded-lg border-2 border-dashed border-gray-200 my-4">
                         <BarChart3 size={32} className="mb-2 opacity-20" />
                         <span>{t('metrics.previewNotAvailable', { type: formData.type === 'Number' ? t('metrics.typeNumber') : formData.type === 'Comparison' ? t('metrics.typeComparison') : t('metrics.typeSeries') })}</span>
                     </div>

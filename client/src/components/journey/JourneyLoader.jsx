@@ -6,10 +6,9 @@ const TIP_KEYS = ['loader.tip1', 'loader.tip2', 'loader.tip3', 'loader.tip4', 'l
 export default function JourneyLoader() {
   const { t } = useTranslation()
   const [progress, setProgress] = useState(0)
-  const [tipKey, setTipKey] = useState('loader.tip1')
+  const [tipKey] = useState(() => TIP_KEYS[Math.floor(Math.random() * TIP_KEYS.length)])
 
   useEffect(() => {
-    setTipKey(TIP_KEYS[Math.floor(Math.random() * TIP_KEYS.length)])
     // Start animation after mount
     const timer = setTimeout(() => setProgress(100), 100)
     return () => clearTimeout(timer)

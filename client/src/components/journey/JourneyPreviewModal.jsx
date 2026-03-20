@@ -44,11 +44,12 @@ export default function JourneyPreviewModal({
 
   const journey = journeyProp ?? fetchedJourney;
   const title = journey?.title || t('editor.untitled');
+  const mapData = journey?.map_data ?? null;
 
   const mapState = useMemo(() => {
-    if (!journey?.map_data) return { lanes: [], cells: {}, gridColumns: [], emotionValues: {} };
-    return parseMapData(journey.map_data);
-  }, [journey?.map_data]);
+    if (!mapData) return { lanes: [], cells: {}, gridColumns: [], emotionValues: {} };
+    return parseMapData(mapData);
+  }, [mapData]);
 
   useBodyScrollLock(isOpen);
   if (!isOpen) return null;

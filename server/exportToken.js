@@ -11,12 +11,16 @@ function base64UrlDecode(value) {
 }
 
 function getExportTokenSecret() {
-  return (
+  const secret =
     process.env.EXPORT_TOKEN_SECRET ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    'iterojm-local-export-secret'
-  );
+    process.env.SUPABASE_SERVICE_KEY;
+
+  if (!secret) {
+    throw new Error('Export token secret is not configured');
+  }
+
+  return secret;
 }
 
 function createExportToken(payload) {

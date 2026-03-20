@@ -88,7 +88,9 @@ export default function JourneyExportPage() {
             });
           })
         );
-      } catch (_) {}
+      } catch {
+        // Individual asset readiness checks are best-effort for export rendering.
+      }
 
       const width = Math.ceil(Math.max(el.scrollWidth, el.getBoundingClientRect().width));
       const height = Math.ceil(Math.max(el.scrollHeight, el.getBoundingClientRect().height));

@@ -3,13 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, ZoomIn, ZoomOut, Hand, MousePointer, RotateCcw, List, AlignLeft, Activity, Image as ImageIcon, ChevronDown, Info, MoreHorizontal, Copy, Trash2, Check, Download, User, Cloud, Loader2, History } from 'lucide-react'
-import { MemoryRouter, useParams, useNavigate, useLocation } from 'react-router-dom';
+import { MemoryRouter, useParams, useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { 
   DndContext, 
-  closestCenter, 
   closestCorners,
   KeyboardSensor, 
   PointerSensor, 
@@ -56,18 +55,6 @@ function downloadBlob(blob, filename) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(blobUrl);
-}
-
-function getScrollParent(node) {
-  if (!node) return null;
-  let p = node.parentElement;
-  while (p) {
-    const { overflow, overflowY } = getComputedStyle(p);
-    if (/auto|scroll|overlay/.test(overflow) || /auto|scroll|overlay/.test(overflowY)) return p;
-    if (p.scrollHeight > p.clientHeight || p.scrollWidth > p.clientWidth) return p;
-    p = p.parentElement;
-  }
-  return null;
 }
 
 const PRINT_STYLES = `
@@ -204,7 +191,6 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const location = useLocation();
   const journeyId = id;
   const headerRef = useRef(null);
   const [headerHeight, setHeaderHeight] = useState(64);
@@ -297,7 +283,6 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   const [lastSaved, setLastSaved] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
-  const [isMinLoadComplete, setIsMinLoadComplete] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const currentActor = useMemo(() => ({
     id: userProfile?.id || '',
@@ -341,8 +326,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
   useEffect(() => {
     if (persona?.id && globalPersonas.length > 0) {
       const freshPersona = globalPersonas.find(p => p.id === persona.id);
-      if (freshPersona && JSON.stringify(freshPersona) !== JSON.stringify(persona)) {
-        setPersona(freshPersona);
+      if (freshPersona) {
+        setPersona((currentPersona) => (
+          JSON.stringify(freshPersona) !== JSON.stringify(currentPersona) ? freshPersona : currentPersona
+        ));
       }
     }
   }, [globalPersonas, persona?.id]);
@@ -378,38 +365,6 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
     refetchOnMount: 'always', // always refetch when opening editor so we load latest from DB, not stale cache
   });
 
-  // Helper to load data into state
-  const loadJourneyState = (j) => {
-    try {
-    setJourneyMeta({
-      title: j.title,
-      description: j.description || '',
-      status: j.status || 'draft',
-      owner: j.owner || '',
-      ownerId: j.user_id ?? ''
-    });
-
-    if (j.map_data) {
-       try {
-         const { lanes: parsedLanes, cells: parsedCells, gridColumns: parsedCols, emotionValues: parsedEmotion, persona: parsedPersona } = parseMapData(j.map_data);
-         setLanes(parsedLanes);
-         setCells(parsedCells);
-         setGridColumns(parsedCols);
-         setEmotionValues(parsedEmotion);
-         if (parsedPersona) {
-           const freshPersona = globalPersonas.find(p => p.id === parsedPersona.id);
-           setPersona(freshPersona || parsedPersona);
-         }
-       } catch (e) {
-         console.error(e);
-         setLoadError(true);
-       }
-    }
-    } catch (e) {
-      setLoadError(true);
-    }
-  };
-
   // When navigating to a different journey, reset so we load the new journey's state
   useEffect(() => {
     setIsDataLoaded(false);
@@ -417,11 +372,48 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
   // Load into state only when refetch has finished (not stale cache), so re-entry gets latest from DB
   useEffect(() => {
-    if (journeyData && !isDataLoaded && !isQueryFetching && String(journeyData.id) === String(journeyId)) {
-      loadJourneyState(journeyData);
-      setIsDataLoaded(true);
+    if (!journeyData || isDataLoaded || isQueryFetching || String(journeyData.id) !== String(journeyId)) {
+      return;
     }
-  }, [journeyData, isDataLoaded, journeyId, isQueryFetching]);
+
+    try {
+      setJourneyMeta({
+        title: journeyData.title,
+        description: journeyData.description || '',
+        status: journeyData.status || 'draft',
+        owner: journeyData.owner || '',
+        ownerId: journeyData.user_id ?? ''
+      });
+
+      if (journeyData.map_data) {
+        try {
+          const {
+            lanes: parsedLanes,
+            cells: parsedCells,
+            gridColumns: parsedCols,
+            emotionValues: parsedEmotion,
+            persona: parsedPersona
+          } = parseMapData(journeyData.map_data);
+          setLanes(parsedLanes);
+          setCells(parsedCells);
+          setGridColumns(parsedCols);
+          setEmotionValues(parsedEmotion);
+          if (parsedPersona) {
+            const freshPersona = globalPersonas.find(p => p.id === parsedPersona.id);
+            setPersona(freshPersona || parsedPersona);
+          }
+        } catch (error) {
+          console.error(error);
+          setLoadError(true);
+          return;
+        }
+      }
+
+      setIsDataLoaded(true);
+    } catch {
+      setLoadError(true);
+    }
+  }, [globalPersonas, isDataLoaded, isQueryFetching, journeyData, journeyId]);
 
   // Fetch workspace members for owner dropdown (when journey has workspace_id)
   useEffect(() => {
@@ -438,16 +430,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
         if (!res.ok || cancelled) return;
         const json = await res.json();
         if (json.status === 'success' && json.data && !cancelled) setWorkspaceMembers(json.data);
-      } catch (_) { /* ignore */ }
+      } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
   }, [journeyData?.workspace_id]);
-
-  // Force minimum load time for UX (to show tips and smooth transition)
-  useEffect(() => {
-    const timer = setTimeout(() => setIsMinLoadComplete(true), 1500); // 1.5s delay
-    return () => clearTimeout(timer);
-  }, []);
 
   // Close all toolbars and lane/column menus on scroll (same as content picker in TextLane).
   // Editor is rendered full-page (not inside MainLayout), so there is no <main> — scroll happens on window/document.
@@ -915,7 +901,9 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
       if (root && wrap) {
         try {
           root.unmount();
-        } catch (_) {}
+        } catch {
+          root = null;
+        }
       }
       if (wrap?.parentNode) wrap.parentNode.removeChild(wrap);
     }
@@ -1188,11 +1176,13 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
             
             <div className="flex items-center gap-2 flex-1 max-w-xl">
               <input 
+                data-testid="editor-title-input"
                 className="text-lg font-bold text-gray-900 bg-transparent outline-none hover:bg-gray-50 focus:bg-gray-50 rounded px-2 py-1 transition-colors w-full"
                 value={journeyMeta.title}
                 onChange={(e) => setJourneyMeta({ ...journeyMeta, title: e.target.value })}
               />
               <button 
+                data-testid="editor-details-toggle"
                 onClick={() => setShowDetails(!showDetails)}
                 className={`p-1 rounded-full hover:bg-gray-100 text-gray-400 transition hide-on-export ${showDetails ? 'bg-gray-100 text-gray-600 rotate-180' : ''}`}
               >
@@ -1242,7 +1232,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
             </div>
 
             {/* Save Status Indicator */}
-            <div className="flex items-center gap-2 text-xs font-medium text-gray-400 hide-on-export min-w-[80px] justify-end ml-auto">
+            <div data-testid="editor-save-status" className="flex items-center gap-2 text-xs font-medium text-gray-400 hide-on-export min-w-[80px] justify-end ml-auto">
                 {latestCardUpdate && !isSaving && (
                   <>
                     <span className="hidden xl:inline text-xs text-gray-400 whitespace-nowrap">
@@ -1315,6 +1305,7 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
              <div className="md:col-span-2 space-y-2">
                <label className="block text-xs font-bold text-gray-500">{t('editor.description')}</label>
                <textarea 
+                 data-testid="editor-description-input"
                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 h-24 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 resize-none bg-white transition-all"
                  placeholder={t('editor.descriptionPlaceholder')}
                  value={journeyMeta.description}
