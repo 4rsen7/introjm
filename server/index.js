@@ -9,7 +9,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GoogleAIFileManager } = require('@google/generative-ai/server');
 const multer = require('multer');
 const fs = require('fs');
-const ffmpegPath = require('ffmpeg-static');
+const ffmpegStaticPath = require('ffmpeg-static');
 const { encrypt, decrypt } = require('./integrations/encrypt');
 const googleSheets = require('./integrations/googleSheets');
 const microsoftExcel = require('./integrations/microsoftExcel');
@@ -22,6 +22,11 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
+const FFMPEG_EXECUTABLE_CANDIDATES = [
+    process.env.FFMPEG_PATH,
+    ffmpegStaticPath,
+    'ffmpeg',
+].filter(Boolean);
 const CANONICAL_ORIGIN = (process.env.CANONICAL_ORIGIN || 'https://iterojm.com').replace(/\/$/, '');
 const CANONICAL_HOST = (() => {
   try {
@@ -4433,32 +4438,71 @@ const replaceFileExtension = (fileName = '', nextExtension = '') => {
     return `${parsed.name || 'interview-audio'}${nextExtension}`;
 };
 
-const runFfmpegCommand = (args) => new Promise((resolve, reject) => {
-    const child = spawn(ffmpegPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
+const ensureFfmpegExecutable = async (candidatePath) => {
+    if (!candidatePath || candidatePath === 'ffmpeg') return candidatePath;
 
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => {
-        reject(error);
-    });
-
-    child.on('close', (code) => {
-        if (code === 0) {
-            resolve();
-            return;
+    try {
+        await fs.promises.access(candidatePath, fs.constants.X_OK);
+        return candidatePath;
+    } catch (error) {
+        if (error?.code !== 'EACCES') {
+            throw error;
         }
+    }
 
-        reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
-    });
-});
+    try {
+        await fs.promises.chmod(candidatePath, 0o755);
+        await fs.promises.access(candidatePath, fs.constants.X_OK);
+        return candidatePath;
+    } catch (chmodError) {
+        throw new Error(`ffmpeg binary is not executable at ${candidatePath}: ${chmodError.message}`);
+    }
+};
+
+const runFfmpegCommand = async (args) => {
+    let lastError = null;
+
+    for (const candidate of FFMPEG_EXECUTABLE_CANDIDATES) {
+        try {
+            const executablePath = await ensureFfmpegExecutable(candidate);
+            await new Promise((resolve, reject) => {
+                const child = spawn(executablePath, args, {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+
+                let stderr = '';
+                child.stderr.on('data', (chunk) => {
+                    stderr += chunk.toString();
+                });
+
+                child.on('error', (error) => {
+                    reject(error);
+                });
+
+                child.on('close', (code) => {
+                    if (code === 0) {
+                        resolve();
+                        return;
+                    }
+
+                    reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+                });
+            });
+            return;
+        } catch (error) {
+            lastError = error;
+            console.warn('[interview-upload] ffmpeg candidate failed', {
+                candidate,
+                error: error.message,
+            });
+        }
+    }
+
+    throw lastError || new Error('ffmpeg is not available on the server.');
+};
 
 const normalizeInterviewUploadToMp3 = async (file) => {
-    if (!ffmpegPath) {
+    if (FFMPEG_EXECUTABLE_CANDIDATES.length === 0) {
         throw new Error('ffmpeg is not available on the server.');
     }
 
