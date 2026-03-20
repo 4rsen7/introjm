@@ -32,11 +32,40 @@ const INSIGHT_PRESET_SECTIONS = {
 };
 const DEFAULT_INSIGHT_PRESET = 'research_insights';
 const DEFAULT_INSIGHT_SECTIONS = [...INSIGHT_PRESET_SECTIONS[DEFAULT_INSIGHT_PRESET]];
+const INTERVIEW_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
+const SUPPORTED_UPLOAD_FILE_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4'];
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 const cleanString = (value) => typeof value === 'string' ? value.trim() : '';
+const getUploadFileExtension = (fileName = '') => {
+  const match = String(fileName || '').toLowerCase().match(/(\.[a-z0-9]+)$/);
+  return match?.[1] || '';
+};
+const isSupportedUploadFile = (file) => {
+  if (!file) return false;
+  const extension = getUploadFileExtension(file.name);
+  const mimeType = String(file.type || '').toLowerCase();
+  return (
+    SUPPORTED_UPLOAD_FILE_EXTENSIONS.includes(extension)
+    || ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'video/mp4'].includes(mimeType)
+  );
+};
+const getInterviewUploadError = (interview) => {
+  const uploadError = interview?.summary_data?._system?.uploadError;
+  return typeof uploadError === 'string' && uploadError.trim() ? uploadError.trim() : '';
+};
+const formatTranscriptTimestampForDisplay = (value) => {
+  if (typeof value !== 'string') return value ?? '';
+  const cleaned = value.trim();
+  if (!cleaned) return '';
+
+  const match = cleaned.match(/^(\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2})(?:[.,]\d+)?$/);
+  if (match) return match[1];
+
+  return cleaned.replace(/([:,]\d{2})(?:[.,]\d+)$/, '$1');
+};
 
 const normalizeStringArray = (value, maxItems) =>
   Array.isArray(value)
@@ -380,6 +409,25 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     { key: 'quotes', label: t('interviews.keyQuotes'), description: t('interviews.sectionQuotesDesc') },
   ]), [t]);
   const uploadFailureShownRef = useRef(false);
+  const validateUploadFile = useCallback((file) => {
+    if (!file) return false;
+
+    if (!isSupportedUploadFile(file)) {
+      alert(t('interviews.unsupportedFileType'));
+      return false;
+    }
+
+    if (file.size > INTERVIEW_UPLOAD_MAX_SIZE_BYTES) {
+      alert(t('interviews.fileTooLarge'));
+      return false;
+    }
+
+    return true;
+  }, [t]);
+  const selectUploadFile = useCallback((file) => {
+    if (!validateUploadFile(file)) return;
+    setSelectedFile(file);
+  }, [validateUploadFile]);
   const interviewStatusLabel = useMemo(() => {
     switch (interview?.status) {
       case 'processing':
@@ -484,7 +532,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
         setUploadStage(1);
         if (!uploadFailureShownRef.current) {
           uploadFailureShownRef.current = true;
-          alert(t('interviews.transcriptionFailed'));
+          alert(getInterviewUploadError(data) || t('interviews.transcriptionFailed'));
         }
         queryClient.invalidateQueries(['interviews']);
         return;
@@ -806,14 +854,14 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+      selectUploadFile(e.dataTransfer.files[0]);
     }
   };
 
   const handleChange = (e) => {
     e.preventDefault();
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      selectUploadFile(e.target.files[0]);
     }
   };
 
@@ -855,7 +903,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
         queryClient.invalidateQueries(['interviews']);
         setUploadStage(2);
       } else {
-        alert(json.error || 'Failed to process audio file');
+        alert(json.error || json.message || t('interviews.transcriptionFailed'));
       }
 
       if (!acceptedForProcessing) {
@@ -1050,7 +1098,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                     </p>
                     <label className="cursor-pointer px-8 py-3 bg-white border border-gray-300 rounded-lg font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors inline-block">
                       {t('interviews.browseFiles')}
-                      <input type="file" className="hidden" accept="audio/*,video/mp4" onChange={handleChange} />
+                      <input type="file" className="hidden" accept=".mp3,.wav,.m4a,.mp4,audio/mpeg,audio/wav,audio/mp4,video/mp4" onChange={handleChange} />
                     </label>
                   </>
                 )}
@@ -1083,7 +1131,7 @@ export default function InterviewRoom({ userProfile, currentWorkspace }) {
                   <div className={`group flex flex-col gap-1 ${isInterviewer ? 'items-start' : 'items-end'}`}>
                     <div className="flex items-center gap-2 text-xs text-gray-500 px-1">
                       <span className="font-semibold">{entry.speaker}</span>
-                      <span>{entry.timestamp}</span>
+                      <span>{formatTranscriptTimestampForDisplay(entry.timestamp)}</span>
                     </div>
                     
                     <div className={`px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed ${isInterviewer ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none' : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none'}`}>

@@ -22,11 +22,16 @@ RETURNS TABLE (
   res_activation_rate numeric,
   res_api_errors_24h bigint,
   res_total_transcriptions bigint,
+  res_openai_transcriptions bigint,
+  res_gemini_transcriptions bigint,
   res_avg_transcription_duration_seconds numeric,
   res_longest_transcription_duration_seconds numeric,
   res_total_transcription_estimated_cost_usd numeric,
   res_transcription_duration_coverage bigint,
-  res_transcription_cost_coverage bigint
+  res_transcription_cost_coverage bigint,
+  res_total_ai_summaries bigint,
+  res_openai_summaries bigint,
+  res_gemini_summaries bigint
 )
 SECURITY DEFINER
 SET search_path = public
@@ -55,11 +60,20 @@ BEGIN
         WHEN jsonb_typeof(i.transcript_data) = 'array' THEN jsonb_array_length(i.transcript_data)
         ELSE 0
       END AS transcript_entry_count,
+      NULLIF(i.summary_data -> '_system' ->> 'provider', '') AS transcription_provider,
       NULLIF(i.summary_data -> '_system' ->> 'durationSeconds', '')::numeric AS duration_seconds,
       NULLIF(i.summary_data -> '_system' ->> 'estimatedCostUsd', '')::numeric AS estimated_cost_usd
     FROM public.interviews i
     WHERE jsonb_typeof(i.transcript_data) = 'array'
       AND jsonb_array_length(i.transcript_data) > 0
+  ),
+  summary_stats AS (
+    SELECT
+      i.id,
+      NULLIF(i.summary_data -> '_system' -> 'summaryGeneration' ->> 'provider', '') AS summary_provider
+    FROM public.interviews i
+    WHERE jsonb_typeof(i.summary_data) = 'object'
+      AND (i.summary_data -> '_system' -> 'summaryGeneration' ->> 'generatedAt') IS NOT NULL
   )
   SELECT
     1::int as res_id,
@@ -80,6 +94,14 @@ BEGIN
       0::bigint
     ) as res_total_transcriptions,
     COALESCE(
+      (SELECT count(*)::bigint FROM transcription_stats WHERE transcription_provider = 'openai'),
+      0::bigint
+    ) as res_openai_transcriptions,
+    COALESCE(
+      (SELECT count(*)::bigint FROM transcription_stats WHERE transcription_provider = 'gemini'),
+      0::bigint
+    ) as res_gemini_transcriptions,
+    COALESCE(
       (SELECT round(avg(duration_seconds), 1) FROM transcription_stats WHERE duration_seconds IS NOT NULL),
       0::numeric
     ) as res_avg_transcription_duration_seconds,
@@ -98,7 +120,19 @@ BEGIN
     COALESCE(
       (SELECT count(*)::bigint FROM transcription_stats WHERE estimated_cost_usd IS NOT NULL),
       0::bigint
-    ) as res_transcription_cost_coverage;
+    ) as res_transcription_cost_coverage,
+    COALESCE(
+      (SELECT count(*)::bigint FROM summary_stats),
+      0::bigint
+    ) as res_total_ai_summaries,
+    COALESCE(
+      (SELECT count(*)::bigint FROM summary_stats WHERE summary_provider = 'openai'),
+      0::bigint
+    ) as res_openai_summaries,
+    COALESCE(
+      (SELECT count(*)::bigint FROM summary_stats WHERE summary_provider = 'gemini'),
+      0::bigint
+    ) as res_gemini_summaries;
 END;
 $$;
 
@@ -113,11 +147,16 @@ SELECT
   res_activation_rate as activation_rate,
   res_api_errors_24h as api_errors_24h,
   res_total_transcriptions as total_transcriptions,
+  res_openai_transcriptions as openai_transcriptions,
+  res_gemini_transcriptions as gemini_transcriptions,
   res_avg_transcription_duration_seconds as avg_transcription_duration_seconds,
   res_longest_transcription_duration_seconds as longest_transcription_duration_seconds,
   res_total_transcription_estimated_cost_usd as total_transcription_estimated_cost_usd,
   res_transcription_duration_coverage as transcription_duration_coverage,
-  res_transcription_cost_coverage as transcription_cost_coverage
+  res_transcription_cost_coverage as transcription_cost_coverage,
+  res_total_ai_summaries as total_ai_summaries,
+  res_openai_summaries as openai_summaries,
+  res_gemini_summaries as gemini_summaries
 FROM public.get_admin_dashboard_stats();
 
 -- 4. Функція Графіка

@@ -32,11 +32,16 @@ interface DashboardStats {
   activation_rate: number;
   api_errors_24h: number;
   total_transcriptions: number;
+  openai_transcriptions: number;
+  gemini_transcriptions: number;
   avg_transcription_duration_seconds: number;
   longest_transcription_duration_seconds: number;
   total_transcription_estimated_cost_usd: number;
   transcription_duration_coverage: number;
   transcription_cost_coverage: number;
+  total_ai_summaries: number;
+  openai_summaries: number;
+  gemini_summaries: number;
   res_total_users?: number;
   res_total_journeys?: number;
   res_new_users?: number;
@@ -44,11 +49,16 @@ interface DashboardStats {
   res_activation_rate?: number;
   res_api_errors_24h?: number;
   res_total_transcriptions?: number;
+  res_openai_transcriptions?: number;
+  res_gemini_transcriptions?: number;
   res_avg_transcription_duration_seconds?: number;
   res_longest_transcription_duration_seconds?: number;
   res_total_transcription_estimated_cost_usd?: number;
   res_transcription_duration_coverage?: number;
   res_transcription_cost_coverage?: number;
+  res_total_ai_summaries?: number;
+  res_openai_summaries?: number;
+  res_gemini_summaries?: number;
 }
 
 interface ChartData {
@@ -199,11 +209,16 @@ export const DashboardPage: React.FC = () => {
     activation_rate: 0,
     api_errors_24h: 0,
     total_transcriptions: 0,
+    openai_transcriptions: 0,
+    gemini_transcriptions: 0,
     avg_transcription_duration_seconds: 0,
     longest_transcription_duration_seconds: 0,
     total_transcription_estimated_cost_usd: 0,
     transcription_duration_coverage: 0,
     transcription_cost_coverage: 0,
+    total_ai_summaries: 0,
+    openai_summaries: 0,
+    gemini_summaries: 0,
   });
   
   const [rawChartData, setRawChartData] = useState<any[]>([]);
@@ -242,11 +257,16 @@ export const DashboardPage: React.FC = () => {
             activation_rate: Number(statsData.activation_rate ?? statsData.res_activation_rate ?? 0),
             api_errors_24h: Number(statsData.api_errors_24h ?? statsData.res_api_errors_24h ?? 0),
             total_transcriptions: Number(statsData.total_transcriptions ?? statsData.res_total_transcriptions ?? 0),
+            openai_transcriptions: Number(statsData.openai_transcriptions ?? statsData.res_openai_transcriptions ?? 0),
+            gemini_transcriptions: Number(statsData.gemini_transcriptions ?? statsData.res_gemini_transcriptions ?? 0),
             avg_transcription_duration_seconds: Number(statsData.avg_transcription_duration_seconds ?? statsData.res_avg_transcription_duration_seconds ?? 0),
             longest_transcription_duration_seconds: Number(statsData.longest_transcription_duration_seconds ?? statsData.res_longest_transcription_duration_seconds ?? 0),
             total_transcription_estimated_cost_usd: Number(statsData.total_transcription_estimated_cost_usd ?? statsData.res_total_transcription_estimated_cost_usd ?? 0),
             transcription_duration_coverage: Number(statsData.transcription_duration_coverage ?? statsData.res_transcription_duration_coverage ?? 0),
             transcription_cost_coverage: Number(statsData.transcription_cost_coverage ?? statsData.res_transcription_cost_coverage ?? 0),
+            total_ai_summaries: Number(statsData.total_ai_summaries ?? statsData.res_total_ai_summaries ?? 0),
+            openai_summaries: Number(statsData.openai_summaries ?? statsData.res_openai_summaries ?? 0),
+            gemini_summaries: Number(statsData.gemini_summaries ?? statsData.res_gemini_summaries ?? 0),
           });
         }
         setRawChartData(
@@ -394,6 +414,9 @@ export const DashboardPage: React.FC = () => {
   const transcriptionTrend = stats.transcription_duration_coverage > 0
     ? `${transcriptionAvgDuration} avg recording`
     : "Duration metadata pending";
+  const summaryTrend = stats.total_ai_summaries > 0
+    ? `${stats.gemini_summaries} via Gemini`
+    : "No AI summaries yet";
 
   return (
     <div style={{ padding: 24 }}>
@@ -447,6 +470,16 @@ export const DashboardPage: React.FC = () => {
             suffix="Uptime"
             trend={healthTrend}
             trendColor={isHealthy ? "#4ADE80" : "#ef4444"}
+            isDark={isDark}
+          />
+        </Col>
+        <Col flex="1 1 220px">
+          <StatCard
+            title="AI Summaries"
+            value={stats.total_ai_summaries}
+            icon={<FileTextOutlined />}
+            trend={summaryTrend}
+            trendColor="#8B5CF6"
             isDark={isDark}
           />
         </Col>
@@ -520,6 +553,18 @@ export const DashboardPage: React.FC = () => {
                   isDark={isDark}
                 />
                 <DetailRow
+                  label="OpenAI Transcriptions"
+                  value={stats.openai_transcriptions}
+                  valueColor="#10b981"
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Gemini Transcriptions"
+                  value={stats.gemini_transcriptions}
+                  valueColor="#f59e0b"
+                  isDark={isDark}
+                />
+                <DetailRow
                   label="Estimated Cost"
                   value={transcriptionCostLabel}
                   valueColor={stats.transcription_cost_coverage > 0 ? "#F59E0B" : (isDark ? "rgba(255,255,255,0.25)" : "#9ca3af")}
@@ -548,6 +593,29 @@ export const DashboardPage: React.FC = () => {
                 Duration coverage: {stats.transcription_duration_coverage}/{stats.total_transcriptions || 0}
                 {" · "}
                 Cost coverage: {stats.transcription_cost_coverage}/{stats.total_transcriptions || 0}
+              </div>
+            </Card>
+
+            <Card title="Summary Analytics">
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <DetailRow
+                  label="Total AI Summaries"
+                  value={stats.total_ai_summaries}
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="Gemini Summaries"
+                  value={stats.gemini_summaries}
+                  valueColor="#8b5cf6"
+                  isDark={isDark}
+                />
+                <DetailRow
+                  label="OpenAI Summaries"
+                  value={stats.openai_summaries}
+                  valueColor={stats.openai_summaries > 0 ? "#10b981" : (isDark ? "rgba(255,255,255,0.25)" : "#9ca3af")}
+                  isDark={isDark}
+                  border={false}
+                />
               </div>
             </Card>
           </div>

@@ -1,12 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const path = require('path');
+const { spawn } = require('child_process');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { GoogleAIFileManager } = require('@google/generative-ai/server');
 const multer = require('multer');
 const fs = require('fs');
+const ffmpegPath = require('ffmpeg-static');
 const { encrypt, decrypt } = require('./integrations/encrypt');
 const googleSheets = require('./integrations/googleSheets');
 const microsoftExcel = require('./integrations/microsoftExcel');
@@ -203,6 +206,30 @@ const allowedOrigins = [
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
+const OPENAI_TRANSCRIPTION_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+const TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE = '48k';
+const TRANSCRIPTION_EXTRACTED_AUDIO_SAMPLE_RATE = 16000;
+const TRANSCRIPTION_NORMALIZED_AUDIO_MIME_TYPE = 'audio/mpeg';
+const INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = (() => {
+    const configuredLimit = Number(process.env.INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES);
+    return Number.isFinite(configuredLimit) && configuredLimit > 0
+        ? configuredLimit
+        : DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES;
+})();
+const ALLOWED_INTERVIEW_UPLOAD_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.mp4']);
+const ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/x-wav',
+    'audio/wave',
+    'audio/vnd.wave',
+    'audio/mp4',
+    'audio/x-m4a',
+    'audio/m4a',
+    'video/mp4',
+]);
 const INTERVIEW_SUMMARY_SECTION_ORDER = [
     'summary',
     'journeyDraft',
@@ -4335,7 +4362,45 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
     }
 });
 
-const upload = multer({ dest: 'uploads/' });
+const formatFileSizeLabel = (bytes) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+    const megabytes = bytes / (1024 * 1024);
+    const rounded = megabytes >= 10 ? Math.round(megabytes) : Number(megabytes.toFixed(1));
+    return `${rounded} MB`;
+};
+
+const getInterviewUploadExtension = (fileName = '') => {
+    const match = String(fileName || '').toLowerCase().match(/(\.[a-z0-9]+)$/);
+    return match?.[1] || '';
+};
+
+const isAllowedInterviewUploadFile = (file = {}) => {
+    const extension = getInterviewUploadExtension(file.originalname);
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    return ALLOWED_INTERVIEW_UPLOAD_EXTENSIONS.has(extension) || ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES.has(mimeType);
+};
+
+const createHttpError = (status, message, code = null) => {
+    const error = new Error(message);
+    error.status = status;
+    if (code) error.code = code;
+    return error;
+};
+
+const upload = multer({
+    dest: 'uploads/',
+    limits: {
+        fileSize: INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES,
+    },
+    fileFilter: (req, file, callback) => {
+        if (!isAllowedInterviewUploadFile(file)) {
+            callback(createHttpError(415, 'Unsupported file type. Please upload an MP3, WAV, M4A, or MP4 file.', 'UNSUPPORTED_MEDIA_TYPE'));
+            return;
+        }
+
+        callback(null, true);
+    },
+});
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeDeleteFile = (filePath) => {
     if (!filePath) return;
@@ -4346,6 +4411,104 @@ const safeDeleteFile = (filePath) => {
     } catch (err) {
         console.warn(`Failed to delete temp file ${filePath}:`, err.message);
     }
+};
+
+const replaceFileExtension = (fileName = '', nextExtension = '') => {
+    const parsed = path.parse(String(fileName || '').trim() || 'interview-audio');
+    return `${parsed.name || 'interview-audio'}${nextExtension}`;
+};
+
+const runFfmpegCommand = (args) => new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+        reject(error);
+    });
+
+    child.on('close', (code) => {
+        if (code === 0) {
+            resolve();
+            return;
+        }
+
+        reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+    });
+});
+
+const normalizeInterviewUploadToMp3 = async (file) => {
+    if (!ffmpegPath) {
+        throw new Error('ffmpeg is not available on the server.');
+    }
+
+    const outputPath = path.join(
+        path.dirname(file.path),
+        `${path.basename(file.path)}-normalized.mp3`
+    );
+
+    await runFfmpegCommand([
+        '-y',
+        '-i',
+        file.path,
+        '-vn',
+        '-ac',
+        '1',
+        '-ar',
+        String(TRANSCRIPTION_EXTRACTED_AUDIO_SAMPLE_RATE),
+        '-c:a',
+        'libmp3lame',
+        '-b:a',
+        TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE,
+        outputPath,
+    ]);
+
+    const stats = await fs.promises.stat(outputPath);
+    console.info('[interview-upload] normalized upload to mp3', {
+        originalFileName: file.originalname,
+        originalSizeBytes: file.size,
+        normalizedSizeBytes: stats.size,
+    });
+
+    return {
+        ...file,
+        path: outputPath,
+        mimetype: TRANSCRIPTION_NORMALIZED_AUDIO_MIME_TYPE,
+        originalname: replaceFileExtension(file.originalname, '.mp3'),
+        size: stats.size,
+        normalizedAudioPath: outputPath,
+        sourceUploadName: file.originalname || '',
+        sourceUploadSizeBytes: Number.isFinite(file.size) ? file.size : null,
+    };
+};
+
+const interviewUploadMiddleware = (req, res, next) => {
+    upload.single('audio')(req, res, (err) => {
+        if (!err) {
+            next();
+            return;
+        }
+
+        safeDeleteFile(req.file?.path);
+
+        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+            res.status(413).json({
+                status: 'error',
+                error: `File exceeds the ${formatFileSizeLabel(INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES)} upload limit.`,
+            });
+            return;
+        }
+
+        res.status(Number.isInteger(err?.status) ? err.status : 500).json({
+            status: 'error',
+            error: err?.message || 'Failed to upload audio file.',
+        });
+    });
 };
 
 const buildInterviewTranscriptionSystemState = ({
@@ -4367,6 +4530,14 @@ const buildInterviewTranscriptionSystemState = ({
         durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
         usedFallbackSegmentation: !!usedFallbackSegmentation,
     };
+
+    if (file?.sourceUploadName) {
+        metadata.sourceUploadFileName = file.sourceUploadName;
+    }
+
+    if (Number.isFinite(file?.sourceUploadSizeBytes)) {
+        metadata.sourceUploadFileSizeBytes = file.sourceUploadSizeBytes;
+    }
 
     const configuredRate = Number(process.env.OPENAI_TRANSCRIPTION_RATE_USD_PER_MINUTE);
     const defaultRateMap = {
@@ -4394,6 +4565,50 @@ const normalizeTimestamp = (seconds) => {
     const mmss = `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
     return hours > 0 ? `${String(hours).padStart(2, '0')}:${mmss}` : mmss;
 };
+
+const parseTimestampToSeconds = (value) => {
+    if (Number.isFinite(value)) return Math.max(0, Number(value));
+    if (typeof value !== 'string') return null;
+
+    const cleaned = value.trim().replace(',', '.');
+    if (!cleaned) return null;
+
+    if (/^\d+(?:\.\d+)?$/.test(cleaned)) {
+        return Math.max(0, Number(cleaned));
+    }
+
+    const parts = cleaned.split(':').map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2 || parts.length > 3) return null;
+
+    const numericParts = parts.map((part) => Number(part));
+    if (numericParts.some((part) => !Number.isFinite(part))) return null;
+
+    if (numericParts.length === 2) {
+        const [minutes, seconds] = numericParts;
+        return Math.max(0, (minutes * 60) + seconds);
+    }
+
+    const [hours, minutes, seconds] = numericParts;
+    return Math.max(0, (hours * 3600) + (minutes * 60) + seconds);
+};
+
+const normalizeStructuredTranscriptEntries = (entries) => (
+    Array.isArray(entries)
+        ? entries.map((entry, index) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+            const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+            if (!text) return null;
+
+            const parsedSeconds = parseTimestampToSeconds(entry.timestamp);
+            return {
+                id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : crypto.randomUUID(),
+                speaker: typeof entry.speaker === 'string' && entry.speaker.trim() ? entry.speaker.trim() : 'Respondent',
+                text,
+                timestamp: normalizeTimestamp(Number.isFinite(parsedSeconds) ? parsedSeconds : index * 10),
+            };
+        }).filter(Boolean)
+        : []
+);
 
 const getInterviewSpeakerRole = (speaker) => {
     const normalized = String(speaker || '').trim().toLowerCase();
@@ -4554,6 +4769,20 @@ const normalizeOpenAiTranscript = (payload) => {
     };
 };
 
+const isOpenAiFileTooLargeError = (error) => {
+    const message = String(error?.message || '').toLowerCase();
+    return (
+        [400, 413, 422].includes(error?.status)
+        && (
+            message.includes('25 mb')
+            || message.includes('25mb')
+            || message.includes('less than 25 mb')
+            || message.includes('file too large')
+            || message.includes('maximum')
+        )
+    );
+};
+
 const transcribeAudioWithOpenAI = async (file) => {
     if (!process.env.OPENAI_API_KEY) {
         throw new Error('OPENAI_API_KEY is not configured.');
@@ -4646,54 +4875,33 @@ const transcribeAudioWithOpenAI = async (file) => {
     };
 };
 
-const processInterviewAudioUpload = async ({ interviewId, file }) => {
-    let geminiFileId = null;
-    let fileManager = null;
-    let transcriptionSystemState = null;
+const transcribeAudioWithGemini = async (file) => {
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error('GEMINI_API_KEY is not configured.');
+    }
+
+    const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+
+    const uploadResponse = await fileManager.uploadFile(file.path, {
+        mimeType: file.mimetype,
+        displayName: file.originalname,
+    });
+    const geminiFileId = uploadResponse.file.name;
 
     try {
-        let newTranscriptData;
-        if (process.env.OPENAI_API_KEY) {
-            const openAiResult = await transcribeAudioWithOpenAI(file);
-            newTranscriptData = openAiResult.transcript;
-            transcriptionSystemState = {
-                ...openAiResult.systemState,
-                uploadStatus: 'completed',
-            };
-            console.info('[interview-upload] completed with OpenAI transcription', {
-                interviewId,
-                model: transcriptionSystemState.model,
-                provider: transcriptionSystemState.provider,
-                responseFormat: transcriptionSystemState.responseFormat,
-                usedFallbackSegmentation: transcriptionSystemState.usedFallbackSegmentation,
-                transcriptTurns: Array.isArray(newTranscriptData) ? newTranscriptData.length : 0,
-            });
-        } else {
-            if (!process.env.GEMINI_API_KEY) {
-                throw new Error("Neither OPENAI_API_KEY nor GEMINI_API_KEY is configured.");
-            }
+        let fileStatus = await fileManager.getFile(geminiFileId);
+        while (fileStatus.state === 'PROCESSING') {
+            await sleep(5000);
+            fileStatus = await fileManager.getFile(geminiFileId);
+        }
 
-            fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
-            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        if (fileStatus.state === 'FAILED') {
+            throw new Error('Audio processing failed on Gemini servers.');
+        }
 
-            const uploadResponse = await fileManager.uploadFile(file.path, {
-                mimeType: file.mimetype,
-                displayName: file.originalname,
-            });
-            geminiFileId = uploadResponse.file.name;
-
-            let fileStatus = await fileManager.getFile(geminiFileId);
-            while (fileStatus.state === "PROCESSING") {
-                await sleep(5000);
-                fileStatus = await fileManager.getFile(geminiFileId);
-            }
-
-            if (fileStatus.state === "FAILED") {
-                throw new Error("Audio processing failed on Gemini servers.");
-            }
-
-            const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
+        const prompt = `Transcribe this audio file. This is a user interview. Provide a verbatim transcript separated by speaker turns.
             Estimate the general speaker roles (e.g. "Interviewer" vs "Respondent"). 
             Estimate the local timestamp of each message starting from "00:00" relative to the start of the audio.
             
@@ -4702,32 +4910,35 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
             
             Do not include any markdown format blocks around the JSON array, just output the raw JSON array.`;
 
-            const result = await model.generateContent([
-                {
-                    fileData: {
-                        mimeType: uploadResponse.file.mimeType,
-                        fileUri: uploadResponse.file.uri
-                    }
+        const result = await model.generateContent([
+            {
+                fileData: {
+                    mimeType: uploadResponse.file.mimeType,
+                    fileUri: uploadResponse.file.uri,
                 },
-                { text: prompt },
-            ]);
+            },
+            { text: prompt },
+        ]);
 
-            const responseText = result.response.text();
+        const responseText = result.response.text();
 
-            try {
-                const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
-                newTranscriptData = JSON.parse(cleanJsonString);
+        let transcript;
+        try {
+            const cleanJsonString = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+            transcript = normalizeStructuredTranscriptEntries(JSON.parse(cleanJsonString));
 
-                if (!Array.isArray(newTranscriptData)) {
-                    throw new Error("Parsed data is not an array");
-                }
-            } catch (e) {
-                console.error("Transcription parse error:", e);
-                console.error("Raw response:", responseText);
-                throw new Error("AI returned an invalid transcript format.");
+            if (!Array.isArray(transcript)) {
+                throw new Error('Parsed data is not an array');
             }
+        } catch (error) {
+            console.error('Transcription parse error:', error);
+            console.error('Raw response:', responseText);
+            throw new Error('AI returned an invalid transcript format.');
+        }
 
-            transcriptionSystemState = {
+        return {
+            transcript,
+            systemState: {
                 ...buildInterviewTranscriptionSystemState({
                     provider: 'gemini',
                     model: 'gemini-2.5-pro',
@@ -4737,8 +4948,37 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
                     usedFallbackSegmentation: false,
                 }),
                 uploadStatus: 'completed',
-            };
+            },
+        };
+    } finally {
+        try {
+            await fileManager.deleteFile(geminiFileId);
+        } catch (cleanupErr) {
+            console.warn('Could not delete file from Google AI Studio:', cleanupErr.message);
         }
+    }
+};
+
+const processInterviewAudioUpload = async ({ interviewId, file }) => {
+    let transcriptionSystemState = null;
+    let transcriptionInputFile = file;
+
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            throw new Error('GEMINI_API_KEY is not configured on the server.');
+        }
+
+        transcriptionInputFile = await normalizeInterviewUploadToMp3(file);
+        const geminiResult = await transcribeAudioWithGemini(transcriptionInputFile);
+        const newTranscriptData = geminiResult.transcript;
+        transcriptionSystemState = geminiResult.systemState;
+        console.info('[interview-upload] completed with Gemini transcription', {
+            interviewId,
+            model: transcriptionSystemState.model,
+            provider: transcriptionSystemState.provider,
+            responseFormat: transcriptionSystemState.responseFormat,
+            transcriptTurns: Array.isArray(newTranscriptData) ? newTranscriptData.length : 0,
+        });
 
         if (!Array.isArray(newTranscriptData) || newTranscriptData.length === 0) {
             throw new Error('The transcription provider returned an empty transcript.');
@@ -4773,19 +5013,14 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
         );
     } finally {
         safeDeleteFile(file.path);
-
-        if (fileManager && geminiFileId) {
-            try {
-                await fileManager.deleteFile(geminiFileId);
-            } catch (cleanupErr) {
-                console.warn("Could not delete file from Google AI Studio:", cleanupErr.message);
-            }
+        if (transcriptionInputFile?.path && transcriptionInputFile.path !== file.path) {
+            safeDeleteFile(transcriptionInputFile.path);
         }
     }
 };
 
 // 7. Upload Audio and Transcribe
-app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req, res) => {
+app.post('/api/interviews/:id/upload-audio', interviewUploadMiddleware, async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     const { id } = req.params;
     
@@ -4827,6 +5062,7 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
             path: req.file.path,
             mimetype: req.file.mimetype,
             originalname: req.file.originalname,
+            size: req.file.size,
         };
 
         setImmediate(() => {
@@ -4848,8 +5084,6 @@ app.post('/api/interviews/:id/upload-audio', upload.single('audio'), async (req,
 
 // Налаштування для роздачі статики в продакшені (Клієнт і Адмінка)
 if (process.env.NODE_ENV === 'production') {
-    const path = require('path');
-    
     // 1. Статика Клієнта (головний домен)
     app.use(express.static(path.join(__dirname, 'public/client')));
     

@@ -56,6 +56,8 @@
     "transcribing": "Transcribing...",
     "transcribingDesc": "AI is processing your file. This may take a few minutes.",
     "transcriptionFailed": "We couldn't finish processing this recording. Please try uploading it again.",
+    "unsupportedFileType": "Please choose an MP3, WAV, M4A, or MP4 file.",
+    "fileTooLarge": "This file is too large. The maximum upload size is 50 MB.",
     "uploadStage1": "Uploading to secure cloud...",
     "uploadStage1Desc": "Transferring your media file safely to our processing servers.",
     "uploadStage2": "Analyzing Audio...",
