@@ -428,13 +428,6 @@ function JourneyCard({ journey, featured = false, canDelete = true, onDuplicate,
                          </div>
                     </div>
                 </div>
-                
-                {!featured && (
-                  <div className="mt-4 flex items-center gap-1.5 border-t border-gray-100 pt-3 text-xs text-gray-400">
-                    <Clock size={11} />
-                    <span>{t('dashboard.edited')} {date}</span>
-                  </div>
-                )}
             </div>
         </div>
     )
