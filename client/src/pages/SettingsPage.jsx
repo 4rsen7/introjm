@@ -82,12 +82,32 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
 
   const { data: limitsData } = useWorkspaceLimits(workspace?.id);
   const limits = limitsData?.limits;
-  const usage = limits?.usage ?? { members: 0, journeys: 0, personas: 0, metrics: 0 };
+  const billing = limits?.billing ?? {
+    status: limits?.planName ? 'active' : null,
+    currentPeriodStart: limits?.currentPeriodStart ?? null,
+    currentPeriodEnd: limits?.currentPeriodEnd ?? null,
+    interval: null,
+  };
+  const capacity = limits?.capacity ?? {
+    members: { used: limits?.usage?.members ?? 0, limit: limits?.maxMembers ?? null, remaining: null },
+    journeys: { used: limits?.usage?.journeys ?? 0, limit: limits?.maxJourneys ?? null, remaining: null },
+    personas: { used: limits?.usage?.personas ?? 0, limit: limits?.maxPersonas ?? null, remaining: null },
+    metrics: { used: limits?.usage?.metrics ?? 0, limit: limits?.maxMetrics ?? null, remaining: null },
+  };
+  const quotas = limits?.quotas ?? {
+    interviewsCreated: { used: limits?.usage?.interviews ?? 0, limit: limits?.maxInterviews ?? null, remaining: null },
+    portraitGenerations: { used: limits?.usage?.portraits ?? 0, limit: limits?.maxPortraitsPerPeriod ?? null, remaining: null },
+    aiSummaries: { used: limits?.usage?.ai_summaries ?? 0, limit: limits?.maxAiSummariesPerPeriod ?? null, remaining: null },
+    pdfExports: { used: limits?.usage?.exports ?? 0, limit: limits?.maxExportsPerPeriod ?? null, remaining: null },
+  };
   const maxMembers = limits?.maxMembers ?? null;
   const maxJ = limits?.maxJourneys ?? null;
   const maxP = limits?.maxPersonas ?? null;
   const maxM = limits?.maxMetrics ?? null;
   const maxI = limits?.maxInterviews ?? null;
+  const maxPortraits = limits?.maxPortraitsPerPeriod ?? null;
+  const maxAiSummaries = limits?.maxAiSummariesPerPeriod ?? null;
+  const maxExports = limits?.maxExportsPerPeriod ?? null;
 
   // Fetch Team Data
   useEffect(() => {
@@ -276,6 +296,13 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
     }
   };
 
+  const quotaRows = [
+    { labelKey: 'settings.interviewsCreated', used: quotas.interviewsCreated.used, max: quotas.interviewsCreated.limit ?? maxI },
+    { labelKey: 'settings.portraitGenerations', used: quotas.portraitGenerations.used, max: quotas.portraitGenerations.limit ?? maxPortraits },
+    { labelKey: 'settings.aiSummaries', used: quotas.aiSummaries.used, max: quotas.aiSummaries.limit ?? maxAiSummaries },
+    { labelKey: 'settings.pdfExports', used: quotas.pdfExports.used, max: quotas.pdfExports.limit ?? maxExports },
+  ].filter(({ used, max }) => max != null || used > 0);
+
   return (
     <div className="p-8 app-shell-bg min-h-screen font-sans text-gray-900" data-testid="settings-page">
       <header className="mb-8">
@@ -347,11 +374,18 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                         <div className="text-xs font-bold text-gray-500 mb-1">{t('settings.currentPlan')}</div>
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-lg font-bold text-gray-900">{limits?.planName ?? '—'}</span>
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">{t('settings.active')}</span>
+                            {billing.status && (
+                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-full">{t('settings.active')}</span>
+                            )}
                         </div>
-                        {limits?.currentPeriodEnd && (
+                        {billing.currentPeriodEnd && (
                             <div className="text-sm text-gray-500">
-                                {t('settings.renews')} {new Date(limits.currentPeriodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {t('settings.renews')} {new Date(billing.currentPeriodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                        )}
+                        {billing.currentPeriodStart && billing.currentPeriodEnd && (
+                            <div className="text-xs text-gray-400 mt-1">
+                                {t('settings.billingPeriod')}: {new Date(billing.currentPeriodStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - {new Date(billing.currentPeriodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
                             </div>
                         )}
                         {!limits?.planName && (
@@ -359,13 +393,13 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                         )}
                     </div>
                     <div className="app-surface-soft p-4 rounded-lg border border-gray-100 space-y-3">
-                        <div className="text-xs font-bold text-gray-500 mb-2">{t('settings.usage')}</div>
+                        <div>
+                            <div className="text-xs font-bold text-gray-500 mb-2">{t('settings.workspaceCapacity')}</div>
                         {[
-                            { labelKey: 'settings.members', used: usage.members, max: maxMembers },
-                            { labelKey: 'settings.journeys', used: usage.journeys, max: maxJ },
-                            { labelKey: 'settings.personas', used: usage.personas, max: maxP },
-                            { labelKey: 'settings.metrics', used: usage.metrics, max: maxM },
-                            { labelKey: 'settings.interviews', used: usage.interviews || 0, max: maxI },
+                            { labelKey: 'settings.members', used: capacity.members.used, max: capacity.members.limit ?? maxMembers },
+                            { labelKey: 'settings.journeys', used: capacity.journeys.used, max: capacity.journeys.limit ?? maxJ },
+                            { labelKey: 'settings.personas', used: capacity.personas.used, max: capacity.personas.limit ?? maxP },
+                            { labelKey: 'settings.metrics', used: capacity.metrics.used, max: capacity.metrics.limit ?? maxM },
                         ].map(({ labelKey, used, max }) => (
                             <div key={labelKey}>
                                 <div className="flex justify-between text-xs text-gray-600 mb-1">
@@ -380,6 +414,26 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
                                 </div>
                             </div>
                         ))}
+                        </div>
+                        <div className="pt-2 border-t border-gray-100">
+                            <div className="text-xs font-bold text-gray-500 mb-2">{t('settings.billingPeriodQuotas')}</div>
+                            {quotaRows.length === 0 ? (
+                              <div className="text-xs text-gray-500">{t('settings.noTrackedQuotas')}</div>
+                            ) : quotaRows.map(({ labelKey, used, max }) => (
+                              <div key={labelKey}>
+                                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                                  <span>{t(labelKey)}</span>
+                                  <span>{max != null ? `${used} of ${max}` : `${used} used`}</span>
+                                </div>
+                                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-amber-500 rounded-full transition-all"
+                                    style={{ width: max != null && max > 0 ? `${Math.min(100, (used / max) * 100)}%` : '0%' }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 

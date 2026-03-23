@@ -80,12 +80,12 @@ export default function LearningMaterialsPage() {
 
               <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
                 {[
-                  [BookOpen, t('materials.highlight1')],
-                  [Sparkles, t('materials.highlight2')],
-                  [Layers3, t('materials.highlight3')],
-                ].map(([Icon, label]) => (
+                  { iconElement: <BookOpen size={18} className="mb-3 text-gray-700" />, label: t('materials.highlight1') },
+                  { iconElement: <Sparkles size={18} className="mb-3 text-gray-700" />, label: t('materials.highlight2') },
+                  { iconElement: <Layers3 size={18} className="mb-3 text-gray-700" />, label: t('materials.highlight3') },
+                ].map(({ iconElement, label }) => (
                   <div key={label} className="app-surface-soft rounded-2xl border border-white/80 px-4 py-4">
-                    <Icon size={18} className="mb-3 text-gray-700" />
+                    {iconElement}
                     <div className="text-sm leading-6 text-gray-600">{label}</div>
                   </div>
                 ))}

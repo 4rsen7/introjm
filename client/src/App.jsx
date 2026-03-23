@@ -659,6 +659,10 @@ function App() {
           });
 
           const data = await response.json();
+          if (response.status === 403 && data.code === 'LIMIT_REACHED') {
+              setLimitReached({ open: true, limit: data.limit });
+              throw new Error(data.message || t('limits.title'));
+          }
           if (!response.ok) {
               throw new Error(data.error || data.message || 'Failed to generate portrait');
           }
@@ -929,6 +933,7 @@ function App() {
                 onSaveGlobalPersona={handleSaveGlobalPersona}
                 onSaveGlobalMetric={(data) => handleSaveMetric(data, false)}
                 userProfile={userProfile}
+                onLimitReached={(limit) => setLimitReached({ open: true, limit })}
               />
           } />
 
@@ -997,7 +1002,7 @@ function App() {
             <Route path="/materials" element={<LearningMaterialsPage />} />
             <Route path="/materials/:slug" element={<LearningMaterialArticlePage />} />
             <Route path="/interviews" element={<InterviewsList interviews={filteredInterviews} userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
-            <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
+            <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 
                 archivedJourneys={filteredJourneys.filter(j => j.status === 'archived')}

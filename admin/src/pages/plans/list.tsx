@@ -1,6 +1,10 @@
 import React from "react";
-import { List, useTable, EditButton, DeleteButton, CreateButton } from "@refinedev/antd";
+import { List, useTable, EditButton, DeleteButton } from "@refinedev/antd";
 import { Table, Space, Tag } from "antd";
+
+type PlanRecord = {
+  id: string;
+};
 
 export const PlanList: React.FC = () => {
   const { tableProps } = useTable({
@@ -23,15 +27,18 @@ export const PlanList: React.FC = () => {
             render={(val) => <Tag color={val ? "green" : "red"}>{val ? "Active" : "Inactive"}</Tag>}
         />
         <Table.Column dataIndex="tier" title="Tier Level" />
-        <Table.Column dataIndex="max_members" title="Max Members" render={(v: number | null) => v ?? "—"} />
-        <Table.Column dataIndex="max_journeys" title="Max Journeys" render={(v: number | null) => v ?? "—"} />
-        <Table.Column dataIndex="max_personas" title="Max Personas" render={(v: number | null) => v ?? "—"} />
-        <Table.Column dataIndex="max_metrics" title="Max Metrics" render={(v: number | null) => v ?? "—"} />
-        <Table.Column dataIndex="max_interviews" title="Max Interviews" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_members" title="Members Cap" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_journeys" title="Journeys Cap" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_personas" title="Personas Cap" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_metrics" title="Metrics Cap" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_interviews" title="Interview Quota / Period" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_portraits_per_period" title="Portrait Quota / Period" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_ai_summaries_per_period" title="AI Insights / Period" render={(v: number | null) => v ?? "—"} />
+        <Table.Column dataIndex="max_exports_per_period" title="PDF Exports / Period" render={(v: number | null) => v ?? "—"} />
         <Table.Column
           title="Actions"
           dataIndex="actions"
-          render={(_, record: any) => (
+          render={(_, record: PlanRecord) => (
             <Space>
               <EditButton hideText size="small" recordItemId={record.id} />
               <DeleteButton hideText size="small" recordItemId={record.id} />

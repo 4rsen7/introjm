@@ -186,7 +186,7 @@ function formatHistoryTimestamp(isoString, locale) {
   }).format(date);
 }
 
-export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric, userProfile = null }) {
+export default function Editor({ onBack, globalPersonas = [], globalMetrics = [], globalJourneys = [], onSaveGlobalPersona, onSaveGlobalMetric, userProfile = null, onLimitReached }) {
   const { t, i18n } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -926,6 +926,10 @@ export default function Editor({ onBack, globalPersonas = [], globalMetrics = []
 
       if (!response.ok) {
         const json = await response.json().catch(() => ({}));
+        if (response.status === 403 && json.code === 'LIMIT_REACHED') {
+          onLimitReached?.(json.limit);
+          return;
+        }
         throw new Error(json?.message || 'Server-side export failed');
       }
 

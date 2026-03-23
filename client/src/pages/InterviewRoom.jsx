@@ -317,7 +317,7 @@ const normalizeInsightConfigFromSummary = (summaryData) => {
   };
 };
 
-export default function InterviewRoom() {
+export default function InterviewRoom({ onLimitReached }) {
   const { t } = useTranslation();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -779,6 +779,8 @@ export default function InterviewRoom() {
       const json = await res.json();
       if (res.ok) {
         setInterview(json.data);
+      } else if (res.status === 403 && json.code === 'LIMIT_REACHED') {
+        onLimitReached?.(json.limit);
       } else {
         alert(json.error || 'Failed to generate summary');
       }

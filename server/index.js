@@ -19,6 +19,12 @@ const { createExportToken, verifyExportToken } = require('./exportToken');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
 const rateLimit = require('express-rate-limit');
+const {
+    assertWorkspaceFeatureLimit,
+    getWorkspacePlanAndLimits,
+    incrementWorkspaceInterviewUsage,
+    reserveWorkspaceQuotaUsage,
+} = require('./billing/entitlements');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -793,96 +799,6 @@ function sanitizeInterviewForClient(interview) {
     };
 }
 
-function isMissingDatabaseObjectError(error, objectName = '') {
-    if (!error) return false;
-    const message = String(error.message || '').toLowerCase();
-    const details = String(error.details || '').toLowerCase();
-    const hint = String(error.hint || '').toLowerCase();
-    const needle = String(objectName || '').toLowerCase();
-    return (
-        error.code === '42P01' ||
-        error.code === '42883' ||
-        message.includes('does not exist') ||
-        details.includes('does not exist') ||
-        hint.includes('does not exist') ||
-        (needle && (message.includes(needle) || details.includes(needle) || hint.includes(needle)))
-    );
-}
-
-async function getWorkspaceCreatedInterviewUsage(workspaceId, currentInterviewCount = 0) {
-    const { data, error } = await supabaseAdmin
-        .from('workspace_usage_counters')
-        .select('interviews_created')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
-
-    if (error) {
-        if (isMissingDatabaseObjectError(error, 'workspace_usage_counters')) {
-            return currentInterviewCount;
-        }
-        throw error;
-    }
-
-    const persistedCount = Number.isFinite(Number(data?.interviews_created)) ? Number(data.interviews_created) : 0;
-    return Math.max(currentInterviewCount, persistedCount);
-}
-
-async function incrementWorkspaceInterviewUsage(workspaceId) {
-    const rpcResult = await supabaseAdmin.rpc('increment_workspace_interview_usage', {
-        p_workspace_id: workspaceId,
-    });
-
-    if (!rpcResult.error) {
-        const nextCount = Number.isFinite(Number(rpcResult.data)) ? Number(rpcResult.data) : null;
-        return { persisted: true, count: nextCount };
-    }
-
-    if (!isMissingDatabaseObjectError(rpcResult.error, 'increment_workspace_interview_usage')) {
-        throw rpcResult.error;
-    }
-
-    const currentRow = await supabaseAdmin
-        .from('workspace_usage_counters')
-        .select('workspace_id, interviews_created')
-        .eq('workspace_id', workspaceId)
-        .maybeSingle();
-
-    if (currentRow.error) {
-        if (isMissingDatabaseObjectError(currentRow.error, 'workspace_usage_counters')) {
-            return { persisted: false, count: null };
-        }
-        throw currentRow.error;
-    }
-
-    if (currentRow.data) {
-        const nextCount = (Number(currentRow.data.interviews_created) || 0) + 1;
-        const updateResult = await supabaseAdmin
-            .from('workspace_usage_counters')
-            .update({
-                interviews_created: nextCount,
-                updated_at: new Date().toISOString(),
-            })
-            .eq('workspace_id', workspaceId)
-            .select('interviews_created')
-            .single();
-
-        if (updateResult.error) throw updateResult.error;
-        return { persisted: true, count: Number(updateResult.data?.interviews_created) || nextCount };
-    }
-
-    const insertResult = await supabaseAdmin
-        .from('workspace_usage_counters')
-        .insert([{
-            workspace_id: workspaceId,
-            interviews_created: 1,
-        }])
-        .select('interviews_created')
-        .single();
-
-    if (insertResult.error) throw insertResult.error;
-    return { persisted: true, count: Number(insertResult.data?.interviews_created) || 1 };
-}
-
 function isInterviewStatusConstraintError(error) {
     if (!error) return false;
     return error.constraint === 'interviews_status_check' || String(error.message || '').includes('interviews_status_check');
@@ -1206,48 +1122,6 @@ async function getCurrentWorkspaceForUser(userId) {
  * Get plan and limits for a workspace (plan = owner's active subscription).
  * Returns { planName, planId, maxMembers, maxJourneys, ... usage: { members, journeys, ... } } or null if no plan.
  */
-async function getWorkspacePlanAndLimits(workspaceId) {
-    const { data: ws } = await supabaseAdmin.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
-    if (!ws) return null;
-    // Use admin so members can see owner's subscription (RLS on subscriptions typically allows only own rows).
-    const { data: sub } = await supabaseAdmin
-        .from('subscriptions')
-        .select('plan_id, current_period_end')
-        .eq('user_id', ws.owner_id)
-        .eq('status', 'active')
-        .order('current_period_end', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    if (!sub) return null;
-    const { data: plan } = await supabaseAdmin.from('plans').select('id, name, max_members, max_journeys, max_personas, max_metrics, max_interviews').eq('id', sub.plan_id).maybeSingle();
-    if (!plan) return null;
-    const [membersRes, journeysRes, personasRes, metricsRes, interviewsRes] = await Promise.all([
-        supabaseAdmin.from('workspace_members').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabaseAdmin.from('journeys').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabaseAdmin.from('personas').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabaseAdmin.from('metrics').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-        supabaseAdmin.from('interviews').select('*', { count: 'exact', head: true }).eq('workspace_id', workspaceId),
-    ]);
-    const interviewUsageCount = await getWorkspaceCreatedInterviewUsage(workspaceId, interviewsRes.count ?? 0);
-    return {
-        planName: plan.name,
-        planId: plan.id,
-        currentPeriodEnd: sub.current_period_end ?? null,
-        maxMembers: plan.max_members ?? null,
-        maxJourneys: plan.max_journeys ?? null,
-        maxPersonas: plan.max_personas ?? null,
-        maxMetrics: plan.max_metrics ?? null,
-        maxInterviews: plan.max_interviews ?? null,
-        usage: {
-            members: membersRes.count ?? 0,
-            journeys: journeysRes.count ?? 0,
-            personas: personasRes.count ?? 0,
-            metrics: metricsRes.count ?? 0,
-            interviews: interviewUsageCount,
-        },
-    };
-}
-
 /** Supabase client with user JWT for RLS-sensitive inserts (e.g. workspaces). Uses anon key + token; falls back to global supabase if no anon key. */
 function createSupabaseClientWithUserToken(token) {
     const anonKey = process.env.SUPABASE_ANON_KEY;
@@ -1669,6 +1543,15 @@ app.post('/api/export/journeys/:id/pdf', async (req, res) => {
             return res.status(403).json({ status: 'error', message: 'Access denied' });
         }
 
+        const exportLimitCheck = await assertWorkspaceFeatureLimit(journey.workspace_id, 'exports');
+        if (!exportLimitCheck.allowed) {
+            return res.status(403).json(exportLimitCheck.error);
+        }
+
+        await reserveWorkspaceQuotaUsage(journey.workspace_id, 'exports', {
+            entitlements: exportLimitCheck.entitlements,
+        });
+
         const exportToken = createExportToken({ userId: user.id, journeyId: id });
         const renderOrigin = (process.env.EXPORT_RENDER_ORIGIN || req.headers.origin || (process.env.NODE_ENV === 'production' ? CLIENT_ORIGIN : 'http://localhost:5173')).replace(/\/$/, '');
         const exportUrl = `${renderOrigin}/export/journey/${id}?token=${encodeURIComponent(exportToken)}`;
@@ -2049,9 +1932,9 @@ app.post('/api/journeys', async (req, res) => {
         }
         if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
-        const planLimits = await getWorkspacePlanAndLimits(workspace.id);
-        if (planLimits && planLimits.maxJourneys != null && (planLimits.usage.journeys >= planLimits.maxJourneys)) {
-            return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'journeys' });
+        const journeyLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'journeys');
+        if (!journeyLimitCheck.allowed) {
+            return res.status(403).json(journeyLimitCheck.error);
         }
 
         const { data: journey, error: insertError } = await supabaseAdmin
@@ -2176,9 +2059,9 @@ app.post('/api/personas', async (req, res) => {
     }
     if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
-    const planLimits = await getWorkspacePlanAndLimits(workspace.id);
-    if (planLimits && planLimits.maxPersonas != null && (planLimits.usage.personas >= planLimits.maxPersonas)) {
-      return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'personas' });
+    const personaLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'personas');
+    if (!personaLimitCheck.allowed) {
+      return res.status(403).json(personaLimitCheck.error);
     }
 
     const { data, error } = await supabaseAdmin
@@ -2439,6 +2322,11 @@ app.post('/api/portraits/generate-from-interview', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'All interviews must belong to the same workspace.' });
     }
 
+    const portraitLimitCheck = await assertWorkspaceFeatureLimit(workspaceId, 'portraits');
+    if (!portraitLimitCheck.allowed) {
+      return res.status(403).json(portraitLimitCheck.error);
+    }
+
     const orderedInterviews = interviewIds
       .map((id) => interviews.find((interview) => interview.id === id))
       .filter(Boolean);
@@ -2505,6 +2393,10 @@ app.post('/api/portraits/generate-from-interview', async (req, res) => {
     if (!portraitData) {
       throw new Error('AI returned an empty or unsupported portrait format.');
     }
+
+    await reserveWorkspaceQuotaUsage(workspaceId, 'portraits', {
+      entitlements: portraitLimitCheck.entitlements,
+    });
 
     const primaryInterview = orderedInterviews[0];
     const finalTitle = requestedTitle || portraitData.title || (
@@ -2739,9 +2631,9 @@ app.post('/api/metrics', async (req, res) => {
     }
     if (!workspace) return res.status(403).json({ status: 'error', code: 'NO_WORKSPACE', message: 'Create or join a workspace first' });
 
-    const planLimits = await getWorkspacePlanAndLimits(workspace.id);
-    if (planLimits && planLimits.maxMetrics != null && (planLimits.usage.metrics >= planLimits.maxMetrics)) {
-      return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'metrics' });
+    const metricsLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'metrics');
+    if (!metricsLimitCheck.allowed) {
+      return res.status(403).json(metricsLimitCheck.error);
     }
 
     let finalIntegrationConfig = integration_config;
@@ -3637,7 +3529,34 @@ app.get('/api/workspace/limits', async (req, res) => {
       data: {
         workspaceId: workspace.id,
         role: workspace.role,
-        limits: limits || { planName: null, planId: null, currentPeriodEnd: null, maxMembers: null, maxJourneys: null, maxPersonas: null, maxMetrics: null, maxInterviews: null, usage: { members: 0, journeys: 0, personas: 0, metrics: 0, interviews: 0 } },
+        limits: limits || {
+          planName: null,
+          planId: null,
+          currentPeriodStart: null,
+          currentPeriodEnd: null,
+          billing: { status: null, currentPeriodStart: null, currentPeriodEnd: null, interval: null },
+          capacity: {
+            members: { used: 0, limit: null, remaining: null },
+            journeys: { used: 0, limit: null, remaining: null },
+            personas: { used: 0, limit: null, remaining: null },
+            metrics: { used: 0, limit: null, remaining: null },
+          },
+          quotas: {
+            interviewsCreated: { used: 0, limit: null, remaining: null },
+            portraitGenerations: { used: 0, limit: null, remaining: null },
+            aiSummaries: { used: 0, limit: null, remaining: null },
+            pdfExports: { used: 0, limit: null, remaining: null },
+          },
+          maxMembers: null,
+          maxJourneys: null,
+          maxPersonas: null,
+          maxMetrics: null,
+          maxInterviews: null,
+          maxPortraitsPerPeriod: null,
+          maxAiSummariesPerPeriod: null,
+          maxExportsPerPeriod: null,
+          usage: { members: 0, journeys: 0, personas: 0, metrics: 0, interviews: 0, portraits: 0, ai_summaries: 0, exports: 0 },
+        },
       },
     });
   } catch (err) {
@@ -3878,9 +3797,9 @@ app.post('/api/workspace/invite', async (req, res) => {
         
         if (!workspace) return res.status(403).json({ error: 'Only owners can invite' });
 
-        const planLimits = await getWorkspacePlanAndLimits(workspace.id);
-        if (planLimits && planLimits.maxMembers != null && (planLimits.usage.members >= planLimits.maxMembers)) {
-            return res.status(403).json({ status: 'error', code: 'LIMIT_REACHED', limit: 'members' });
+        const memberLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'members');
+        if (!memberLimitCheck.allowed) {
+            return res.status(403).json(memberLimitCheck.error);
         }
 
         const normalizedEmail = String(email).trim().toLowerCase();
@@ -5018,14 +4937,9 @@ app.post('/api/interviews', async (req, res) => {
         if (!workspace) return res.status(403).json({ status: 'error', message: 'Create or join a workspace first' });
 
         // PLAN LIMIT CHECK
-        const planLimits = await getWorkspacePlanAndLimits(workspace.id);
-        if (planLimits && planLimits.maxInterviews != null && (planLimits.usage.interviews >= planLimits.maxInterviews)) {
-            return res.status(403).json({
-                status: 'error',
-                code: 'LIMIT_REACHED',
-                limit: 'interviews',
-                message: `Your current plan allows up to ${planLimits.maxInterviews} interviews.`
-            });
+        const interviewLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'interviews');
+        if (!interviewLimitCheck.allowed) {
+            return res.status(403).json(interviewLimitCheck.error);
         }
 
         const { data, error } = await supabaseAdmin.from('interviews').insert([{
@@ -5039,7 +4953,7 @@ app.post('/api/interviews', async (req, res) => {
 
         if (error) throw error;
         try {
-            const usageResult = await incrementWorkspaceInterviewUsage(workspace.id);
+            const usageResult = await incrementWorkspaceInterviewUsage(workspace.id, interviewLimitCheck.entitlements?.billing);
             if (!usageResult.persisted) {
                 console.warn(`Interview usage counter is not available yet for workspace ${workspace.id}; falling back to current row count until migration is applied.`);
             }
@@ -5154,6 +5068,11 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'No transcript data found for this interview.' });
         }
 
+        const aiSummaryLimitCheck = await assertWorkspaceFeatureLimit(existing.workspace_id, 'ai_summaries');
+        if (!aiSummaryLimitCheck.allowed) {
+            return res.status(403).json(aiSummaryLimitCheck.error);
+        }
+
         const summaryRequest = resolveInterviewSummaryRequest(req.body || {});
         const { preset, selectedSections, mergeMode } = summaryRequest;
 
@@ -5208,6 +5127,10 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
                 }
             )
         );
+
+        await reserveWorkspaceQuotaUsage(existing.workspace_id, 'ai_summaries', {
+            entitlements: aiSummaryLimitCheck.entitlements,
+        });
 
         const { data, error } = await supabaseAdmin.from('interviews')
             .update({ summary_data: aiSummaryData, updated_at: new Date().toISOString() })

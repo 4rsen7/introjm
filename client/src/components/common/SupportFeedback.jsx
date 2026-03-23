@@ -257,6 +257,7 @@ export default function SupportFeedback() {
     } catch (error) {
       console.error(error);
     } finally {
+      // No-op: keep state transitions above explicit while preserving a stable try/catch/finally shape.
     }
   };
 

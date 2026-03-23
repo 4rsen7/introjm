@@ -3,6 +3,9 @@ import { Create, useForm } from "@refinedev/antd";
 import { Form, Input, InputNumber, Checkbox, Button, Space } from "antd";
 import { ArrowUpOutlined, ArrowDownOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 
+const capacityFieldHelp = "Leave empty for unlimited active items in a workspace";
+const quotaFieldHelp = "Leave empty for unlimited usage per billing period";
+
 export const PlanCreate: React.FC = () => {
   const { formProps, saveButtonProps } = useForm();
 
@@ -134,20 +137,37 @@ export const PlanCreate: React.FC = () => {
         <Form.Item label="Tier Level (1=Low, 3=High)" name="tier">
           <InputNumber />
         </Form.Item>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: "#6b7280", marginBottom: 12 }}>
+          Workspace Capacity
+        </div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <Form.Item label="Max Members (per workspace)" name="max_members" help="Leave empty for unlimited">
+          <Form.Item label="Max Members (active in workspace)" name="max_members" help={capacityFieldHelp}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
-          <Form.Item label="Max Journeys (per workspace)" name="max_journeys" help="Leave empty for unlimited">
+          <Form.Item label="Max Journeys (active in workspace)" name="max_journeys" help={capacityFieldHelp}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
-          <Form.Item label="Max Personas (per workspace)" name="max_personas" help="Leave empty for unlimited">
+          <Form.Item label="Max Personas (active in workspace)" name="max_personas" help={capacityFieldHelp}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
-          <Form.Item label="Max Metrics (per workspace)" name="max_metrics" help="Leave empty for unlimited">
+          <Form.Item label="Max Metrics (active in workspace)" name="max_metrics" help={capacityFieldHelp}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
-          <Form.Item label="Max Interviews (per workspace)" name="max_interviews" help="Leave empty for unlimited">
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, color: "#6b7280", marginBottom: 12, marginTop: 8 }}>
+          Billing Period Quotas
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <Form.Item label="Interview Creations (per billing period)" name="max_interviews" help={quotaFieldHelp}>
+            <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="Portrait Generations (per billing period)" name="max_portraits_per_period" help={quotaFieldHelp}>
+            <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="AI Insight Generations (per billing period)" name="max_ai_summaries_per_period" help={quotaFieldHelp}>
+            <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
+          </Form.Item>
+          <Form.Item label="PDF Exports (per billing period)" name="max_exports_per_period" help={quotaFieldHelp}>
             <InputNumber min={0} style={{ width: "100%" }} placeholder="Unlimited" />
           </Form.Item>
         </div>

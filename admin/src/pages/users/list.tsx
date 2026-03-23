@@ -1,15 +1,103 @@
 import React, { useState, useEffect } from "react";
-import { List, useTable, EditButton, DeleteButton } from "@refinedev/antd";
+import { List, useTable, DeleteButton } from "@refinedev/antd";
 import { Table, Space, Tag, Button, Dropdown, Drawer, Descriptions, Divider, Spin, Form, Select, Radio, DatePicker, App } from "antd";
 import { MoreOutlined, StopOutlined, KeyOutlined, EyeOutlined } from "@ant-design/icons";
 import { supabaseClient } from "../../providers/supabase-client";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "../../providers/constants";
 
+type PlanOption = {
+    id: string;
+    name: string;
+    price_monthly: number | null;
+};
+
+type PlanAssignmentValues = {
+    planId: string;
+    durationMode: string;
+    customDate?: dayjs.Dayjs | null;
+};
+
+type AdminUserStatsRow = {
+    id: string;
+    total_journeys: number;
+    total_personas: number;
+    total_metrics: number;
+};
+
+type OwnedWorkspace = {
+    id: string;
+    name: string;
+    workspace_members: Array<{ count: number }>;
+};
+
+type JoinedWorkspace = {
+    role: string;
+    workspaces: {
+        id: string;
+        name: string;
+    };
+};
+
+type SubscriptionRecord = {
+    id: string;
+    status?: string | null;
+    current_period_start?: string | null;
+    current_period_end?: string | null;
+    cancel_at_period_end?: boolean | null;
+    plans?: {
+        name?: string | null;
+        price_monthly?: number | null;
+    } | null;
+};
+
+type UserDetails = {
+    profile: {
+        full_name?: string | null;
+        email?: string | null;
+        created_at: string;
+        role?: string | null;
+    };
+    owned_workspaces: OwnedWorkspace[];
+    joined_workspaces: JoinedWorkspace[];
+    subscriptions: SubscriptionRecord[];
+};
+
+const getSubscriptionStatusMeta = (subscription: SubscriptionRecord) => {
+    const status = String(subscription?.status || '').toLowerCase();
+    const periodEnd = subscription?.current_period_end ? dayjs(subscription.current_period_end) : null;
+    const isExpired = periodEnd ? periodEnd.isBefore(dayjs()) : false;
+
+    if (status === 'canceled') {
+        return { color: 'default', label: 'Canceled' };
+    }
+
+    if (status === 'active' && isExpired) {
+        return { color: 'volcano', label: 'Expired' };
+    }
+
+    if (status === 'active' && subscription?.cancel_at_period_end) {
+        return { color: 'gold', label: 'Active until period end' };
+    }
+
+    if (status === 'active') {
+        return { color: 'green', label: 'Active' };
+    }
+
+    if (!status) {
+        return { color: 'default', label: 'Unknown' };
+    }
+
+    return {
+        color: 'default',
+        label: status.charAt(0).toUpperCase() + status.slice(1),
+    };
+};
+
 // Sub-component to fix "useForm not connected" warning
 const PlanAssignmentForm: React.FC<{ 
-    plans: any[]; 
-    onAssign: (values: any) => Promise<void>; 
+    plans: PlanOption[];
+    onAssign: (values: PlanAssignmentValues) => Promise<void>;
     loading: boolean; 
 }> = ({ plans, onAssign, loading }) => {
     const [form] = Form.useForm();
@@ -60,9 +148,9 @@ export const UserList: React.FC = () => {
   // --- DRAWER STATE ---
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [userDetails, setUserDetails] = useState<any>(null);
+  const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [plans, setPlans] = useState<any[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
 
   // --- PLAN ASSIGNMENT STATE ---
   const [assigning, setAssigning] = useState(false);
@@ -71,7 +159,7 @@ export const UserList: React.FC = () => {
   useEffect(() => {
     const fetchPlans = async () => {
         const { data } = await supabaseClient.from('plans').select('*').eq('is_active', true);
-        if (data) setPlans(data);
+        if (data) setPlans(data as PlanOption[]);
     };
     fetchPlans();
   }, []);
@@ -115,9 +203,9 @@ export const UserList: React.FC = () => {
         };
         fetchDetails();
     }
-  }, [selectedUserId, isDrawerOpen]);
+  }, [selectedUserId, isDrawerOpen, message]);
 
-  const handleAssignPlan = async (values: any) => {
+  const handleAssignPlan = async (values: PlanAssignmentValues) => {
       setAssigning(true);
       const { data: { session } } = await supabaseClient.auth.getSession();
       try {
@@ -150,7 +238,7 @@ export const UserList: React.FC = () => {
   };
 
   // Дії для дропдауна
-  const getMenu = (record: any) => ({
+  const getMenu = (record: { id: string }) => ({
     items: [
       { 
           key: 'view', 
@@ -182,7 +270,7 @@ export const UserList: React.FC = () => {
 
         <Table.Column 
             title="Usage (J/P/M)" 
-            render={(_, record: any) => (
+            render={(_, record: AdminUserStatsRow) => (
                 <span>{record.total_journeys} / {record.total_personas} / {record.total_metrics}</span>
             )}
         />
@@ -200,7 +288,7 @@ export const UserList: React.FC = () => {
         <Table.Column
           title="Actions"
           dataIndex="actions"
-          render={(_, record: any) => (
+          render={(_, record: { id: string }) => (
             <Space>
               <Dropdown menu={getMenu(record)}>
                  <Button icon={<MoreOutlined />} />
@@ -234,7 +322,7 @@ export const UserList: React.FC = () => {
                 {/* 2. Workspace Info */}
                 <Descriptions title="Workspace" column={1} bordered size="small">
                     {userDetails.owned_workspaces.length > 0 ? (
-                        userDetails.owned_workspaces.map((ws: any) => (
+                        userDetails.owned_workspaces.map((ws) => (
                             <React.Fragment key={ws.id}>
                                 <Descriptions.Item label="Owns Workspace">
                                     {ws.name} ({ws.workspace_members[0].count} members)
@@ -246,7 +334,7 @@ export const UserList: React.FC = () => {
                     )}
                     
                     {userDetails.joined_workspaces.length > 0 && (
-                         userDetails.joined_workspaces.map((ws: any) => (
+                         userDetails.joined_workspaces.map((ws) => (
                             <Descriptions.Item key={ws.workspaces.id} label="Joined Workspace">
                                 {ws.workspaces.name} (Role: {ws.role})
                             </Descriptions.Item>
@@ -274,7 +362,14 @@ export const UserList: React.FC = () => {
                         size="small"
                         columns={[
                             { title: 'Plan', dataIndex: ['plans', 'name'] },
-                            { title: 'Status', dataIndex: 'status', render: (val) => <Tag color={val === 'active' ? 'green' : 'default'}>{val}</Tag> },
+                            {
+                                title: 'Status',
+                                dataIndex: 'status',
+                                render: (_, record: SubscriptionRecord) => {
+                                    const meta = getSubscriptionStatusMeta(record);
+                                    return <Tag color={meta.color}>{meta.label}</Tag>;
+                                }
+                            },
                             { title: 'Start', dataIndex: 'current_period_start', render: (val) => dayjs(val).format('DD MMM YYYY') },
                             { title: 'End', dataIndex: 'current_period_end', render: (val) => val ? dayjs(val).format('DD MMM YYYY') : 'Forever' },
                         ]}
