@@ -4937,6 +4937,66 @@ const runFfmpegCommand = async (args) => {
     throw lastError || new Error('ffmpeg is not available on the server.');
 };
 
+const parseFfmpegDurationSeconds = (stderr = '') => {
+    const match = String(stderr).match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
+    if (!match) return null;
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3]);
+
+    if (![hours, minutes, seconds].every(Number.isFinite)) return null;
+    return (hours * 3600) + (minutes * 60) + seconds;
+};
+
+const getMediaDurationSeconds = async (filePath) => {
+    let lastError = null;
+
+    for (const candidate of FFMPEG_EXECUTABLE_CANDIDATES) {
+        try {
+            const executablePath = await ensureFfmpegExecutable(candidate);
+            const stderr = await new Promise((resolve, reject) => {
+                const child = spawn(executablePath, ['-i', filePath, '-f', 'null', '-'], {
+                    stdio: ['ignore', 'ignore', 'pipe'],
+                });
+
+                let stderrOutput = '';
+                child.stderr.on('data', (chunk) => {
+                    stderrOutput += chunk.toString();
+                });
+
+                child.on('error', (error) => {
+                    reject(error);
+                });
+
+                child.on('close', (code) => {
+                    if (code === 0) {
+                        resolve(stderrOutput);
+                        return;
+                    }
+
+                    reject(new Error(stderrOutput.trim() || `ffmpeg exited with code ${code}`));
+                });
+            });
+
+            const durationSeconds = parseFfmpegDurationSeconds(stderr);
+            if (!Number.isFinite(durationSeconds)) {
+                throw new Error('ffmpeg did not return a parseable duration.');
+            }
+
+            return durationSeconds;
+        } catch (error) {
+            lastError = error;
+            console.warn('[interview-upload] duration probe failed', {
+                candidate,
+                error: error.message,
+            });
+        }
+    }
+
+    throw lastError || new Error('Could not determine media duration.');
+};
+
 const normalizeInterviewUploadToMp3 = async (file) => {
     if (FFMPEG_EXECUTABLE_CANDIDATES.length === 0) {
         throw new Error('ffmpeg is not available on the server.');
@@ -4964,10 +5024,22 @@ const normalizeInterviewUploadToMp3 = async (file) => {
     ]);
 
     const stats = await fs.promises.stat(outputPath);
+    let measuredDurationSeconds = null;
+
+    try {
+        measuredDurationSeconds = await getMediaDurationSeconds(outputPath);
+    } catch (error) {
+        console.warn('[interview-upload] continuing without measured duration', {
+            fileName: file.originalname,
+            error: error.message,
+        });
+    }
+
     console.info('[interview-upload] normalized upload to mp3', {
         originalFileName: file.originalname,
         originalSizeBytes: file.size,
         normalizedSizeBytes: stats.size,
+        measuredDurationSeconds,
     });
 
     return {
@@ -4979,6 +5051,7 @@ const normalizeInterviewUploadToMp3 = async (file) => {
         normalizedAudioPath: outputPath,
         sourceUploadName: file.originalname || '',
         sourceUploadSizeBytes: Number.isFinite(file.size) ? file.size : null,
+        measuredDurationSeconds: Number.isFinite(measuredDurationSeconds) ? measuredDurationSeconds : null,
     };
 };
 
@@ -5437,7 +5510,7 @@ const transcribeAudioWithGemini = async (file) => {
                 ...buildInterviewTranscriptionSystemState({
                     provider: 'gemini',
                     model: 'gemini-2.5-pro',
-                    durationSeconds: null,
+                    durationSeconds: Number.isFinite(file?.measuredDurationSeconds) ? file.measuredDurationSeconds : null,
                     file,
                     responseFormat: 'custom_json_array',
                     usedFallbackSegmentation: false,
