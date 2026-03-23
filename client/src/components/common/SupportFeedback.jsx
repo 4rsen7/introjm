@@ -343,7 +343,7 @@ export default function SupportFeedback() {
         <MessageCircle size={14} />
         <span>{t('support.button')}</span>
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full">
+          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full shadow-[0_6px_14px_rgba(239,68,68,0.28)] ring-2 ring-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
