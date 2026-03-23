@@ -24,13 +24,15 @@ import InterviewTranscriptionInsightsPage from './pages/InterviewTranscriptionIn
 import PersonaManagementSoftwarePage from './pages/PersonaManagementSoftwarePage'
 import CustomerResearchRepositoryPage from './pages/CustomerResearchRepositoryPage'
 import JourneyExportPage from './pages/JourneyExportPage'
+import LearningMaterialsPage from './pages/LearningMaterialsPage'
+import LearningMaterialArticlePage from './pages/LearningMaterialArticlePage'
 import PricingModal from './components/common/PricingModal'
 import SupportFeedback from './components/common/SupportFeedback'
 import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuthState } from './services/auth'
 import { API_BASE_URL } from './config/api'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useLearningMaterials, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
@@ -442,6 +444,7 @@ function App() {
   const { data: globalPersonas = [] } = usePersonas(queriesEnabled);
   const { data: globalPortraits = [] } = usePortraits(queriesEnabled);
   const { data: globalMetrics = [] } = useMetrics(queriesEnabled);
+  const { data: learningMaterials = [] } = useLearningMaterials(queriesEnabled);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
   const workspaceListQuery = useWorkspaceList(queriesEnabled);
   const workspaces = useMemo(() => workspaceListQuery.data ?? [], [workspaceListQuery.data]);
@@ -946,6 +949,7 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard 
                 journeys={filteredJourneys}
+                learningMaterials={learningMaterials}
                 currentUserId={userProfile?.id}
                 isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onNewJourney={handleCreateJourney} 
@@ -990,6 +994,8 @@ function App() {
             <Route path="/metrics" element={<Metrics metrics={metricsWithUsage} currentUserId={userProfile?.id} isWorkspaceOwner={currentWorkspace?.role === 'owner'} onCreate={handleNewMetric} onEdit={handleEditMetric} onDelete={handleDeleteMetric} />} />
             <Route path="/metrics/new" element={<MetricBuilder onBack={() => navigate('/metrics')} onSave={handleSaveMetric} />} />
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
+            <Route path="/materials" element={<LearningMaterialsPage />} />
+            <Route path="/materials/:slug" element={<LearningMaterialArticlePage />} />
             <Route path="/interviews" element={<InterviewsList interviews={filteredInterviews} userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />

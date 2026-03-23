@@ -10,7 +10,7 @@ import {
 } from "@refinedev/antd";
 import "@refinedev/antd/dist/reset.css";
 import "./global.css";
-import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined } from "@ant-design/icons";
+import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined, ReadOutlined, NotificationOutlined } from "@ant-design/icons";
 
 import routerProvider, {
   CatchAllNavigate,
@@ -34,6 +34,10 @@ import { PlanList } from "./pages/plans/list";
 import { PlanCreate } from "./pages/plans/create";
 import { PlanEdit } from "./pages/plans/edit";
 import { SupportList } from "./pages/support/list";
+import { LearningMaterialList } from "./pages/learning-materials/list";
+import { LearningMaterialCreate } from "./pages/learning-materials/create";
+import { LearningMaterialEdit } from "./pages/learning-materials/edit";
+import { NewsPage } from "./pages/news";
 import { Header } from "./components/header";
 import { Sider } from "./components/sider";
 
@@ -101,6 +105,24 @@ function App() {
                     },
                   },
                   {
+                    name: "news",
+                    list: "/news",
+                    meta: {
+                      label: "News",
+                      icon: <NotificationOutlined />,
+                    },
+                  },
+                  {
+                    name: "learning_materials",
+                    list: "/learning-materials",
+                    create: "/learning-materials/create",
+                    edit: "/learning-materials/edit/:id",
+                    meta: {
+                      label: "Learning Materials",
+                      icon: <ReadOutlined />,
+                    },
+                  },
+                  {
                     name: "support",
                     list: "/support",
                     meta: {
@@ -161,6 +183,10 @@ function App() {
                     <Route path="/plans/create" element={<PlanCreate />} />
                     <Route path="/plans/edit/:id" element={<PlanEdit />} />
                     <Route path="/support" element={<SupportList />} />
+                    <Route path="/news" element={<NewsPage />} />
+                    <Route path="/learning-materials" element={<LearningMaterialList />} />
+                    <Route path="/learning-materials/create" element={<LearningMaterialCreate />} />
+                    <Route path="/learning-materials/edit/:id" element={<LearningMaterialEdit />} />
 
                     {/* Сторінка помилки 404 */}
                     <Route path="*" element={<ErrorComponent />} />

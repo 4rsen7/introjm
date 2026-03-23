@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Archive, Trash2, Layout } from 'lucide-react'
+import { Map, User, BarChart3, Plus, MoreHorizontal, Clock, ArrowRight, Copy, Archive, Trash2, Layout, GraduationCap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConfirmModal from '../ConfirmModal'
 import { getAuthToken } from '../services/auth'
@@ -10,10 +10,35 @@ import { useQueryClient } from '@tanstack/react-query'
 const API_URL = API_BASE_URL;
 
 // Ми передаємо функцію onNewJourney, щоб знати, коли юзер хоче створити карту
-export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwner, onNewJourney, onNewPersona, onViewAllJourneys, onNewMetric }) {
+const MATERIAL_TONE_STYLES = {
+  cobalt: {
+    hero: 'from-sky-500/18 via-indigo-500/10 to-white',
+    badge: 'bg-sky-100 text-sky-700 border-sky-200',
+  },
+  emerald: {
+    hero: 'from-emerald-500/16 via-teal-500/10 to-white',
+    badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  },
+  amber: {
+    hero: 'from-amber-400/18 via-orange-400/10 to-white',
+    badge: 'bg-amber-100 text-amber-700 border-amber-200',
+  },
+  rose: {
+    hero: 'from-rose-400/16 via-fuchsia-400/10 to-white',
+    badge: 'bg-rose-100 text-rose-700 border-rose-200',
+  },
+};
+
+const getMaterialTone = (tone) => MATERIAL_TONE_STYLES[tone] || MATERIAL_TONE_STYLES.cobalt;
+
+export default function Dashboard({ journeys = [], learningMaterials = [], currentUserId, isWorkspaceOwner, onNewJourney, onNewPersona, onViewAllJourneys, onNewMetric }) {
   const { t } = useTranslation();
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, action: null, item: null });
   const queryClient = useQueryClient();
+  const visibleJourneys = [...journeys]
+    .filter((journey) => journey.status !== 'archived')
+    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
+    .slice(0, 3);
 
   const handleConfirmAction = async () => {
       const { action, item } = confirmConfig;
@@ -79,51 +104,60 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
       </header>
 
       {/* Action Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
+      <section className="mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ActionCard 
           icon={Map} 
-          label={t('dashboard.newJourney')} 
+          label={t('dashboard.journeysLabel')} 
           subLabel={t('dashboard.newJourneySub')}
-          color="text-orange-600" 
-          bgColor="bg-orange-50"
+          actionText={t('dashboard.journeysAction')}
+          iconColor="text-orange-600"
+          iconBg="bg-orange-50"
+          glow="from-orange-300/30 via-amber-200/15 to-transparent"
           onClick={onNewJourney}
         />
         <ActionCard 
           icon={User} 
-          label={t('dashboard.newPersona')} 
+          label={t('dashboard.personasLabel')} 
           subLabel={t('dashboard.newPersonaSub')}
-          color="text-blue-600" 
-          bgColor="bg-blue-50"
+          actionText={t('dashboard.personasAction')}
+          iconColor="text-blue-600"
+          iconBg="bg-blue-50"
+          glow="from-blue-300/30 via-cyan-200/15 to-transparent"
           onClick={onNewPersona}
         />
         <ActionCard 
           icon={BarChart3} 
-          label={t('dashboard.newMetric')} 
+          label={t('dashboard.metricsLabel')} 
           subLabel={t('dashboard.newMetricSub')}
-          color="text-emerald-600" 
-          bgColor="bg-emerald-50"
+          actionText={t('dashboard.metricsAction')}
+          iconColor="text-emerald-600"
+          iconBg="bg-emerald-50"
+          glow="from-emerald-300/30 via-teal-200/15 to-transparent"
           onClick={onNewMetric}
         />
-      </div>
+        </div>
+      </section>
 
       {/* Recents Section */}
-      <section>
+      <section className="rounded-[30px] border border-slate-200/70 bg-white/80 p-5 shadow-[0_24px_60px_rgba(148,163,184,0.08)] backdrop-blur-sm">
         <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-800">{t('dashboard.recentJourneys')}</h3>
+            <div>
+                <h3 className="text-lg font-bold text-gray-900">{t('dashboard.recentJourneys')}</h3>
+                <p className="mt-1 text-sm text-gray-500">{t('dashboard.recentJourneysSub')}</p>
+            </div>
             <button onClick={() => onViewAllJourneys && onViewAllJourneys()} className="text-sm text-gray-500 hover:text-gray-900 font-medium flex items-center gap-1">
                 {t('dashboard.viewAll')} <ArrowRight size={14} />
             </button>
         </div>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[...journeys]
-                .filter(j => j.status !== 'archived')
-                .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
-                .slice(0, 3)
-                .map(journey => (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            {visibleJourneys
+                .map((journey, index) => (
                 <Link key={journey.id} to={`/journey/${journey.id}`} className="block">
                     <JourneyCard 
                         journey={journey}
+                        featured={index === 0}
                         canDelete={currentUserId != null && (journey.user_id === currentUserId || isWorkspaceOwner)}
                         onDuplicate={() => openConfirm('duplicate', journey)}
                         onArchive={() => handleArchive(journey.id)}
@@ -136,14 +170,45 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
             <button 
                 type="button"
                 onClick={onNewJourney}
-            className="app-surface-soft rounded-xl border-2 border-dashed border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-all cursor-pointer flex flex-col items-center justify-center h-[220px] group text-gray-400 hover:text-orange-600"
+            className="group flex h-[232px] flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-slate-200 bg-gradient-to-br from-white via-slate-50/80 to-orange-50/40 text-gray-400 transition-all hover:-translate-y-1 hover:border-orange-300 hover:text-orange-600"
             >
-                <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center mb-2 group-hover:border-orange-200 group-hover:bg-orange-100 transition-colors">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm transition-colors group-hover:border-orange-200 group-hover:bg-orange-100">
                     <Plus size={20} />
                 </div>
-                <span className="text-sm font-medium">{t('dashboard.createNew')}</span>
+                <span className="text-sm font-semibold">{t('dashboard.createNew')}</span>
             </button>
         </div>
+      </section>
+
+      <section className="mt-14">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">{t('dashboard.learningMaterials')}</h3>
+            <p className="mt-1 text-sm text-gray-500">{t('dashboard.learningMaterialsSub')}</p>
+          </div>
+          <Link to="/materials" className="text-sm text-gray-500 hover:text-gray-900 font-medium flex items-center gap-1">
+            {t('dashboard.viewAll')} <ArrowRight size={14} />
+          </Link>
+        </div>
+
+        {learningMaterials.length > 0 ? (
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <LearningFeaturedCard material={learningMaterials[0]} t={t} />
+            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-1">
+              {learningMaterials.slice(1, 3).map((material) => (
+                <LearningCompactCard key={material.id} material={material} t={t} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="app-empty-state rounded-2xl px-8 py-14 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/80 text-sky-600 shadow-sm">
+              <GraduationCap size={24} />
+            </div>
+            <h4 className="text-xl font-bold text-gray-900">{t('dashboard.learningMaterialsEmptyTitle')}</h4>
+            <p className="mx-auto mt-2 max-w-2xl text-sm leading-7 text-gray-600">{t('dashboard.learningMaterialsEmptyDesc')}</p>
+          </div>
+        )}
       </section>
 
       <ConfirmModal 
@@ -159,30 +224,104 @@ export default function Dashboard({ journeys = [], currentUserId, isWorkspaceOwn
   )
 }
 
-function ActionCard({ icon, label, subLabel, color, bgColor, onClick }) {
+function LearningFeaturedCard({ material, t }) {
+    const tone = getMaterialTone(material.heroTone);
+
+    return (
+        <Link to={`/materials/${material.slug}`} className={`app-surface group relative overflow-hidden rounded-2xl bg-gradient-to-br ${tone.hero} p-7 transition-all duration-300 hover:-translate-y-1`}>
+            <div className="relative flex h-full flex-col justify-between gap-6">
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${tone.badge}`}>
+                            {material.category}
+                        </span>
+                        {material.featured && (
+                            <span className="inline-flex items-center rounded-full border border-white/80 bg-white/70 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                                {t('dashboard.featuredMaterial')}
+                            </span>
+                        )}
+                    </div>
+                    <div className="space-y-2">
+                        <h4 className="max-w-2xl text-3xl font-black tracking-tight text-gray-900">{material.title}</h4>
+                        {material.subtitle && <p className="text-base font-medium text-gray-700">{material.subtitle}</p>}
+                        <p className="max-w-2xl text-sm leading-7 text-gray-600">{material.excerpt}</p>
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/80 pt-4 text-sm text-gray-600">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <span>{material.authorName}</span>
+                        <span>{material.publishedAtLabel}</span>
+                    </div>
+                    <span className="inline-flex items-center gap-2 font-semibold text-sky-700">
+                        {t('dashboard.readMaterial')}
+                        <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-1" />
+                    </span>
+                </div>
+            </div>
+        </Link>
+    );
+}
+
+function LearningCompactCard({ material, t }) {
+    const tone = getMaterialTone(material.heroTone);
+
+    return (
+        <Link to={`/materials/${material.slug}`} className={`app-surface group rounded-2xl bg-gradient-to-br ${tone.hero} p-6 transition-all duration-300 hover:-translate-y-1`}>
+            <div className="space-y-4">
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] ${tone.badge}`}>
+                    {material.category}
+                </span>
+                <div className="space-y-2">
+                    <h4 className="text-xl font-bold tracking-tight text-gray-900">{material.title}</h4>
+                    <p className="text-sm leading-7 text-gray-600">{material.excerpt}</p>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-sm text-gray-600">
+                    <span>{material.authorName}</span>
+                    <span className="inline-flex items-center gap-2 font-semibold text-sky-700">
+                        {t('dashboard.openMaterial')}
+                        <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-1" />
+                    </span>
+                </div>
+            </div>
+        </Link>
+    );
+}
+
+function ActionCard({ icon, label, subLabel, actionText, iconColor, iconBg, glow, onClick }) {
     const IconComponent = icon;
 
     return (
         <button 
             type="button"
             onClick={onClick}
-            className="app-surface rounded-xl flex items-center gap-4 p-4 hover:shadow-md hover:border-gray-300 transition-all text-left group h-24"
+            className="group relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/90 p-5 text-left shadow-[0_22px_50px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)]"
         >
-            <div className={`w-12 h-12 rounded-lg ${bgColor} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
-                <IconComponent className={color} size={24} />
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="font-bold text-gray-900 truncate">{label}</div>
-                <div className="text-xs text-gray-500 truncate">{subLabel}</div>
-            </div>
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 -mr-2">
-                <Plus size={20} />
+            <div className={`pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-r ${glow} opacity-80`} />
+            <div className="relative flex h-full flex-col justify-between gap-8">
+              <div className="flex items-start justify-between gap-4">
+                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${iconBg} shadow-sm transition-transform group-hover:scale-105`}>
+                    <IconComponent className={iconColor} size={26} />
+                </div>
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/90 bg-white/75 text-slate-400 shadow-sm transition-colors group-hover:text-slate-700">
+                    <Plus size={18} />
+                </div>
+              </div>
+              <div className="relative space-y-3">
+                <div>
+                  <div className="text-xl font-black tracking-tight text-gray-900">{label}</div>
+                  <div className="mt-2 max-w-[26ch] text-sm leading-6 text-gray-600">{subLabel}</div>
+                </div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <span>{actionText}</span>
+                    <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-1" />
+                </div>
+              </div>
             </div>
         </button>
     )
 }
 
-function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDelete }) {
+function JourneyCard({ journey, featured = false, canDelete = true, onDuplicate, onArchive, onDelete }) {
     const { t } = useTranslation();
     const date = getRelativeTime(journey.updated_at || journey.created_at, t);
     
@@ -226,23 +365,23 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
 
     return (
         <div 
-            className="app-surface group relative rounded-xl hover:shadow-[0_8px_22px_rgba(15,23,42,0.10)] hover:border-gray-300 transition-all duration-200 ease-out h-[220px] flex flex-col"
+            className={`group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white transition-all duration-300 ease-out hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_22px_54px_rgba(15,23,42,0.10)] ${featured ? 'sm:col-span-2 xl:col-span-2' : ''} ${featured ? 'min-h-[248px]' : 'h-[232px]'}`}
             onMouseLeave={() => setShowMenu(false)}
         >
             {/* Preview Area (The "Tech" Look) */}
-            <div className="h-32 relative overflow-hidden bg-gray-50/50 border-b border-gray-100 rounded-t-xl">
+            <div className={`relative overflow-hidden border-b border-gray-100 ${featured ? 'h-36 bg-gradient-to-br from-indigo-50 via-slate-50 to-white' : 'h-32 bg-gray-50/50'}`}>
                 {/* Dot Grid Pattern - фон у крапочку */}
                 <div className="absolute inset-0 opacity-[0.4]" 
                      style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '16px 16px' }}>
                 </div>
                 
                 {/* Mockup of a Map (Miniature) - малює схему */}
-                <div className="absolute inset-0 p-4 flex flex-col justify-center items-center opacity-80 group-hover:scale-[1.02] transition-transform duration-500">
+                <div className={`absolute inset-0 flex flex-col justify-center items-center opacity-80 transition-transform duration-500 group-hover:scale-[1.02] ${featured ? 'p-5' : 'p-4'}`}>
                     <MockMapPreview colorClass={style.accent} />
                 </div>
 
                 {/* Badge Type */}
-                <div className="absolute top-3 left-3 px-2 py-0.5 bg-white/90 backdrop-blur border border-gray-200 rounded text-[10px] font-medium text-gray-500 shadow-sm z-10">
+                <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur border border-gray-200 rounded-full text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-500 shadow-sm z-10">
                     CJM
                 </div>
             </div>
@@ -273,24 +412,35 @@ function JourneyCard({ journey, canDelete = true, onDuplicate, onArchive, onDele
             </div>
             
             {/* Content Area */}
-            <div className="p-4 flex-1 flex flex-col justify-between bg-white rounded-b-xl">
+            <div className="flex flex-1 flex-col justify-between bg-white p-5">
                 <div>
-                    <h4 className="font-semibold text-gray-900 text-sm leading-snug truncate pr-4 group-hover:text-indigo-600 transition-colors">
+                    <h4 className={`pr-4 leading-snug tracking-tight text-gray-900 transition-colors group-hover:text-indigo-600 ${featured ? 'text-xl font-black' : 'text-base font-bold'}`}>
                         {journey.title}
                     </h4>
-                    {/* Fake stats to make it look pro */}
-                    <div className="flex items-center gap-3 mt-2">
-                         <div className="flex items-center gap-1 text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
-                            <Layout size={10} />
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                         <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">
+                            <Layout size={11} />
                             <span>{stageCount} {stageCount === 1 ? t('dashboard.stage') : t('dashboard.stages')}</span>
                          </div>
+                         <div className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600">
+                            <Clock size={11} />
+                            <span>{t('dashboard.edited')} {date}</span>
+                         </div>
                     </div>
+                    {featured && (
+                      <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600">
+                        <span>{t('dashboard.openJourney')}</span>
+                        <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-1" />
+                      </div>
+                    )}
                 </div>
                 
-                <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-3 pt-3 border-t border-gray-50">
+                {!featured && (
+                  <div className="mt-4 flex items-center gap-1.5 border-t border-gray-100 pt-3 text-xs text-gray-400">
                     <Clock size={11} />
                     <span>{t('dashboard.edited')} {date}</span>
-                </div>
+                  </div>
+                )}
             </div>
         </div>
     )

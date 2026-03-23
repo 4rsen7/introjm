@@ -54,7 +54,7 @@ const ADMIN_HOST = (() => {
   }
 })();
 
-const APP_ROUTE_PREFIXES = ['/auth', '/dashboard', '/journeys', '/journey', '/personas', '/portraits', '/metrics', '/interviews', '/settings', '/archive', '/export'];
+const APP_ROUTE_PREFIXES = ['/auth', '/dashboard', '/journeys', '/journey', '/personas', '/portraits', '/metrics', '/interviews', '/materials', '/settings', '/archive', '/export'];
 const isAppRoutePath = (path = '/') => APP_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 const hostRedirects = {
@@ -963,6 +963,45 @@ async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates
     if (fallbackResult.error) throw fallbackResult.error;
 
     return { data: sanitizeInterviewForClient(fallbackResult.data), persistedViaFallback: true };
+}
+
+function mapLearningMaterialListItem(material) {
+    if (!material) return material;
+    return {
+        id: material.id,
+        slug: material.slug,
+        title: material.title,
+        subtitle: material.subtitle || '',
+        excerpt: material.excerpt || '',
+        category: material.category || 'Playbook',
+        cover_image_url: material.cover_image_url || '',
+        author_name: material.author_name || 'IteroJM Team',
+        reading_time_minutes: material.reading_time_minutes ?? null,
+        hero_tone: material.hero_tone || 'cobalt',
+        featured: !!material.featured,
+        published_at: material.published_at || null,
+        created_at: material.created_at || null,
+        updated_at: material.updated_at || null,
+    };
+}
+
+function mapSupportNewsItem(news, readNewsIds = new Set()) {
+    if (!news) return news;
+    return {
+        id: news.id,
+        title: news.title,
+        subtitle: news.subtitle || '',
+        summary: news.summary || '',
+        body_html: news.body_html || '',
+        cover_image_url: news.cover_image_url || '',
+        tone: news.tone || 'cobalt',
+        status: news.status || 'draft',
+        pinned: !!news.pinned,
+        published_at: news.published_at || null,
+        created_at: news.created_at || null,
+        updated_at: news.updated_at || null,
+        is_read: readNewsIds.has(news.id),
+    };
 }
 
 app.use(cors({
@@ -3951,6 +3990,66 @@ app.delete('/api/workspace/member/:id', async (req, res) => {
 
 // --- РОУТИ ДЛЯ ПРОФІЛЮ (PROFILE) ---
 
+app.get('/api/learning-materials', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { data, error } = await supabaseAdmin
+      .from('learning_materials')
+      .select('id, slug, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at')
+      .eq('status', 'published')
+      .order('featured', { ascending: false })
+      .order('sort_order', { ascending: true })
+      .order('published_at', { ascending: false, nullsFirst: false });
+
+    if (error) throw error;
+
+    res.json({
+      status: 'success',
+      data: (data || []).map(mapLearningMaterialListItem),
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/learning-materials');
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.get('/api/learning-materials/:slug', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { slug } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { data, error } = await supabaseAdmin
+      .from('learning_materials')
+      .select('id, slug, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at, body_html')
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ status: 'error', message: 'Learning material not found' });
+
+    res.json({
+      status: 'success',
+      data: {
+        ...mapLearningMaterialListItem(data),
+        body_html: data.body_html || '',
+      },
+    });
+  } catch (err) {
+    logSystemError(err, `GET /api/learning-materials/${slug}`);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
 // Отримати профіль користувача
 app.get('/api/profile', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -4033,6 +4132,142 @@ app.put('/api/profile', async (req, res) => {
 });
 
 // --- SUPPORT & FEEDBACK (two-way: user submits, admin replies, user sees badge) ---
+
+app.get('/api/news', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const [{ data: newsList, error: newsError }, { data: views, error: viewsError }] = await Promise.all([
+      supabaseAdmin
+        .from('support_news')
+        .select('id, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
+        .eq('status', 'published')
+        .order('pinned', { ascending: false })
+        .order('published_at', { ascending: false, nullsFirst: false }),
+      supabaseAdmin
+        .from('support_news_views')
+        .select('news_id')
+        .eq('user_id', user.id),
+    ]);
+
+    if (newsError) throw newsError;
+    if (viewsError) throw viewsError;
+
+    const readNewsIds = new Set((views || []).map((item) => item.news_id));
+    res.json({
+      status: 'success',
+      data: (newsList || []).map((item) => mapSupportNewsItem(item, readNewsIds)),
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/news');
+    console.error('Error listing support news:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.get('/api/news/unread-count', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const [{ count: publishedCount, error: publishedError }, { data: views, error: viewsError }] = await Promise.all([
+      supabaseAdmin.from('support_news').select('*', { count: 'exact', head: true }).eq('status', 'published'),
+      supabaseAdmin.from('support_news_views').select('news_id').eq('user_id', user.id),
+    ]);
+
+    if (publishedError) throw publishedError;
+    if (viewsError) throw viewsError;
+
+    const viewedIds = new Set((views || []).map((item) => item.news_id));
+    res.json({
+      status: 'success',
+      data: Math.max(0, (publishedCount ?? 0) - viewedIds.size),
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/news/unread-count');
+    console.error('Error getting support news unread count:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.get('/api/news/:id', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { id } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const [{ data: item, error: newsError }, { data: view, error: viewError }] = await Promise.all([
+      supabaseAdmin
+        .from('support_news')
+        .select('id, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
+        .eq('id', id)
+        .eq('status', 'published')
+        .maybeSingle(),
+      supabaseAdmin
+        .from('support_news_views')
+        .select('news_id')
+        .eq('news_id', id)
+        .eq('user_id', user.id)
+        .maybeSingle(),
+    ]);
+
+    if (newsError) throw newsError;
+    if (viewError) throw viewError;
+    if (!item) return res.status(404).json({ status: 'error', message: 'News item not found' });
+
+    res.json({
+      status: 'success',
+      data: mapSupportNewsItem(item, new Set(view ? [view.news_id] : [])),
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/news/:id');
+    console.error('Error getting support news item:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.patch('/api/news/:id/read', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { id } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { data: newsItem, error: newsError } = await supabaseAdmin
+      .from('support_news')
+      .select('id')
+      .eq('id', id)
+      .eq('status', 'published')
+      .maybeSingle();
+
+    if (newsError) throw newsError;
+    if (!newsItem) return res.status(404).json({ status: 'error', message: 'News item not found' });
+
+    const { error: upsertError } = await supabaseAdmin
+      .from('support_news_views')
+      .upsert([{ news_id: id, user_id: user.id, viewed_at: new Date().toISOString() }], { onConflict: 'news_id,user_id' });
+
+    if (upsertError) throw upsertError;
+
+    res.json({ status: 'success' });
+  } catch (err) {
+    logSystemError(err, 'PATCH /api/news/:id/read');
+    console.error('Error marking support news as read:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
 
 // Create submission (Report issue / Send idea)
 app.post('/api/feedback', async (req, res) => {
@@ -4288,6 +4523,177 @@ app.post('/api/admin/feedback/:id/reply', async (req, res) => {
   } catch (err) {
     logSystemError(err, 'POST /api/admin/feedback/:id/reply');
     console.error('Error posting admin reply:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.get('/api/admin/news', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const [{ data: newsItems, error: newsError }, { data: views, error: viewsError }] = await Promise.all([
+      supabaseAdmin
+        .from('support_news')
+        .select('*')
+        .order('pinned', { ascending: false })
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false }),
+      supabaseAdmin
+        .from('support_news_views')
+        .select('news_id, user_id'),
+    ]);
+
+    if (newsError) throw newsError;
+    if (viewsError) throw viewsError;
+
+    const viewCountByNewsId = {};
+    (views || []).forEach((item) => {
+      if (!item?.news_id) return;
+      viewCountByNewsId[item.news_id] = (viewCountByNewsId[item.news_id] || 0) + 1;
+    });
+
+    res.json({
+      status: 'success',
+      data: (newsItems || []).map((item) => ({
+        ...item,
+        view_count: viewCountByNewsId[item.id] || 0,
+      })),
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/admin/news');
+    console.error('Error listing admin news:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.get('/api/admin/news/:id', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { id } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const [{ data: newsItem, error: newsError }, { count: viewCount, error: countError }] = await Promise.all([
+      supabaseAdmin.from('support_news').select('*').eq('id', id).maybeSingle(),
+      supabaseAdmin.from('support_news_views').select('*', { count: 'exact', head: true }).eq('news_id', id),
+    ]);
+
+    if (newsError) throw newsError;
+    if (countError) throw countError;
+    if (!newsItem) return res.status(404).json({ status: 'error', message: 'News item not found' });
+
+    res.json({
+      status: 'success',
+      data: {
+        ...newsItem,
+        view_count: viewCount ?? 0,
+      },
+    });
+  } catch (err) {
+    logSystemError(err, 'GET /api/admin/news/:id');
+    console.error('Error getting admin news item:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.post('/api/admin/news', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { user, error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned } = req.body || {};
+    if (!title || !String(title).trim() || !summary || !String(summary).trim() || !body_html || !String(body_html).trim()) {
+      return res.status(400).json({ status: 'error', message: 'title, summary, body_html are required' });
+    }
+
+    const payload = {
+      title: String(title).trim(),
+      subtitle: subtitle ? String(subtitle).trim() : null,
+      summary: String(summary).trim(),
+      body_html: String(body_html).trim(),
+      cover_image_url: cover_image_url ? String(cover_image_url).trim() : null,
+      tone: ['cobalt', 'emerald', 'amber', 'rose'].includes(tone) ? tone : 'cobalt',
+      status: status === 'published' ? 'published' : 'draft',
+      pinned: !!pinned,
+      created_by: user.id,
+      updated_by: user.id,
+    };
+
+    const { data, error } = await supabaseAdmin.from('support_news').insert([payload]).select().single();
+    if (error) throw error;
+    res.status(201).json({ status: 'success', data });
+  } catch (err) {
+    logSystemError(err, 'POST /api/admin/news');
+    console.error('Error creating admin news item:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.put('/api/admin/news/:id', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { id } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { user, error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned } = req.body || {};
+    if (!title || !String(title).trim() || !summary || !String(summary).trim() || !body_html || !String(body_html).trim()) {
+      return res.status(400).json({ status: 'error', message: 'title, summary, body_html are required' });
+    }
+
+    const payload = {
+      title: String(title).trim(),
+      subtitle: subtitle ? String(subtitle).trim() : null,
+      summary: String(summary).trim(),
+      body_html: String(body_html).trim(),
+      cover_image_url: cover_image_url ? String(cover_image_url).trim() : null,
+      tone: ['cobalt', 'emerald', 'amber', 'rose'].includes(tone) ? tone : 'cobalt',
+      status: status === 'published' ? 'published' : 'draft',
+      pinned: !!pinned,
+      updated_by: user.id,
+    };
+
+    const { data, error } = await supabaseAdmin.from('support_news').update(payload).eq('id', id).select().single();
+    if (error) throw error;
+    res.json({ status: 'success', data });
+  } catch (err) {
+    logSystemError(err, 'PUT /api/admin/news/:id');
+    console.error('Error updating admin news item:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.delete('/api/admin/news/:id', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { id } = req.params;
+  if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+  try {
+    const { error: adminAuthError } = await getAdminUserFromToken(token);
+    if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
+    if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+    const { error } = await supabaseAdmin.from('support_news').delete().eq('id', id);
+    if (error) throw error;
+    res.json({ status: 'success' });
+  } catch (err) {
+    logSystemError(err, 'DELETE /api/admin/news/:id');
+    console.error('Error deleting admin news item:', err);
     res.status(500).json({ status: 'error', error: err.message });
   }
 });

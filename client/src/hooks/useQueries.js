@@ -61,6 +61,17 @@ export const mapInterviewToClient = (i) => ({
   updatedAt: formatDate(i.updated_at || i.created_at),
 });
 
+export const mapLearningMaterialToClient = (material) => ({
+  ...material,
+  coverImageUrl: material.cover_image_url || '',
+  authorName: material.author_name || 'IteroJM Team',
+  readingTimeMinutes: material.reading_time_minutes ?? null,
+  heroTone: material.hero_tone || 'cobalt',
+  publishedAt: material.published_at || null,
+  publishedAtLabel: formatDate(material.published_at || material.created_at),
+  bodyHtml: material.body_html || '',
+});
+
 // Generic fetcher
 const fetchData = async (endpoint) => {
   const token = await getAuthToken();
@@ -97,6 +108,18 @@ export const useInterviews = (enabled = true) => {
     },
     enabled,
     refetchOnWindowFocus: true,
+  });
+};
+
+export const useLearningMaterials = (enabled = true) => {
+  return useQuery({
+    queryKey: ['learning_materials'],
+    queryFn: async () => {
+      const data = await fetchData('/learning-materials');
+      return data.map(mapLearningMaterialToClient);
+    },
+    enabled,
+    staleTime: 60 * 1000,
   });
 };
 
