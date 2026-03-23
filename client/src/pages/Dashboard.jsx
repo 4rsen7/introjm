@@ -365,11 +365,11 @@ function JourneyCard({ journey, featured = false, canDelete = true, onDuplicate,
 
     return (
         <div 
-            className={`group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white transition-all duration-300 ease-out hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_22px_54px_rgba(15,23,42,0.10)] ${featured ? 'sm:col-span-2 xl:col-span-2' : ''} ${featured ? 'min-h-[248px]' : 'h-[232px]'}`}
+            className={`group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white transition-all duration-300 ease-out hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_22px_54px_rgba(15,23,42,0.10)] ${featured ? 'sm:col-span-2 xl:col-span-2' : ''} h-[232px]`}
             onMouseLeave={() => setShowMenu(false)}
         >
             {/* Preview Area (The "Tech" Look) */}
-            <div className={`relative overflow-hidden border-b border-gray-100 ${featured ? 'h-36 bg-gradient-to-br from-indigo-50 via-slate-50 to-white' : 'h-32 bg-gray-50/50'}`}>
+            <div className={`relative h-32 overflow-hidden border-b border-gray-100 ${featured ? 'bg-gradient-to-br from-indigo-50 via-slate-50 to-white' : 'bg-gray-50/50'}`}>
                 {/* Dot Grid Pattern - фон у крапочку */}
                 <div className="absolute inset-0 opacity-[0.4]" 
                      style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '16px 16px' }}>
@@ -414,7 +414,7 @@ function JourneyCard({ journey, featured = false, canDelete = true, onDuplicate,
             {/* Content Area */}
             <div className="flex flex-1 flex-col justify-between bg-white p-5">
                 <div>
-                    <h4 className={`pr-4 leading-snug tracking-tight text-gray-900 transition-colors group-hover:text-indigo-600 ${featured ? 'text-xl font-black' : 'text-base font-bold'}`}>
+                    <h4 className="pr-4 text-base font-bold leading-snug tracking-tight text-gray-900 transition-colors group-hover:text-indigo-600">
                         {journey.title}
                     </h4>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -427,12 +427,6 @@ function JourneyCard({ journey, featured = false, canDelete = true, onDuplicate,
                             <span>{t('dashboard.edited')} {date}</span>
                          </div>
                     </div>
-                    {featured && (
-                      <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-indigo-600">
-                        <span>{t('dashboard.openJourney')}</span>
-                        <ArrowRight size={15} className="transition-transform duration-200 group-hover:translate-x-1" />
-                      </div>
-                    )}
                 </div>
                 
                 {!featured && (
