@@ -151,10 +151,10 @@ export default function Dashboard({ journeys = [], learningMaterials = [], curre
             </button>
         </div>
         
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid items-start grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
             {visibleJourneys
                 .map((journey, index) => (
-                <Link key={journey.id} to={`/journey/${journey.id}`} className="block">
+                <Link key={journey.id} to={`/journey/${journey.id}`} className="block self-start">
                     <JourneyCard 
                         journey={journey}
                         featured={index === 0}
