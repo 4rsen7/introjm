@@ -1,46 +1,54 @@
 export default {
-  lastUpdated: 'February 21, 2026',
-  intro: 'These Terms of Service ("Terms", "Agreement") govern your access to and use of the IteroJM platform, including the website and all related services (the "Service"). By registering for or using the Service, you agree to be bound by these Terms. If you do not agree to these Terms, you may not use the Service.',
+  lastUpdated: 'March 24, 2026',
+  intro: `These Terms of Service explain how IteroJM works, what we expect from users, and where our responsibilities begin and end. We have written them to be clearer for teams, customers, and potential partners while still serving as binding rules for using the Service.`,
   sections: [
     {
-      title: '1. Age Restrictions and Account Security',
-      body: '1.1. Age Requirement: You must be at least 18 years old to use the Service, create an account, and purchase a subscription.\n\n1.2. Security: You are solely responsible for maintaining the confidentiality of your account credentials (login and password) and for all activities that occur under your account. IteroJM is not liable for any loss or damage arising from your failure to comply with this security obligation.'
+      title: '1. Scope of These Terms',
+      body: `1.1. These Terms govern your access to and use of the IteroJM platform, website, web application, and related services.\n\n1.2. If you use IteroJM on behalf of a company or other organization, you confirm that you have authority to accept these Terms on its behalf.\n\n1.3. If you have a separate written agreement with IteroJM, that agreement will control to the extent it conflicts with these Terms.`
     },
     {
-      title: '2. Payments, Subscriptions, and Merchant of Record',
-      body: '2.1. Payment Provider: Lemon Squeezy is the official Merchant of Record for all IteroJM services and subscriptions. All financial transactions, credit card processing, tax (VAT) calculations, and invoicing are securely handled by Lemon Squeezy in accordance with their Terms of Service.\n\n2.2. Refund Policy: We offer a 14-day money-back guarantee on your first subscription payment if the Service does not meet your expectations. Refund requests made after this initial 14-day period will not be granted.\n\n2.3. Cancellation: You may cancel your subscription at any time through your account settings. Upon cancellation, you will retain access to the paid features until the end of your current billing cycle.'
+      title: '2. Account Access and Security',
+      body: `2.1. You must be at least 18 years old to use the Service.\n\n2.2. You agree to provide accurate, current information for your account and to keep it reasonably up to date.\n\n2.3. You are responsible for protecting your account credentials and for activity under your account. If you become aware of unauthorized access or a security incident, please notify us without undue delay.`
     },
     {
-      title: '3. User Content and Intellectual Property',
-      body: '3.1. Your Rights: You retain all ownership rights to any information, data, text, Journey Maps, and Personas that you create, upload, or process using the Service ("User Content").\n\n3.2. IteroJM\'s Rights: The Service, including its original source code, design, architecture, and logos, is the intellectual property of IteroJM. Users are strictly prohibited from copying, modifying, creating derivative works, reverse engineering, or attempting to extract the source code of the Service.'
+      title: '3. Subscriptions, Billing, and Refunds',
+      body: `3.1. Paid IteroJM plans are offered on a subscription basis unless a separate proposal or written agreement states otherwise.\n\n3.2. Lemon Squeezy acts as the seller and payment processor for IteroJM subscriptions. It handles card payments, taxes, invoices, and related billing workflows.\n\n3.3. You may cancel a subscription at any time. After cancellation, access to paid features will generally continue until the end of the already-paid billing period.\n\n3.4. We offer a 14-day refund window for the first subscription payment unless applicable law or the payment provider's policies require otherwise.`
     },
     {
-      title: '4. Account Deletion and Data Retention',
-      body: '4.1. Hard Delete Policy: You have the right to delete your account at any time. Upon initiating account deletion, all your personal data and User Content (including workspaces, maps, and personas) will be instantly and permanently deleted from our active databases. This action is irreversible, and data cannot be recovered.'
+      title: '4. Your Content and Permissions',
+      body: `4.1. You retain rights to your content, including data, research materials, Journey Maps, Personas, transcripts, files, and other information you create, import, or upload to the Service.\n\n4.2. You grant IteroJM a limited right to process, store, display, transmit, and technically reproduce that content only as needed to operate the Service, support collaboration within your workspace, maintain security, provide support, and deliver the features you choose to use.\n\n4.3. You confirm that you have the necessary rights, permissions, and lawful basis to upload or process that content, especially if it contains personal data, interviews, audio or video recordings, commercially sensitive information, or third-party materials.\n\n4.4. We do not take ownership of your content and do not use non-public workspace materials outside the operation of the Service unless you direct us to, authorize it, or we are legally required to do so.`
     },
     {
-      title: '5. Prohibited Conduct',
-      body: 'You agree not to use the Service to:\n\n• Upload, share, or promote illegal, harmful, or discriminatory content.\n• Infringe upon the intellectual property rights of third parties.\n• Upload viruses, malicious code, or attempt to compromise the security of the Service or its servers (e.g., DDoS attacks, scraping, hacking).'
+      title: '5. Acceptable Use',
+      body: `When using the Service, you agree not to:\n\n• violate the law, third-party rights, or confidentiality obligations;\n• upload malicious code, attempt to bypass security, or interfere with infrastructure;\n• use the Service for illegal, discriminatory, fraudulent, or clearly harmful content;\n• attempt to gain unauthorized access to other users' accounts, data, or environments;\n• engage in unauthorized mass scraping, reverse engineering, or other activity outside normal product use.`
     },
     {
-      title: '6. Disclaimer of Warranties',
-      body: '6.1. The Service is provided on an "AS IS" and "AS AVAILABLE" basis. IteroJM makes no express or implied warranties regarding the uninterrupted, error-free, or absolutely secure operation of the Service.\n\n6.2. We do not guarantee that the Service will meet your specific requirements or that any software bugs will be immediately corrected.'
+      title: '6. AI Features, Integrations, and Input Responsibility',
+      body: `6.1. IteroJM may rely on third-party AI services and integrations for certain features, including interview transcription, analytics, generated materials, and data imports.\n\n6.2. Outputs generated by AI features may be incomplete, inaccurate, or require human review. You remain responsible for evaluating and deciding how to use those outputs in your work.\n\n6.3. If you upload interviews, import data from external systems, or connect integrations, you are responsible for ensuring that you have the necessary rights, notices, and consents for that processing where required.`
     },
     {
-      title: '7. Limitation of Liability',
-      body: '7.1. To the maximum extent permitted by applicable law, in no event shall IteroJM, its founders, employees, or partners be liable for any indirect, incidental, special, or consequential damages (including loss of profits, data, or goodwill) arising out of or in connection with your use or inability to use the Service.\n\n7.2. IteroJM\'s total maximum financial liability to you for any claims arising from these Terms shall be limited to the amount you paid for the Service during the 3 (three) months immediately preceding the incident.'
+      title: '7. Service Availability and Product Changes',
+      body: `7.1. We continuously improve IteroJM and may change, enhance, add, or remove features when needed for product quality, security, legal compliance, or platform development.\n\n7.2. We aim to keep the Service reliable, but we cannot promise uninterrupted availability or a completely error-free experience.\n\n7.3. We may perform planned maintenance, updates, or security work that temporarily affects some features.`
     },
     {
-      title: '8. Indemnification',
-      body: 'You agree to defend, indemnify, and hold harmless IteroJM from and against any claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or in any way connected with: (a) your violation of these Terms; (b) your User Content infringing on any third-party rights; or (c) your violation of any applicable laws.'
+      title: '8. Suspension, Cancellation, and Account Deletion',
+      body: `8.1. You may stop using the Service and delete your account at any time through available product controls or by contacting us.\n\n8.2. We may temporarily restrict or suspend access if we reasonably believe there is a breach of these Terms, misuse of the Service, non-payment, a security issue, or a situation where the law requires us to act.\n\n8.3. After account deletion, some data may no longer be available in active systems but may remain temporarily in technical backups as described in our Privacy Policy.`
     },
     {
-      title: '9. Governing Law',
-      body: 'This Agreement shall be governed by and construed in accordance with the laws of Ukraine. Any disputes arising under or in connection with these Terms shall be subject to the exclusive jurisdiction of the courts located in Ukraine.'
+      title: '9. Warranties and Result Limitations',
+      body: `9.1. IteroJM is provided in its current form and subject to availability.\n\n9.2. We do not guarantee that the Service will fit every internal workflow, operate without interruption, or produce any specific business outcome.\n\n9.3. Nothing in these Terms removes rights or guarantees that cannot be excluded under applicable law.`
     },
     {
-      title: '10. Contact Information',
-      body: 'IteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: iterojm.app@gmail.com'
+      title: '10. Limitation of Liability',
+      body: `10.1. To the maximum extent permitted by law, IteroJM will not be liable for indirect, incidental, special, or consequential damages, including loss of profits, goodwill, business opportunities, or data, unless mandatory law says otherwise.\n\n10.2. IteroJM's total maximum liability for claims related to the Service or these Terms is limited to the amount you paid for the Service during the 3 months preceding the event giving rise to the claim.\n\n10.3. Separate partner or enterprise agreements may set different liability limits if both sides agree in writing.`
+    },
+    {
+      title: '11. Reimbursement for Claims Caused by Misuse',
+      body: `If your actions, your content, or your breach of these Terms causes reasonable third-party claims, costs, or losses for IteroJM, you agree to reimburse those costs to the extent permitted by law. This may apply, for example, if content you upload infringes third-party rights or is used without proper permission.`
+    },
+    {
+      title: '12. Governing Law and Contact',
+      body: `These Terms are governed by the laws of Ukraine unless a separate written agreement states otherwise. Disputes that cannot be resolved through good-faith discussion will be handled by the competent courts of Ukraine.\n\nIteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: iterojm.app@gmail.com`
     }
   ]
 };
