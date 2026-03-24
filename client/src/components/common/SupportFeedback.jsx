@@ -549,7 +549,7 @@ export default function SupportFeedback() {
                   <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                     <p className="text-sm leading-6 text-gray-600">{newsItem.summary}</p>
                     <div
-                      className="prose prose-sm mt-4 max-w-none text-gray-700 prose-headings:text-gray-900 prose-a:text-blue-600 prose-img:rounded-2xl prose-img:shadow-sm"
+                      className="app-article app-article-sm mt-4 max-w-none"
                       dangerouslySetInnerHTML={{ __html: newsItem.body_html }}
                     />
                   </div>

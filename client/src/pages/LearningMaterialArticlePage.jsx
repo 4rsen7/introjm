@@ -143,7 +143,7 @@ export default function LearningMaterialArticlePage() {
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <article className="app-surface rounded-[28px] px-7 py-8 sm:px-10 sm:py-10">
             <div
-              className="prose prose-slate prose-lg max-w-none prose-headings:font-black prose-headings:tracking-tight prose-h2:mt-12 prose-h2:text-3xl prose-h3:mt-8 prose-h3:text-xl prose-p:leading-8 prose-a:text-sky-700 prose-a:no-underline hover:prose-a:text-sky-800 prose-strong:text-slate-900 prose-ul:leading-8 prose-li:my-1"
+              className="app-article max-w-none"
               dangerouslySetInnerHTML={{ __html: material.bodyHtml || '' }}
             />
           </article>
