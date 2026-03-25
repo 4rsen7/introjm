@@ -142,11 +142,11 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
     const integration = searchParams.get('integration');
     if (integration === 'connected') {
       setIntegrationBanner({ type: 'success', text: t('settings.integrationConnected') });
-      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
+      setSearchParams((p) => { p.delete('integration'); p.delete('message'); p.delete('provider'); return p; }, { replace: true });
     } else if (integration === 'error') {
       const message = searchParams.get('message') || t('settings.integrationError');
       setIntegrationBanner({ type: 'error', text: message });
-      setSearchParams((p) => { p.delete('integration'); p.delete('message'); return p; }, { replace: true });
+      setSearchParams((p) => { p.delete('integration'); p.delete('message'); p.delete('provider'); return p; }, { replace: true });
     }
   }, [searchParams, setSearchParams, t]);
 

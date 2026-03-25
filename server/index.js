@@ -3199,8 +3199,9 @@ app.get('/api/integrations/:provider/callback', async (req, res) => {
   const verified = verifyIntegrationState(state);
   const basePath = verified?.returnPath || 'metrics';
   const redirectBase = clientOrigin + '/' + basePath;
-  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(redirectBase + '?integration=error&message=Invalid+provider');
-  if (!verified || !verified.userId || !code) return res.redirect(redirectBase + '?integration=error&message=Invalid+state');
+  const providerQuery = `provider=${encodeURIComponent(provider)}`;
+  if (!INTEGRATION_PROVIDERS.includes(provider)) return res.redirect(redirectBase + `?integration=error&${providerQuery}&message=Invalid+provider`);
+  if (!verified || !verified.userId || !code) return res.redirect(redirectBase + `?integration=error&${providerQuery}&message=Invalid+state`);
   const userId = verified.userId;
   const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${API_PUBLIC_ORIGIN}/api/integrations/${provider}/callback`;
   try {
@@ -3217,10 +3218,10 @@ app.get('/api/integrations/:provider/callback', async (req, res) => {
     };
     const { error } = await supabaseAdmin.from('user_integrations').upsert(row, { onConflict: 'user_id,provider' });
     if (error) throw error;
-    return res.redirect(redirectBase + '?integration=connected');
+    return res.redirect(redirectBase + `?integration=connected&${providerQuery}`);
   } catch (err) {
     logSystemError(err, 'GET /api/integrations/:provider/callback');
-    return res.redirect(redirectBase + '?integration=error&message=' + encodeURIComponent(err.message || 'Connection failed'));
+    return res.redirect(redirectBase + `?integration=error&${providerQuery}&message=` + encodeURIComponent(err.message || 'Connection failed'));
   }
 });
 

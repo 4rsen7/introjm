@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, BarChart3, Save, ArrowUp, ArrowDown, Minus, Trash2, Plus, TrendingUp, ChevronDown, Upload, PieChart as PieChartIcon, RefreshCw, Link2 } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, BarChart3, Save, ArrowUp, ArrowDown, Minus, Trash2, Plus, TrendingUp, ChevronDown, Upload, PieChart as PieChartIcon, RefreshCw, Link2, X } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, Tooltip, ResponsiveContainer, LabelList, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
 import { CHART_PALETTE, DEFAULT_BAR_COLOR, formatSeriesLabel } from '../utils/metrics';
 import { getAuthToken } from '../services/auth';
@@ -9,6 +10,7 @@ import { MS_EXCEL_DISABLED } from '../config/features';
 import { API_BASE_URL } from '../config/api';
 
 const API_URL = API_BASE_URL;
+const INTEGRATION_DRAFT_STORAGE_PREFIX = 'metric-builder-integration-draft';
 
 const defaultSeriesData = () => [
   { label: 'Jan', value: 400, color: CHART_PALETTE[0] },
@@ -16,43 +18,82 @@ const defaultSeriesData = () => [
   { label: 'Mar', value: 600, color: CHART_PALETTE[2] },
 ];
 
+const normalizeSeriesData = (seriesData, fallbackSeriesData = defaultSeriesData()) => {
+  if (!Array.isArray(seriesData) || seriesData.length === 0) {
+    return fallbackSeriesData.map((row, i) => ({
+      label: row?.label ?? 'New',
+      value: typeof row?.value === 'number' ? row.value : Number(row?.value) || 0,
+      color: row?.color || CHART_PALETTE[i % CHART_PALETTE.length]
+    }));
+  }
+
+  return seriesData.map((row, i) => ({
+    label: row?.label ?? 'New',
+    value: typeof row?.value === 'number' ? row.value : Number(row?.value) || 0,
+    color: row?.color || CHART_PALETTE[i % CHART_PALETTE.length]
+  }));
+};
+
+const normalizeMetricBuilderFormData = (data = {}, fallbackSeriesData = defaultSeriesData()) => {
+  const base = {
+    name: 'New Metric',
+    dataSource: 'manual',
+    type: 'Number',
+    value: '0',
+    previousValue: '0',
+    reverseColors: false,
+    suffix: '',
+    chartType: 'bar',
+    seriesLabelFormat: 'text',
+    seriesData: defaultSeriesData(),
+    integrationConfig: null,
+    ...data
+  };
+
+  return {
+    ...base,
+    seriesData: normalizeSeriesData(base.seriesData, fallbackSeriesData)
+  };
+};
+
+const getIntegrationDraftStorageKey = (pathname) => `${INTEGRATION_DRAFT_STORAGE_PREFIX}:${pathname || '/metrics'}`;
+
+const persistIntegrationDraft = (pathname, formData) => {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(getIntegrationDraftStorageKey(pathname), JSON.stringify(formData));
+};
+
+const consumeIntegrationDraft = (pathname) => {
+  if (typeof window === 'undefined') return null;
+  const key = getIntegrationDraftStorageKey(pathname);
+  const raw = window.sessionStorage.getItem(key);
+  if (!raw) return null;
+
+  window.sessionStorage.removeItem(key);
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
 const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUserId }) => {
   const { t, i18n } = useTranslation();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const locale = i18n.language || 'en';
-  const [formData, setFormData] = useState(() => {
-    const base = {
-      name: 'New Metric',
-      dataSource: 'manual',
-      type: 'Number',
-      value: '0',
-      previousValue: '0',
-      reverseColors: false,
-      suffix: '',
-      chartType: 'bar',
-      seriesLabelFormat: 'text',
-      seriesData: defaultSeriesData(),
-      integrationConfig: null,
-      ...initialData
-    };
-    if (!Array.isArray(base.seriesData) || base.seriesData.length === 0) {
-      base.seriesData = defaultSeriesData();
-    } else {
-      base.seriesData = base.seriesData.map((row, i) => ({
-        label: row?.label ?? 'New',
-        value: typeof row?.value === 'number' ? row.value : Number(row?.value) || 0,
-        color: row?.color || CHART_PALETTE[i % CHART_PALETTE.length]
-      }));
-    }
-    return base;
-  });
+  const [formData, setFormData] = useState(() => normalizeMetricBuilderFormData(initialData));
   const [validationError, setValidationError] = useState(null);
   const [integrationStatus, setIntegrationStatus] = useState({ google_sheets: false, microsoft_excel: false });
+  const [integrationBanner, setIntegrationBanner] = useState(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [integrationError, setIntegrationError] = useState(null);
   const [sheetSuggestions, setSheetSuggestions] = useState([]);
   const [sheetsLoadLoading, setSheetsLoadLoading] = useState(false);
 
   const fileInputRef = useRef(null);
+  const skipNextInitialDataSyncRef = useRef(false);
 
   const isIntegration = formData.dataSource === 'google_sheets' || formData.dataSource === 'microsoft_excel';
 
@@ -77,20 +118,62 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
   useEffect(() => {
     if (initialData) {
       setFormData(prev => {
-        const next = { ...prev, ...initialData };
-        if (!Array.isArray(next.seriesData) || next.seriesData.length === 0) {
-          next.seriesData = prev.seriesData?.length ? prev.seriesData : defaultSeriesData();
-        } else {
-          next.seriesData = next.seriesData.map((row, i) => ({
-            label: row?.label ?? 'New',
-            value: typeof row?.value === 'number' ? row.value : Number(row?.value) || 0,
-            color: row?.color || CHART_PALETTE[i % CHART_PALETTE.length]
-          }));
+        if (skipNextInitialDataSyncRef.current) {
+          skipNextInitialDataSyncRef.current = false;
+          return prev;
         }
-        return next;
+
+        return normalizeMetricBuilderFormData({ ...prev, ...initialData }, prev.seriesData);
       });
     }
   }, [initialData]);
+
+  useEffect(() => {
+    const integration = searchParams.get('integration');
+    if (integration !== 'connected' && integration !== 'error') return;
+
+    const draft = consumeIntegrationDraft(location.pathname);
+    const message = searchParams.get('message');
+    const provider = searchParams.get('provider');
+
+    if (draft) {
+      skipNextInitialDataSyncRef.current = true;
+      setFormData(prev => normalizeMetricBuilderFormData({
+        ...prev,
+        ...draft,
+        dataSource: provider || draft.dataSource || prev.dataSource
+      }, prev.seriesData));
+
+      if (integration === 'connected' && ((provider === 'google_sheets' || provider === 'microsoft_excel') || (draft.dataSource === 'google_sheets' || draft.dataSource === 'microsoft_excel'))) {
+        const connectedProvider = provider || draft.dataSource;
+        setIntegrationStatus(prev => ({ ...prev, [connectedProvider]: true }));
+      }
+    } else if (provider === 'google_sheets' || provider === 'microsoft_excel') {
+      setFormData(prev => normalizeMetricBuilderFormData({
+        ...prev,
+        dataSource: provider
+      }, prev.seriesData));
+
+      if (integration === 'connected') {
+        setIntegrationStatus(prev => ({ ...prev, [provider]: true }));
+      }
+    }
+
+    const nextBanner = integration === 'connected'
+      ? { type: 'success', text: t('metrics.integrationConnected') }
+      : { type: 'error', text: message || t('metrics.integrationError') };
+
+    queueMicrotask(() => {
+      setIntegrationBanner(nextBanner);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('integration');
+        next.delete('message');
+        next.delete('provider');
+        return next;
+      }, { replace: true });
+    });
+  }, [location.pathname, searchParams, setSearchParams, t]);
 
   const handleChange = (field, value) => {
     setFormData(prev => {
@@ -180,7 +263,9 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
     try {
       const token = await getAuthToken();
       if (!token) { setIntegrationError(t('metrics.integrationLoginRequired')); return; }
-      const res = await fetch(`${API_URL}/integrations/${provider}/authorize`, { headers: { Authorization: `Bearer ${token}` } });
+      persistIntegrationDraft(location.pathname, formData);
+      const returnPath = location.pathname.replace(/^\//, '') || 'metrics';
+      const res = await fetch(`${API_URL}/integrations/${provider}/authorize?returnPath=${encodeURIComponent(returnPath)}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (data.redirectUrl) window.location.href = data.redirectUrl;
       else setIntegrationError(data.error || data.message || 'Failed to get authorization URL');
@@ -318,6 +403,15 @@ const MetricBuilder = ({ onBack, onSave, initialData, onSyncSuccess, currentUser
         </div>
         
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            {integrationBanner && (
+                <div className={`rounded-xl border px-4 py-3 flex items-start justify-between gap-3 ${integrationBanner.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`} role="status">
+                    <span className="text-sm font-medium leading-6">{integrationBanner.text}</span>
+                    <button type="button" onClick={() => setIntegrationBanner(null)} className="shrink-0 p-1 rounded-md hover:bg-black/5 transition" aria-label={t('common.close')}>
+                        <X size={16} />
+                    </button>
+                </div>
+            )}
+
             {/* General Settings */}
             <section className="space-y-4">
                 <h3 className="text-xs font-bold text-gray-400">{t('metrics.general')}</h3>

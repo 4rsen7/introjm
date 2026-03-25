@@ -180,7 +180,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
           )}
           
           <div className="mt-12 text-center text-sm text-gray-400">
-            {t('pricing.needHelp')} <a href="mailto:iterojm.app@gmail.com?subject=Pricing%20%2F%20plan%20inquiry" className="text-blue-600 hover:underline">{t('pricing.contactSalesLink')}</a>
+            {t('pricing.needHelp')} <a href="mailto:info@iterojm.com?subject=Pricing%20%2F%20plan%20inquiry" className="text-blue-600 hover:underline">{t('pricing.contactSalesLink')}</a>
           </div>
         </div>
       </div>

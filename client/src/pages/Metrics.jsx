@@ -30,6 +30,7 @@ const Metrics = ({ metrics = [], currentUserId, isWorkspaceOwner, onCreate, onEd
         const next = new URLSearchParams(prev);
         next.delete('integration');
         next.delete('message');
+        next.delete('provider');
         return next;
       }, { replace: true });
     });

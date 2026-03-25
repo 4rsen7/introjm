@@ -1538,9 +1538,9 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-col gap-2 text-sm text-slate-400 sm:items-end">
-            <a href="mailto:iterojm.app@gmail.com" className="inline-flex items-center gap-2 transition hover:text-white">
+            <a href="mailto:info@iterojm.com" className="inline-flex items-center gap-2 transition hover:text-white">
               <Mail className="h-4 w-4" />
-              iterojm.app@gmail.com
+              info@iterojm.com
             </a>
             <span className="inline-flex items-center gap-2">
               <MapPin className="h-4 w-4" />

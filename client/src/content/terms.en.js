@@ -48,7 +48,7 @@ export default {
     },
     {
       title: '12. Governing Law and Contact',
-      body: `These Terms are governed by the laws of Ukraine unless a separate written agreement states otherwise. Disputes that cannot be resolved through good-faith discussion will be handled by the competent courts of Ukraine.\n\nIteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: iterojm.app@gmail.com`
+      body: `These Terms are governed by the laws of Ukraine unless a separate written agreement states otherwise. Disputes that cannot be resolved through good-faith discussion will be handled by the competent courts of Ukraine.\n\nIteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: info@iterojm.com`
     }
   ]
 };

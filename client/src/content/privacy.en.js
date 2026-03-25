@@ -40,7 +40,7 @@ export default {
     },
     {
       title: '10. Policy Updates and Contact',
-      body: `We may update this Policy from time to time if the product, our processing practices, or legal requirements change. If we make a material update, we will revise the date shown in this document and, where appropriate, notify you separately.\n\nIteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: iterojm.app@gmail.com`
+      body: `We may update this Policy from time to time if the product, our processing practices, or legal requirements change. If we make a material update, we will revise the date shown in this document and, where appropriate, notify you separately.\n\nIteroJM\nAddress: Kyiv, 03189, Ukraine\nPhone: +380991345842\nEmail: info@iterojm.com`
     }
   ]
 };
