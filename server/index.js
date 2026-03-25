@@ -12,9 +12,9 @@ const fs = require('fs');
 const ffmpegStaticPath = require('ffmpeg-static');
 const { encrypt, decrypt } = require('./integrations/encrypt');
 const googleSheets = require('./integrations/googleSheets');
-const microsoftExcel = require('./integrations/microsoftExcel');
+const { getIntegrationProvider, getIntegrationProviders } = require('./integrations/providerRegistry');
 const { mapRowsToMetric } = require('./integrations/mapRowsToMetric');
-const { normalizeRangeA1 } = require('./integrations/normalizeRangeA1');
+const { initMetricAutoSyncScheduler } = require('./jobs/metricAutoSync');
 const { createExportToken, verifyExportToken } = require('./exportToken');
 const supabase = require('./supabaseClient');
 const supabaseAdmin = supabase.supabaseAdmin || supabase;
@@ -217,6 +217,7 @@ const allowedOrigins = [
 const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
+const DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const OPENAI_TRANSCRIPTION_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE = '48k';
@@ -228,7 +229,7 @@ const INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = (() => {
         ? configuredLimit
         : DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES;
 })();
-const ALLOWED_INTERVIEW_UPLOAD_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.mp4']);
+const ALLOWED_INTERVIEW_UPLOAD_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.mp4', '.webm']);
 const ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES = new Set([
     'audio/mpeg',
     'audio/mp3',
@@ -239,6 +240,8 @@ const ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES = new Set([
     'audio/mp4',
     'audio/x-m4a',
     'audio/m4a',
+    'audio/webm',
+    'video/webm',
     'video/mp4',
 ]);
 const INTERVIEW_SUMMARY_SECTION_ORDER = [
@@ -2755,7 +2758,7 @@ app.delete('/api/metrics/:id', async (req, res) => {
 });
 
 // --- ІНТЕГРАЦІЇ (GOOGLE SHEETS / MICROSOFT EXCEL) ---
-const INTEGRATION_PROVIDERS = ['google_sheets', 'microsoft_excel'];
+const INTEGRATION_PROVIDERS = getIntegrationProviders();
 const STATE_SECRET = process.env.ENCRYPTION_KEY || process.env.SUPABASE_JWT_SECRET || 'integration-state-secret';
 
 async function userHasIntegrationConnected(userId, provider) {
@@ -2793,7 +2796,9 @@ async function getOrRefreshIntegrationTokens(userId, provider) {
   const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
   if (expiresAt && expiresAt.getTime() < Date.now() + 60000 && refreshToken) {
     try {
-      const refreshed = provider === 'google_sheets' ? await googleSheets.refreshAccessToken(refreshToken) : await microsoftExcel.refreshAccessToken(refreshToken);
+      const adapter = getIntegrationProvider(provider);
+      if (!adapter?.refreshAccessToken) return null;
+      const refreshed = await adapter.refreshAccessToken(refreshToken);
       accessToken = refreshed.access_token;
       const update = { access_token: encrypt(accessToken), updated_at: new Date() };
       if (refreshed.expires_at) update.expires_at = refreshed.expires_at;
@@ -2804,6 +2809,106 @@ async function getOrRefreshIntegrationTokens(userId, provider) {
     }
   }
   return accessToken;
+}
+
+function getMetricConnectedUserId(metric) {
+  const fromConfig = metric?.integration_config?.connected_user_id;
+  return fromConfig || metric?.user_id || null;
+}
+
+function createIntegrationSyncError(message, code = 'SYNC_ERROR') {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function fetchIntegrationRows(provider, accessToken, integrationConfig) {
+  const adapter = getIntegrationProvider(provider);
+  if (!adapter?.fetchMetricRows) {
+    throw createIntegrationSyncError(`Unsupported integration provider: ${provider}`, 'UNSUPPORTED_PROVIDER');
+  }
+
+  return adapter.fetchMetricRows({
+    accessToken,
+    integrationConfig,
+  });
+}
+
+async function syncMetricFromIntegration(metric, options = {}) {
+  if (!metric) throw createIntegrationSyncError('Metric not found', 'METRIC_NOT_FOUND');
+
+  const provider = metric.data_source;
+  const integrationConfig = metric.integration_config;
+  if (!integrationConfig || typeof integrationConfig !== 'object' || !INTEGRATION_PROVIDERS.includes(provider)) {
+    throw createIntegrationSyncError('Metric is not linked to an integration', 'NOT_INTEGRATION');
+  }
+
+  const connectedUserId = getMetricConnectedUserId(metric);
+  if (!connectedUserId) {
+    throw createIntegrationSyncError('Metric has no connected integration owner', 'INTEGRATION_OWNER_MISSING');
+  }
+
+  const accessToken = await getOrRefreshIntegrationTokens(connectedUserId, provider);
+  if (!accessToken) {
+    throw createIntegrationSyncError('Please reconnect your account', 'INTEGRATION_DISCONNECTED');
+  }
+
+  const rows = await fetchIntegrationRows(provider, accessToken, integrationConfig);
+  const updates = mapRowsToMetric(metric.type, rows);
+  const updatePayload = { updated_at: new Date(), ...updates };
+  const { data: updated, error } = await supabaseAdmin.from('metrics').update(updatePayload).eq('id', metric.id).select().single();
+  if (error) throw error;
+
+  if (options.onSynced) {
+    await options.onSynced({ metric, updated, provider, connectedUserId });
+  }
+
+  return updated;
+}
+
+async function runNightlyMetricAutoSync() {
+  const { data: metrics, error } = await supabaseAdmin
+    .from('metrics')
+    .select('id, name, type, data_source, integration_config, user_id, workspace_id')
+    .in('data_source', INTEGRATION_PROVIDERS)
+    .not('integration_config', 'is', null);
+
+  if (error) throw error;
+
+  const summary = {
+    scanned: (metrics || []).length,
+    synced: 0,
+    failed: 0,
+    providers: {},
+    errors: [],
+  };
+
+  for (const metric of metrics || []) {
+    const provider = metric.data_source;
+    summary.providers[provider] = summary.providers[provider] || { synced: 0, failed: 0 };
+
+    try {
+      await syncMetricFromIntegration(metric);
+      summary.synced += 1;
+      summary.providers[provider].synced += 1;
+    } catch (err) {
+      summary.failed += 1;
+      summary.providers[provider].failed += 1;
+      summary.errors.push({
+        metricId: metric.id,
+        provider,
+        error: err?.message || 'Unknown error',
+      });
+      logSystemError(err, `metric auto-sync ${metric.id}`);
+      console.error(`[metric-auto-sync] Failed to sync metric ${metric.id}:`, err);
+    }
+  }
+
+  if (summary.errors.length > 20) {
+    summary.errors = summary.errors.slice(0, 20);
+  }
+
+  return summary;
 }
 
 function cleanModelJson(text) {
@@ -3182,10 +3287,10 @@ app.get('/api/integrations/:provider/authorize', async (req, res) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const state = createIntegrationState(user.id, returnPath);
+    const adapter = getIntegrationProvider(provider);
+    if (!adapter?.authorize) return res.status(400).json({ status: 'error', message: 'Invalid provider' });
     const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${API_PUBLIC_ORIGIN}/api/integrations/${provider}/callback`;
-    const url = provider === 'google_sheets'
-      ? googleSheets.getAuthorizeUrl(redirectUri, state)
-      : microsoftExcel.getAuthorizeUrl(redirectUri, state);
+    const url = adapter.authorize(redirectUri, state);
     return res.json({ status: 'success', redirectUrl: url });
   } catch (err) {
     logSystemError(err, 'GET /api/integrations/:provider/authorize');
@@ -3205,9 +3310,9 @@ app.get('/api/integrations/:provider/callback', async (req, res) => {
   const userId = verified.userId;
   const redirectUri = process.env[provider === 'google_sheets' ? 'GOOGLE_REDIRECT_URI' : 'MS_REDIRECT_URI'] || `${API_PUBLIC_ORIGIN}/api/integrations/${provider}/callback`;
   try {
-    const tokens = provider === 'google_sheets'
-      ? await googleSheets.exchangeCodeForTokens(code, redirectUri)
-      : await microsoftExcel.exchangeCodeForTokens(code, redirectUri);
+    const adapter = getIntegrationProvider(provider);
+    if (!adapter?.exchangeCodeForTokens) throw new Error('Invalid provider');
+    const tokens = await adapter.exchangeCodeForTokens(code, redirectUri);
     const row = {
       user_id: userId,
       provider,
@@ -3306,32 +3411,11 @@ app.post('/api/metrics/:id/sync', syncMetricRateLimit, async (req, res) => {
     if (!metric) return res.status(404).json({ error: 'Metric not found' });
     const workspaceIds = await getAccessibleWorkspaceIds(user.id);
     if (!workspaceIds.includes(metric.workspace_id)) return res.status(403).json({ error: 'Access denied' });
-    const cfg = metric.integration_config;
-    const provider = metric.data_source;
-    if (!cfg || !INTEGRATION_PROVIDERS.includes(provider)) return res.status(400).json({ status: 'error', code: 'NOT_INTEGRATION', message: 'Metric is not linked to an integration' });
-    const accessToken = await getOrRefreshIntegrationTokens(user.id, provider);
-    if (!accessToken) return res.status(401).json({ status: 'error', code: 'INTEGRATION_DISCONNECTED', message: 'Please reconnect your account' });
-    let rows;
-    if (provider === 'google_sheets') {
-      const spreadsheetId = cfg.spreadsheetId;
-      const range = normalizeRangeA1(cfg.range || 'Sheet1!A1:Z1000');
-      if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
-      rows = await googleSheets.fetchRange(accessToken, spreadsheetId, range);
-    } else {
-      const fileId = cfg.fileId;
-      const range = normalizeRangeA1(cfg.range || 'A1:Z1000');
-      const sheetName = cfg.sheetName || 'Sheet1';
-      if (!fileId) return res.status(400).json({ status: 'error', message: 'Missing fileId' });
-      rows = await microsoftExcel.fetchRange(accessToken, fileId, range, sheetName);
-    }
-    const updates = mapRowsToMetric(metric.type, rows);
-    const updatePayload = { updated_at: new Date(), ...updates };
-    const { data: updated, error } = await supabaseAdmin.from('metrics').update(updatePayload).eq('id', id).select().single();
-    if (error) throw error;
+    const updated = await syncMetricFromIntegration(metric);
     return res.json({ status: 'success', data: updated });
   } catch (err) {
     logSystemError(err, 'POST /api/metrics/:id/sync');
-    const code = err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR';
+    const code = err.code || (err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR');
     return res.status(400).json({ status: 'error', code, error: err.message });
   }
 });
@@ -3350,24 +3434,12 @@ app.post('/api/integrations/fetch-data', syncMetricRateLimit, async (req, res) =
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
     const accessToken = await getOrRefreshIntegrationTokens(user.id, provider);
     if (!accessToken) return res.status(401).json({ status: 'error', code: 'INTEGRATION_DISCONNECTED', message: 'Please reconnect your account' });
-    let rows;
-    if (provider === 'google_sheets') {
-      const spreadsheetId = cfg.spreadsheetId;
-      const range = normalizeRangeA1(cfg.range || 'Sheet1!A1:Z1000');
-      if (!spreadsheetId) return res.status(400).json({ status: 'error', message: 'Missing spreadsheetId' });
-      rows = await googleSheets.fetchRange(accessToken, spreadsheetId, range);
-    } else {
-      const fileId = cfg.fileId;
-      const range = normalizeRangeA1(cfg.range || 'A1:Z1000');
-      const sheetName = cfg.sheetName || 'Sheet1';
-      if (!fileId) return res.status(400).json({ status: 'error', message: 'Missing fileId' });
-      rows = await microsoftExcel.fetchRange(accessToken, fileId, range, sheetName);
-    }
+    const rows = await fetchIntegrationRows(provider, accessToken, cfg);
     const updates = mapRowsToMetric(type, rows);
     return res.json({ status: 'success', data: updates });
   } catch (err) {
     logSystemError(err, 'POST /api/integrations/fetch-data');
-    const code = err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR';
+    const code = err.code || (err.message && err.message.includes('reconnect') ? 'INTEGRATION_DISCONNECTED' : 'SYNC_ERROR');
     return res.status(400).json({ status: 'error', code, error: err.message });
   }
 });
@@ -5180,7 +5252,7 @@ const upload = multer({
     },
     fileFilter: (req, file, callback) => {
         if (!isAllowedInterviewUploadFile(file)) {
-            callback(createHttpError(415, 'Unsupported file type. Please upload an MP3, WAV, M4A, or MP4 file.', 'UNSUPPORTED_MEDIA_TYPE'));
+            callback(createHttpError(415, 'Unsupported file type. Please upload an MP3, WAV, M4A, MP4, or WEBM file.', 'UNSUPPORTED_MEDIA_TYPE'));
             return;
         }
 
@@ -5526,6 +5598,8 @@ const getInterviewSpeakerRole = (speaker) => {
 const formatFallbackSpeakerLabel = (speaker) => {
     const cleaned = String(speaker || '').trim();
     if (!cleaned) return null;
+    if (/^[a-zа-яіїєґ]$/i.test(cleaned)) return null;
+    if (/^(speaker|spk|voice|track|channel)[\s_-]*[a-z0-9]+$/i.test(cleaned)) return null;
     return cleaned
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
@@ -5594,6 +5668,63 @@ const getOpenAiTranscriptionResponseFormats = (model) => {
     }
 
     return ['json'];
+};
+
+const buildOpenAiRealtimeTranscriptionSession = ({
+    prompt = '',
+} = {}) => ({
+    type: 'transcription',
+    audio: {
+        input: {
+            transcription: {
+                model: process.env.OPENAI_REALTIME_TRANSCRIPTION_MODEL || DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL,
+                prompt,
+            },
+            turn_detection: {
+                type: 'server_vad',
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 500,
+            },
+            noise_reduction: null,
+        },
+    },
+    include: ['item.input_audio_transcription.logprobs'],
+});
+
+const createOpenAiRealtimeClientSecret = async ({
+    prompt = '',
+} = {}) => {
+    if (!process.env.OPENAI_API_KEY) {
+        throw new Error('OPENAI_API_KEY is not configured.');
+    }
+
+    const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            session: buildOpenAiRealtimeTranscriptionSession({ prompt }),
+        }),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(
+            payload?.error?.message
+            || payload?.message
+            || `OpenAI realtime client secret creation failed with status ${response.status}.`
+        );
+    }
+
+    const clientSecret = payload?.value || payload?.client_secret?.value || payload?.client_secret;
+    if (!clientSecret || typeof clientSecret !== 'string') {
+        throw new Error('OpenAI did not return a valid realtime client secret.');
+    }
+
+    return clientSecret;
 };
 
 const splitTranscriptIntoEntries = (text, durationSeconds = 0) => {
@@ -5862,15 +5993,15 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
     let transcriptionInputFile = file;
 
     try {
-        if (!process.env.GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY is not configured on the server.');
+        if (!process.env.OPENAI_API_KEY) {
+            throw new Error('OPENAI_API_KEY is not configured on the server.');
         }
 
         transcriptionInputFile = await normalizeInterviewUploadToMp3(file);
-        const geminiResult = await transcribeAudioWithGemini(transcriptionInputFile);
-        const newTranscriptData = geminiResult.transcript;
-        transcriptionSystemState = geminiResult.systemState;
-        console.info('[interview-upload] completed with Gemini transcription', {
+        const openAiResult = await transcribeAudioWithOpenAI(transcriptionInputFile);
+        const newTranscriptData = openAiResult.transcript;
+        transcriptionSystemState = openAiResult.systemState;
+        console.info('[interview-upload] completed with OpenAI transcription', {
             interviewId,
             model: transcriptionSystemState.model,
             provider: transcriptionSystemState.provider,
@@ -5980,6 +6111,42 @@ app.post('/api/interviews/:id/upload-audio', interviewUploadMiddleware, async (r
     }
 });
 
+app.post('/api/interviews/:id/realtime-token', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const { data: existing, error: fetchErr } = await supabaseAdmin.from('interviews')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Interview not found' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const clientSecret = await createOpenAiRealtimeClientSecret({
+            prompt: [
+                'This is a live user interview between an interviewer and a respondent.',
+                'Prefer a verbatim transcript.',
+                'Expect Ukrainian, English, and occasional Russian speech.',
+                'Expect product research, CX, journey mapping, and software terminology.',
+            ].join(' '),
+        });
+
+        res.json({ status: 'success', data: { clientSecret } });
+    } catch (err) {
+        logSystemError(err, `POST /api/interviews/${id}/realtime-token`);
+        res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
 // Налаштування для роздачі статики в продакшені (Клієнт і Адмінка)
 if (process.env.NODE_ENV === 'production') {
     // 1. Статика Клієнта (головний домен)
@@ -6013,4 +6180,9 @@ app.use((req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    initMetricAutoSyncScheduler({
+        supabaseAdmin,
+        runDailySync: runNightlyMetricAutoSync,
+        logger: console,
+    });
 });

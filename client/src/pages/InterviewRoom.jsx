@@ -33,9 +33,8 @@ const INSIGHT_PRESET_SECTIONS = {
 const DEFAULT_INSIGHT_PRESET = 'research_insights';
 const DEFAULT_INSIGHT_SECTIONS = [...INSIGHT_PRESET_SECTIONS[DEFAULT_INSIGHT_PRESET]];
 const INTERVIEW_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
-const SUPPORTED_UPLOAD_FILE_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4'];
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SUPPORTED_UPLOAD_FILE_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4', '.webm'];
+const LIVE_RECORDING_MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
 
 const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 const cleanString = (value) => typeof value === 'string' ? value.trim() : '';
@@ -49,7 +48,7 @@ const isSupportedUploadFile = (file) => {
   const mimeType = String(file.type || '').toLowerCase();
   return (
     SUPPORTED_UPLOAD_FILE_EXTENSIONS.includes(extension)
-    || ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'video/mp4'].includes(mimeType)
+    || ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/webm', 'video/webm', 'video/mp4'].includes(mimeType)
   );
 };
 const getInterviewUploadError = (interview) => {
@@ -65,6 +64,20 @@ const formatTranscriptTimestampForDisplay = (value) => {
   if (match) return match[1];
 
   return cleaned.replace(/([:,]\d{2})(?:[.,]\d+)$/, '$1');
+};
+
+const formatElapsedTimestamp = (elapsedMs) => {
+  const safeSeconds = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 1000)) : 0;
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  const mmss = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return hours > 0 ? `${String(hours).padStart(2, '0')}:${mmss}` : mmss;
+};
+
+const getLiveRecordingMimeType = () => {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return '';
+  return LIVE_RECORDING_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) || '';
 };
 
 const normalizeStringArray = (value, maxItems) =>
@@ -340,9 +353,19 @@ export default function InterviewRoom({ onLimitReached }) {
   
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
+  const [isLiveFinalizing, setIsLiveFinalizing] = useState(false);
+  const [liveFinalizeStage, setLiveFinalizeStage] = useState(1);
   const [micStream, setMicStream] = useState(null);
   const [systemStream, setSystemStream] = useState(null);
-  const recognitionRef = useRef(null);
+  const livePeerConnectionRef = useRef(null);
+  const liveDataChannelRef = useRef(null);
+  const liveMixedStreamRef = useRef(null);
+  const liveAudioContextRef = useRef(null);
+  const liveRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recordingStartedAtRef = useRef(null);
+  const livePartialTranscriptsRef = useRef(new Map());
+  const liveFinalizeTimersRef = useRef([]);
   
   // Transcript State
   const [transcriptData, setTranscriptData] = useState([]);
@@ -451,6 +474,156 @@ export default function InterviewRoom({ onLimitReached }) {
     setIsEditingTitle(false);
   };
 
+  const clearLiveFinalizeTimers = useCallback(() => {
+    liveFinalizeTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    liveFinalizeTimersRef.current = [];
+  }, []);
+
+  const startLiveFinalizeProgress = useCallback(() => {
+    clearLiveFinalizeTimers();
+    setIsLiveFinalizing(true);
+    setLiveFinalizeStage(1);
+    liveFinalizeTimersRef.current = [
+      window.setTimeout(() => setLiveFinalizeStage(2), 3000),
+      window.setTimeout(() => setLiveFinalizeStage(3), 12000),
+    ];
+  }, [clearLiveFinalizeTimers]);
+
+  const stopLiveFinalizeProgress = useCallback(() => {
+    clearLiveFinalizeTimers();
+    setIsLiveFinalizing(false);
+    setLiveFinalizeStage(1);
+  }, [clearLiveFinalizeTimers]);
+
+  const cleanupLiveRealtimeSession = useCallback(() => {
+    if (liveDataChannelRef.current) {
+      try {
+        liveDataChannelRef.current.close();
+      } catch {
+        // ignore
+      }
+    }
+    liveDataChannelRef.current = null;
+
+    if (livePeerConnectionRef.current) {
+      try {
+        livePeerConnectionRef.current.close();
+      } catch {
+        // ignore
+      }
+    }
+    livePeerConnectionRef.current = null;
+
+    if (liveRecorderRef.current) {
+      if (liveRecorderRef.current.state !== 'inactive') {
+        try {
+          liveRecorderRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      liveRecorderRef.current.ondataavailable = null;
+      liveRecorderRef.current = null;
+    }
+
+    if (liveMixedStreamRef.current) {
+      liveMixedStreamRef.current.getTracks().forEach((track) => track.stop());
+      liveMixedStreamRef.current = null;
+    }
+
+    if (liveAudioContextRef.current) {
+      liveAudioContextRef.current.close().catch(() => {});
+      liveAudioContextRef.current = null;
+    }
+
+    livePartialTranscriptsRef.current.clear();
+    recordedChunksRef.current = [];
+    recordingStartedAtRef.current = null;
+  }, []);
+
+  const handleRealtimeTranscriptionEvent = useCallback((payload) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    if (payload.type === 'conversation.item.input_audio_transcription.delta') {
+      const itemId = cleanString(payload.item_id) || 'live-draft';
+      const nextDraft = `${livePartialTranscriptsRef.current.get(itemId) || ''}${payload.delta || ''}`;
+      livePartialTranscriptsRef.current.set(itemId, nextDraft);
+      setCurrentLine(cleanString(nextDraft));
+      return;
+    }
+
+    if (payload.type === 'conversation.item.input_audio_transcription.completed') {
+      const itemId = cleanString(payload.item_id) || crypto.randomUUID();
+      const transcriptText = cleanString(payload.transcript || livePartialTranscriptsRef.current.get(itemId) || '');
+      livePartialTranscriptsRef.current.delete(itemId);
+      setCurrentLine('');
+
+      if (!transcriptText) return;
+
+      const newEntry = {
+        id: itemId,
+        speaker: 'Draft',
+        text: transcriptText,
+        timestamp: formatElapsedTimestamp(
+          recordingStartedAtRef.current ? Date.now() - recordingStartedAtRef.current : 0
+        ),
+      };
+
+      setTranscriptData((prev) => {
+        if (prev.some((entry) => entry.id === newEntry.id)) return prev;
+        const next = [...prev, newEntry];
+        transcriptDataRef.current = next;
+        return next;
+      });
+      return;
+    }
+
+    if (payload.type === 'error') {
+      console.error('OpenAI realtime transcription error', payload.error || payload);
+    }
+  }, []);
+
+  const waitForIceGatheringComplete = useCallback((peerConnection) => {
+    if (!peerConnection || peerConnection.iceGatheringState === 'complete') {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const handleStateChange = () => {
+        if (peerConnection.iceGatheringState !== 'complete') return;
+        peerConnection.removeEventListener('icegatheringstatechange', handleStateChange);
+        resolve();
+      };
+
+      peerConnection.addEventListener('icegatheringstatechange', handleStateChange);
+    });
+  }, []);
+
+  const createMixedAudioStream = useCallback((micInputStream, systemInputStream) => {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) {
+      throw new Error('AudioContext is not supported in this browser.');
+    }
+
+    const audioContext = new AudioContextCtor();
+    const destination = audioContext.createMediaStreamDestination();
+
+    if (micInputStream?.getAudioTracks().length) {
+      const micSource = audioContext.createMediaStreamSource(new MediaStream(micInputStream.getAudioTracks()));
+      micSource.connect(destination);
+    }
+
+    if (systemInputStream?.getAudioTracks().length) {
+      const systemSource = audioContext.createMediaStreamSource(new MediaStream(systemInputStream.getAudioTracks()));
+      systemSource.connect(destination);
+    }
+
+    return {
+      audioContext,
+      mixedStream: destination.stream,
+    };
+  }, []);
+
   const applyInsightPreset = (presetKey) => {
     const presetSections = INSIGHT_PRESET_SECTIONS[presetKey];
     if (!presetSections) return;
@@ -477,8 +650,15 @@ export default function InterviewRoom({ onLimitReached }) {
       const json = await res.json();
       if (res.ok && json.data) {
         setInterview(json.data);
-        setTranscriptData(json.data.transcript_data || []);
-        transcriptDataRef.current = json.data.transcript_data || [];
+        const nextTranscript = Array.isArray(json.data.transcript_data) ? json.data.transcript_data : [];
+        const shouldPreserveDraftTranscript = json.data.status === 'processing'
+          && nextTranscript.length === 0
+          && transcriptDataRef.current.length > 0;
+
+        if (!shouldPreserveDraftTranscript) {
+          setTranscriptData(nextTranscript);
+          transcriptDataRef.current = nextTranscript;
+        }
         return json.data;
       }
 
@@ -510,7 +690,7 @@ export default function InterviewRoom({ onLimitReached }) {
   }, [isInsightsConfigOpen, persistedInsightConfig]);
 
   useEffect(() => {
-    if (loading || !isUploadMode || !interviewStatus || interviewStatus !== 'processing') {
+    if (loading || !interviewStatus || interviewStatus !== 'processing') {
       return undefined;
     }
 
@@ -523,15 +703,21 @@ export default function InterviewRoom({ onLimitReached }) {
 
       if (data.status === 'completed' && Array.isArray(data.transcript_data) && data.transcript_data.length > 0) {
         uploadFailureShownRef.current = false;
-        setSelectedFile(null);
-        setUploadStage(1);
-        navigate(`/interviews/${id}`, { replace: true });
+        stopLiveFinalizeProgress();
+        if (isUploadMode) {
+          setSelectedFile(null);
+          setUploadStage(1);
+          navigate(`/interviews/${id}`, { replace: true });
+        }
         queryClient.invalidateQueries(['interviews']);
         return;
       }
 
       if (data.status === 'failed') {
-        setUploadStage(1);
+        stopLiveFinalizeProgress();
+        if (isUploadMode) {
+          setUploadStage(1);
+        }
         if (!uploadFailureShownRef.current) {
           uploadFailureShownRef.current = true;
           alert(getInterviewUploadError(data) || t('interviews.transcriptionFailed'));
@@ -551,53 +737,14 @@ export default function InterviewRoom({ onLimitReached }) {
         window.clearTimeout(timerId);
       }
     };
-  }, [fetchInterview, id, interviewStatus, isUploadMode, loading, navigate, queryClient, t]);
+  }, [fetchInterview, id, interviewStatus, isUploadMode, loading, navigate, queryClient, stopLiveFinalizeProgress, t]);
 
-  // Setup Speech Recognition
   useEffect(() => {
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'uk-UA'; // Default to Ukrainian as requested
-
-      recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-
-        if (finalTranscript) {
-          const newEntry = {
-            id: Date.now().toString(),
-            speaker: 'Interviewer', // For V1, default to Interviewer, user can edit
-            text: finalTranscript.trim(),
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          };
-          setTranscriptData(prev => {
-            const next = [...prev, newEntry];
-            transcriptDataRef.current = next; // Update ref for auto-save
-            return next;
-          });
-          setCurrentLine('');
-        } else {
-          setCurrentLine(interimTranscript);
-        }
-      };
-
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
-      };
-
-      recognitionRef.current = recognition;
-    }
-  }, []);
+    return () => {
+      stopLiveFinalizeProgress();
+      cleanupLiveRealtimeSession();
+    };
+  }, [cleanupLiveRealtimeSession, stopLiveFinalizeProgress]);
 
   // Auto-scroll only for live transcript updates and newly appended lines.
   useEffect(() => {
@@ -665,43 +812,145 @@ export default function InterviewRoom({ onLimitReached }) {
   }, [isDesktopLayout, isResizingInsights]);
 
   const startRecording = async () => {
+    let mStream = null;
+    let sStream = null;
+    let audioContext = null;
+    let mixedStream = null;
+    let recorder = null;
+    let peerConnection = null;
+    let dataChannel = null;
+
     try {
-      // Prompt for Mic
-      const mStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        sStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: true,
+        });
+      } catch (err) {
+        console.warn('User skipped screen share or browser blocked shared audio', err);
+        throw new Error('Screen sharing with audio is required for live interview transcription.');
+      }
+
+      if (!sStream?.getAudioTracks?.().length) {
+        sStream.getTracks().forEach((track) => track.stop());
+        throw new Error('Please share a browser tab or screen source with audio enabled.');
+      }
+      setSystemStream(sStream);
+
+      mStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       setMicStream(mStream);
 
-      // Prompt for System Audio (optional for MVP, building UI concept)
-      try {
-        const sStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        setSystemStream(sStream);
-      } catch (err) {
-        console.warn('User skipped system audio share', err);
+      const mixedAudio = createMixedAudioStream(mStream, sStream);
+      audioContext = mixedAudio.audioContext;
+      mixedStream = mixedAudio.mixedStream;
+      liveAudioContextRef.current = audioContext;
+      liveMixedStreamRef.current = mixedStream;
+
+      const recordingMimeType = getLiveRecordingMimeType();
+      recordedChunksRef.current = [];
+      recorder = recordingMimeType
+        ? new MediaRecorder(mixedStream, { mimeType: recordingMimeType })
+        : new MediaRecorder(mixedStream);
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start();
+      liveRecorderRef.current = recorder;
+
+      peerConnection = new RTCPeerConnection();
+      mixedStream.getAudioTracks().forEach((track) => {
+        peerConnection.addTrack(track, mixedStream);
+      });
+
+      dataChannel = peerConnection.createDataChannel('oai-events');
+      dataChannel.onmessage = (event) => {
+        try {
+          handleRealtimeTranscriptionEvent(JSON.parse(event.data));
+        } catch (error) {
+          console.error('Failed to parse OpenAI realtime event', error);
+        }
+      };
+      dataChannel.onerror = (event) => {
+        console.error('OpenAI realtime data channel error', event);
+      };
+      liveDataChannelRef.current = dataChannel;
+
+      peerConnection.onconnectionstatechange = () => {
+        if (['failed', 'closed'].includes(peerConnection.connectionState)) {
+          console.warn('OpenAI realtime connection closed', peerConnection.connectionState);
+        }
+      };
+      livePeerConnectionRef.current = peerConnection;
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      await waitForIceGatheringComplete(peerConnection);
+
+      const token = await getAuthToken();
+      const tokenResponse = await fetch(`${API_URL}/interviews/${id}/realtime-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+
+      const tokenJson = await tokenResponse.json();
+      if (!tokenResponse.ok || !tokenJson?.data?.clientSecret) {
+        throw new Error(tokenJson?.message || tokenJson?.error || 'Could not initialize live transcription.');
       }
 
-      setIsRecording(true);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch {
-          // already started
-        }
+      const openAiSdpResponse = await fetch('https://api.openai.com/v1/realtime/calls', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${tokenJson.data.clientSecret}`,
+          'Content-Type': 'application/sdp',
+        },
+        body: peerConnection.localDescription?.sdp || offer.sdp,
+      });
+
+      const answerSdp = await openAiSdpResponse.text();
+      if (!openAiSdpResponse.ok) {
+        throw new Error(answerSdp || 'Could not establish the OpenAI realtime connection.');
       }
+
+      await peerConnection.setRemoteDescription({
+        type: 'answer',
+        sdp: answerSdp,
+      });
+
+      recordingStartedAtRef.current = Date.now();
+      setCurrentLine('');
+      setIsRecording(true);
     } catch (err) {
       console.error('Error starting recording:', err);
-      alert('Microphone access is required to transcribe.');
+      cleanupLiveRealtimeSession();
+      if (mStream) mStream.getTracks().forEach((track) => track.stop());
+      if (sStream) sStream.getTracks().forEach((track) => track.stop());
+      if (mixedStream) mixedStream.getTracks().forEach((track) => track.stop());
+      if (audioContext) audioContext.close().catch(() => {});
+      if (peerConnection) peerConnection.close();
+      if (dataChannel) {
+        try {
+          dataChannel.close();
+        } catch {
+          // ignore
+        }
+      }
+      setMicStream(null);
+      setSystemStream(null);
+      setIsRecording(false);
+      alert(err?.message || 'We could not start live transcription. Please allow microphone access and shared audio, then try again.');
     }
-  };
-
-  const stopRecording = () => {
-    setIsRecording(false);
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    if (micStream) micStream.getTracks().forEach(track => track.stop());
-    if (systemStream) systemStream.getTracks().forEach(track => track.stop());
-    setMicStream(null);
-    setSystemStream(null);
-    saveInterview();
   };
 
   const saveInterview = useCallback(async (updates = {}, dataToSave = transcriptDataRef.current) => {
@@ -730,6 +979,83 @@ export default function InterviewRoom({ onLimitReached }) {
       setSaving(false);
     }
   }, [id, queryClient]);
+
+  const uploadLiveRecording = useCallback(async (audioBlob) => {
+    if (!audioBlob || audioBlob.size === 0) {
+      stopLiveFinalizeProgress();
+      alert('We could not capture the interview audio for final transcription. Please try recording again.');
+      return;
+    }
+
+    const fileExtension = audioBlob.type.includes('mp4') ? 'm4a' : 'webm';
+    const fileName = `interview-live-${id}.${fileExtension}`;
+    const formData = new FormData();
+    formData.append('audio', new File([audioBlob], fileName, { type: audioBlob.type || 'audio/webm' }));
+
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/interviews/${id}/upload-audio`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+      if ((res.status === 202 || res.ok) && json.data) {
+        setInterview(json.data);
+        queryClient.invalidateQueries(['interviews']);
+        return;
+      }
+
+      stopLiveFinalizeProgress();
+      alert(json.error || json.message || t('interviews.transcriptionFailed'));
+    } catch (err) {
+      console.error('Live recording upload error:', err);
+      stopLiveFinalizeProgress();
+      alert('We saved the draft transcript, but the final audio upload failed. Please try again.');
+    }
+  }, [id, queryClient, stopLiveFinalizeProgress, t]);
+
+  const stopRecording = useCallback(async () => {
+    setIsRecording(false);
+    setCurrentLine('');
+    startLiveFinalizeProgress();
+
+    const recorder = liveRecorderRef.current;
+    const recorderMimeType = recorder?.mimeType || getLiveRecordingMimeType() || 'audio/webm';
+    const recorderStopPromise = new Promise((resolve) => {
+      if (!recorder || recorder.state === 'inactive') {
+        resolve(
+          recordedChunksRef.current.length
+            ? new Blob(recordedChunksRef.current, { type: recorderMimeType })
+            : null
+        );
+        return;
+      }
+
+      const handleStop = () => {
+        resolve(
+          recordedChunksRef.current.length
+            ? new Blob(recordedChunksRef.current, { type: recorderMimeType })
+            : null
+        );
+      };
+
+      recorder.addEventListener('stop', handleStop, { once: true });
+      recorder.stop();
+    });
+
+    await saveInterview({}, transcriptDataRef.current);
+    const audioBlob = await recorderStopPromise;
+    cleanupLiveRealtimeSession();
+    if (micStream) micStream.getTracks().forEach((track) => track.stop());
+    if (systemStream) systemStream.getTracks().forEach((track) => track.stop());
+    setMicStream(null);
+    setSystemStream(null);
+    await uploadLiveRecording(audioBlob);
+  }, [cleanupLiveRealtimeSession, micStream, saveInterview, startLiveFinalizeProgress, systemStream, uploadLiveRecording]);
 
   // Auto-save on unmount
   useEffect(() => {
@@ -836,6 +1162,7 @@ export default function InterviewRoom({ onLimitReached }) {
 
   const toggleSpeaker = (index) => {
     const updated = [...transcriptData];
+    if (updated[index]?.speaker === 'Draft') return;
     updated[index].speaker = updated[index].speaker === 'Interviewer' ? 'Respondent' : 'Interviewer';
     setTranscriptData(updated);
     transcriptDataRef.current = updated;
@@ -934,9 +1261,13 @@ export default function InterviewRoom({ onLimitReached }) {
   if (!interview) return null;
 
   const isCompleted = interview.status === 'completed';
+  const isLiveProcessing = !isUploadMode && (isLiveFinalizing || interview.status === 'processing');
   const isUploadProcessing = isUploadMode && transcriptData.length === 0 && (isUploading || interview.status === 'processing');
   const canConfigureInsights = transcriptData.length > 0 && !isRecording && !generatingAI;
   const selectedInsightsCount = selectedInsightSections.length;
+  const effectiveInterviewStatusLabel = isLiveProcessing && interview.status !== 'completed' && interview.status !== 'failed'
+    ? t('interviews.statusProcessing')
+    : interviewStatusLabel;
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white">
@@ -978,7 +1309,7 @@ export default function InterviewRoom({ onLimitReached }) {
                 )}
               </span>
               <span className={`px-2 py-0.5 rounded capitalize border ${isCompleted ? 'bg-green-50 text-green-700 border-green-200' : interview.status === 'failed' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-800 border-yellow-200'}`}>
-                {interviewStatusLabel}
+                {effectiveInterviewStatusLabel}
               </span>
               <span className="text-gray-500 whitespace-nowrap">{new Date(interview.created_at).toLocaleDateString()}</span>
             </div>
@@ -988,8 +1319,8 @@ export default function InterviewRoom({ onLimitReached }) {
         <div className="flex items-center gap-3">
           <button 
             onClick={() => saveInterview()}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            disabled={saving || isLiveProcessing}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             {saving ? t('interviews.saving') : t('interviews.save')}
@@ -998,7 +1329,8 @@ export default function InterviewRoom({ onLimitReached }) {
           {(!isRecording && !isUploadMode) && (
             <button 
               onClick={startRecording}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              disabled={isLiveProcessing}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Mic size={16} />
               {t('interviews.startInterview')}
@@ -1109,7 +1441,7 @@ export default function InterviewRoom({ onLimitReached }) {
               </div>
             </div>
           ) : (
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6">
+          <div className="relative flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6">
             {transcriptData.length === 0 && !currentLine && !isRecording && (
               <div className="h-full flex items-center justify-center text-gray-400">
                 <p>{t('interviews.pressStart')}</p>
@@ -1117,28 +1449,50 @@ export default function InterviewRoom({ onLimitReached }) {
             )}
 
             {transcriptData.map((entry, index) => {
-              const isInterviewer = entry.speaker === 'Interviewer';
+              const isDraftEntry = entry.speaker === 'Draft';
+              const isInterviewer = !isDraftEntry && entry.speaker === 'Interviewer';
               const isEditing = editingIndex === index;
+              const bubbleRowClass = isDraftEntry
+                ? 'mr-auto'
+                : isInterviewer
+                  ? 'mr-auto'
+                  : 'ml-auto flex-row-reverse';
+              const bubbleGroupClass = isDraftEntry
+                ? 'items-start'
+                : isInterviewer
+                  ? 'items-start'
+                  : 'items-end';
+              const bubbleClass = isDraftEntry
+                ? 'bg-white/80 border border-gray-200 text-gray-700 rounded-tl-none italic'
+                : isInterviewer
+                  ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
+                  : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none';
 
               return (
-                <div key={entry.id || index} className={`flex gap-4 max-w-3xl ${isInterviewer ? 'mr-auto' : 'ml-auto flex-row-reverse'}`}>
+                <div key={entry.id || index} className={`flex gap-4 max-w-3xl ${bubbleRowClass}`}>
                   {/* Avatar */}
-                  <button 
-                    onClick={() => toggleSpeaker(index)}
-                    title="Click to toggle speaker"
-                    className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-transform hover:scale-105 ${isInterviewer ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-600'}`}
-                  >
-                    {isInterviewer ? <Mic size={18} /> : <Volume2 size={18} />}
-                  </button>
+                  {isDraftEntry ? (
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-sm bg-gray-100 text-gray-500">
+                      <FileAudio size={18} />
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={() => toggleSpeaker(index)}
+                      title="Click to toggle speaker"
+                      className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-transform hover:scale-105 ${isInterviewer ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-600'}`}
+                    >
+                      {isInterviewer ? <Mic size={18} /> : <Volume2 size={18} />}
+                    </button>
+                  )}
 
                   {/* Bubble */}
-                  <div className={`group flex flex-col gap-1 ${isInterviewer ? 'items-start' : 'items-end'}`}>
+                  <div className={`group flex flex-col gap-1 ${bubbleGroupClass}`}>
                     <div className="flex items-center gap-2 text-xs text-gray-500 px-1">
-                      <span className="font-semibold">{entry.speaker}</span>
+                      <span className="font-semibold">{isDraftEntry ? t('interviews.liveTranscript') : entry.speaker}</span>
                       <span>{formatTranscriptTimestampForDisplay(entry.timestamp)}</span>
                     </div>
                     
-                    <div className={`px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed ${isInterviewer ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none' : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none'}`}>
+                    <div className={`px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed ${bubbleClass}`}>
                       {isEditing ? (
                         <div className="flex flex-col gap-2 min-w-[250px]">
                           <textarea 
@@ -1188,8 +1542,8 @@ export default function InterviewRoom({ onLimitReached }) {
                 </div>
                 <div className="flex flex-col gap-1 items-start">
                   <div className="flex items-center gap-2 text-xs text-gray-500 px-1">
-                    <span className="font-semibold">Interviewer</span>
-                    <span className="animate-pulse">listening...</span>
+                    <span className="font-semibold">{t('interviews.liveTranscript')}</span>
+                    <span className="animate-pulse">{t('interviews.listening')}</span>
                   </div>
                   <div className="px-5 py-3 rounded-2xl shadow-sm text-sm/relaxed bg-white/70 border border-gray-200 text-gray-600 rounded-tl-none italic">
                     {currentLine}
@@ -1198,6 +1552,30 @@ export default function InterviewRoom({ onLimitReached }) {
               </div>
             )}
             <div ref={transcriptEndRef} />
+            {isLiveProcessing && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/45 backdrop-blur-md">
+                <div className="mx-6 w-full max-w-lg rounded-[28px] border border-white/70 bg-white/80 p-7 shadow-[0_24px_80px_rgba(15,23,42,0.16)]">
+                  <div className="flex items-start gap-4">
+                    <div className="relative mt-0.5 flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 shadow-inner">
+                      <div className="absolute inset-0 rounded-full bg-amber-200/60 blur-lg animate-pulse"></div>
+                      <Loader2 size={26} className="animate-spin relative z-10" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-semibold tracking-tight text-gray-900">
+                        {liveFinalizeStage === 1 && t('interviews.uploadStage1')}
+                        {liveFinalizeStage === 2 && t('interviews.uploadStage2')}
+                        {liveFinalizeStage === 3 && t('interviews.uploadStage3')}
+                      </h3>
+                      <p className="mt-1.5 text-sm leading-6 text-gray-500">
+                        {liveFinalizeStage === 1 && t('interviews.uploadStage1Desc')}
+                        {liveFinalizeStage === 2 && t('interviews.uploadStage2Desc')}
+                        {liveFinalizeStage === 3 && t('interviews.uploadStage3Desc')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           )}
         </div>
