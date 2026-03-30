@@ -783,6 +783,7 @@
     "currentPlan": "Current Plan",
     "upgrade": "Upgrade",
     "downgrade": "Downgrade",
+    "paymentsSoonNotice": "Online plan upgrades are temporarily unavailable. Paid checkout will be available soon.",
     "contactSales": "Contact Sales",
     "needHelp": "Need help choosing?",
     "contactSalesLink": "Contact our sales team"

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 import { API_BASE_URL } from '../../config/api';
+import { PAYMENTS_ENABLED } from '../../config/features';
 
 const API_URL = API_BASE_URL;
 
@@ -115,6 +116,8 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                 {plans.map((plan) => {
                     const isCurrentPlan = Boolean(currentPlanName && plan.name === currentPlanName);
                     const isLowerTier = currentPlanTier > 0 && plan.tier < currentPlanTier;
+                    const isFreePlan = Number(plan.price_monthly ?? 0) === 0 && Number(plan.price_yearly ?? 0) === 0;
+                    const isPaymentDisabled = !PAYMENTS_ENABLED && !isFreePlan && !isCurrentPlan && !isLowerTier;
                     const style = getPlanStyle(plan.tier, isCurrentPlan);
                     const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly;
                     const period = billingCycle === 'monthly' ? t('pricing.perMonth') : t('pricing.perYear');
@@ -157,7 +160,7 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
 
                         <button 
                         onClick={() => {
-                            if (isCurrentPlan || isLowerTier) return;
+                            if (isCurrentPlan || isLowerTier || isPaymentDisabled) return;
                             const url = billingCycle === 'monthly' ? plan.checkout_url_monthly : plan.checkout_url_yearly;
                             if (url) {
                                 let target = url;
@@ -168,16 +171,28 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                                 window.open(target, '_blank', 'noopener,noreferrer');
                             }
                         }}
-                        disabled={isCurrentPlan || isLowerTier}
-                        className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn} ${(isCurrentPlan || isLowerTier) ? 'opacity-90' : ''}`}
+                        disabled={isCurrentPlan || isLowerTier || isPaymentDisabled}
+                        className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn} ${(isCurrentPlan || isLowerTier || isPaymentDisabled) ? 'opacity-90' : ''} ${isPaymentDisabled ? 'cursor-not-allowed' : ''}`}
                         >
-                        {isCurrentPlan ? t('pricing.currentPlan') : isLowerTier ? t('pricing.downgrade') : t('pricing.upgrade')}
+                        {isCurrentPlan
+                          ? t('pricing.currentPlan')
+                          : isLowerTier
+                            ? t('pricing.downgrade')
+                            : isPaymentDisabled
+                              ? `${t('pricing.upgrade')} (${t('common.soon')})`
+                              : t('pricing.upgrade')}
                         </button>
                     </div>
                     );
                 })}
             </div>
           )}
+
+          {!PAYMENTS_ENABLED ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {t('pricing.paymentsSoonNotice')}
+            </div>
+          ) : null}
           
           <div className="mt-12 text-center text-sm text-gray-400">
             {t('pricing.needHelp')} <a href="mailto:info@iterojm.com?subject=Pricing%20%2F%20plan%20inquiry" className="text-blue-600 hover:underline">{t('pricing.contactSalesLink')}</a>
