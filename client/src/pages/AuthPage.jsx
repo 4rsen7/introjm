@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import InfoModal from '../components/common/InfoModal';
 import { MS_EXCEL_DISABLED } from '../config/features';
 import { API_BASE_URL } from '../config/api';
-import { getActiveSession, persistStoredAuthState } from '../services/auth';
+import { persistStoredAuthState } from '../services/auth';
 
 const AuthPage = ({ onLogin }) => {
   const { t } = useTranslation();
@@ -33,6 +33,7 @@ const AuthPage = ({ onLogin }) => {
   const apiUrl = API_BASE_URL;
   const oauthProcessingRef = useRef(false);
   const processedAccessTokenRef = useRef(null);
+  const isRecoveryFlowRef = useRef(false);
 
   const finishSignedInUser = useCallback(async (sessionOverride = null) => {
     if (oauthProcessingRef.current) return;
@@ -85,13 +86,25 @@ const AuthPage = ({ onLogin }) => {
 
   // Listen for password recovery redirect from email link
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hash = window.location.hash || '';
+    const hasRecoveryParams = hash.includes('type=recovery') || params.get('type') === 'recovery';
+
+    if (hasRecoveryParams) {
+      isRecoveryFlowRef.current = true;
+      setShowSetPassword(true);
+      setShowForgotPassword(false);
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
+        isRecoveryFlowRef.current = true;
         setShowSetPassword(true);
         setShowForgotPassword(false);
         return;
       }
       if (event === 'SIGNED_IN') {
+        if (isRecoveryFlowRef.current) return;
         void finishSignedInUser(session || null);
       }
     });
@@ -108,16 +121,15 @@ const AuthPage = ({ onLogin }) => {
       return;
     }
     const hash = window.location.hash;
-    if (hash.includes('type=recovery')) return;
-
-    const hasOAuthParams = Boolean(hash) || params.has('code') || params.has('access_token') || params.has('refresh_token');
-    if (!hasOAuthParams) {
-      void getActiveSession().then((session) => {
-        if (!session) return;
-        void finishSignedInUser(session);
-      });
+    if (hash.includes('type=recovery') || params.get('type') === 'recovery') {
+      isRecoveryFlowRef.current = true;
+      setShowSetPassword(true);
+      setShowForgotPassword(false);
       return;
     }
+
+    const hasOAuthParams = Boolean(hash) || params.has('code') || params.has('access_token') || params.has('refresh_token');
+    if (!hasOAuthParams) return;
 
     void finishSignedInUser();
   }, [finishSignedInUser]);
@@ -317,6 +329,7 @@ const AuthPage = ({ onLogin }) => {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      isRecoveryFlowRef.current = false;
       window.history.replaceState(null, '', window.location.pathname);
       const { data } = await supabase.auth.getSession();
       const session = data?.session;

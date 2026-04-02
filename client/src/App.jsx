@@ -904,7 +904,22 @@ function App() {
         <Route path="/landing" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/en" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en`} />} />
         <Route path="/landing/en" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/en" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/en`} />} />
         <Route path="/landing/uk" element={IS_LOCAL_HOST || IS_LANDING_HOST ? <Navigate to="/uk" replace /> : <ExternalRedirect to={`${LANDING_ORIGIN}/uk`} />} />
-        <Route path="/auth" element={IS_LANDING_HOST ? <ExternalRedirect to={`${APP_ORIGIN}/auth`} /> : <AuthPage onLogin={() => navigate('/dashboard')} />} />
+        <Route
+          path="/auth"
+          element={
+            IS_LANDING_HOST
+              ? <ExternalRedirect to={`${APP_ORIGIN}/auth`} />
+              : !authReady
+                ? (
+                  <div className="min-h-screen flex items-center justify-center bg-white">
+                    <div className="w-8 h-8 border-2 border-gray-200 border-t-orange-600 rounded-full animate-spin"></div>
+                  </div>
+                )
+                : isAuthenticated
+                  ? <Navigate to="/dashboard" replace />
+                  : <AuthPage onLogin={() => navigate('/dashboard')} />
+          }
+        />
         <Route path="/export/journey/:id" element={<JourneyExportPage />} />
         <Route path="/terms" element={<Navigate to="/en/terms" replace />} />
         <Route path="/privacy" element={<Navigate to="/en/privacy" replace />} />
