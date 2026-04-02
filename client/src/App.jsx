@@ -306,6 +306,7 @@ function App() {
     && (
       location.hash.includes('type=recovery')
       || authSearchParams.get('type') === 'recovery'
+      || authSearchParams.get('flow') === 'recovery'
     );
 
   useEffect(() => {

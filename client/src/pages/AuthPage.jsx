@@ -88,7 +88,7 @@ const AuthPage = ({ onLogin }) => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hash = window.location.hash || '';
-    const hasRecoveryParams = hash.includes('type=recovery') || params.get('type') === 'recovery';
+    const hasRecoveryParams = hash.includes('type=recovery') || params.get('type') === 'recovery' || params.get('flow') === 'recovery';
 
     if (hasRecoveryParams) {
       isRecoveryFlowRef.current = true;
@@ -121,7 +121,7 @@ const AuthPage = ({ onLogin }) => {
       return;
     }
     const hash = window.location.hash;
-    if (hash.includes('type=recovery') || params.get('type') === 'recovery') {
+    if (hash.includes('type=recovery') || params.get('type') === 'recovery' || params.get('flow') === 'recovery') {
       isRecoveryFlowRef.current = true;
       setShowSetPassword(true);
       setShowForgotPassword(false);
@@ -302,7 +302,7 @@ const AuthPage = ({ onLogin }) => {
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
-        redirectTo: `${window.location.origin}/auth`
+        redirectTo: `${window.location.origin}/auth?flow=recovery`
       });
       if (error) throw error;
       setForgotPasswordSent(true);
