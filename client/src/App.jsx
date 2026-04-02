@@ -301,6 +301,12 @@ function App() {
   const [settingsTab, setSettingsTab] = useState('workspace');
   const navigationResetTimeoutRef = useRef(null);
   const mainContentRef = useRef(null);
+  const authSearchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const isRecoveryAuthFlow = location.pathname === '/auth'
+    && (
+      location.hash.includes('type=recovery')
+      || authSearchParams.get('type') === 'recovery'
+    );
 
   useEffect(() => {
     locationPathRef.current = location.pathname;
@@ -915,7 +921,7 @@ function App() {
                     <div className="w-8 h-8 border-2 border-gray-200 border-t-orange-600 rounded-full animate-spin"></div>
                   </div>
                 )
-                : isAuthenticated
+                : isAuthenticated && !isRecoveryAuthFlow
                   ? <Navigate to="/dashboard" replace />
                   : <AuthPage onLogin={() => navigate('/dashboard')} />
           }
