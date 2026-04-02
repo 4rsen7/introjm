@@ -1530,10 +1530,10 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-6 text-sm text-slate-400">
-            <Link to="/terms" className="transition hover:text-white">
+            <Link to={`/${currentLang}/terms`} className="transition hover:text-white">
               {t('landing.termsOfService')}
             </Link>
-            <Link to="/privacy" className="transition hover:text-white">
+            <Link to={`/${currentLang}/privacy`} className="transition hover:text-white">
               {t('landing.privacyPolicy')}
             </Link>
           </div>
