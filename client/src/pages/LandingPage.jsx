@@ -20,7 +20,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
-import { PAYMENTS_ENABLED } from '../config/features';
 import { getSeoPageCatalog, getSeoPageHref } from '../components/common/seoPageCatalog';
 
 const API_URL = API_BASE_URL;
@@ -979,10 +978,7 @@ function PricingCard({ plan, billingCycle, t, featured = false, authHref }) {
   const currency = plan.currency || 'USD';
   const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'UAH' ? '₴' : `${currency} `;
   const isEnterprise = (plan.name || '').toLowerCase().includes('enterprise');
-  const isFreePlan = Number(plan.price_monthly ?? 0) === 0 && Number(plan.price_yearly ?? 0) === 0;
-  const isPaidPlanDisabled = !PAYMENTS_ENABLED && !isFreePlan;
-  const defaultCtaLabel = isEnterprise ? t('landing.upgradeToEnterprise') : featured ? t('landing.upgradeToPro') : t('landing.signUpFree');
-  const ctaLabel = isPaidPlanDisabled ? `${defaultCtaLabel} (${t('common.soon')})` : defaultCtaLabel;
+  const ctaLabel = isEnterprise ? t('landing.upgradeToEnterprise') : featured ? t('landing.upgradeToPro') : t('landing.signUpFree');
 
   return (
     <div
@@ -1026,36 +1022,19 @@ function PricingCard({ plan, billingCycle, t, featured = false, authHref }) {
           </li>
         ))}
       </ul>
-      {isPaidPlanDisabled ? (
-        <button
-          type="button"
-          disabled
-          className={cn(
-            'mt-8 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition opacity-70 cursor-not-allowed',
-            featured
-              ? 'bg-white text-slate-950'
-              : isEnterprise
-                ? 'bg-slate-100 text-slate-950'
-                : 'border border-white/10 bg-white/[0.05] text-white'
-          )}
-        >
-          {ctaLabel}
-        </button>
-      ) : (
-        <a
-          href={authHref}
-          className={cn(
-            'mt-8 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition',
-            featured
-              ? 'bg-white text-slate-950 hover:bg-violet-50'
-              : isEnterprise
-                ? 'bg-slate-100 text-slate-950 hover:bg-white'
-                : 'border border-white/10 bg-white/[0.05] text-white hover:bg-white/[0.09]'
-          )}
-        >
-          {ctaLabel}
-        </a>
-      )}
+      <a
+        href={authHref}
+        className={cn(
+          'mt-8 inline-flex items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition',
+          featured
+            ? 'bg-white text-slate-950 hover:bg-violet-50'
+            : isEnterprise
+              ? 'bg-slate-100 text-slate-950 hover:bg-white'
+              : 'border border-white/10 bg-white/[0.05] text-white hover:bg-white/[0.09]'
+        )}
+      >
+        {ctaLabel}
+      </a>
     </div>
   );
 }

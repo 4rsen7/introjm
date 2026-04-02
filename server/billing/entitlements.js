@@ -115,6 +115,17 @@ function inferBillingInterval(subscription) {
     return null;
 }
 
+function buildStarterPeriodWindow(now = new Date()) {
+    const periodStart = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+    const periodEnd = new Date(periodStart.getTime());
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+    return {
+        currentPeriodStart: periodStart.toISOString(),
+        currentPeriodEnd: periodEnd.toISOString(),
+    };
+}
+
 function buildUsageSummary(used, limit) {
     const normalizedUsed = normalizeCount(used, 0);
     const normalizedLimit = normalizeLimit(limit);
@@ -360,23 +371,74 @@ async function getWorkspaceSubscriptionPlan(workspaceId, options = {}) {
         isSubscriptionCurrentlyValid(subscription, now)
     );
 
-    if (!validSubscription) return null;
+    let resolvedSubscription = validSubscription || null;
+    let plan = null;
 
-    const { data: plan, error: planError } = await supabaseAdmin
-        .from('plans')
-        .select('*')
-        .eq('id', validSubscription.plan_id)
-        .maybeSingle();
+    if (resolvedSubscription) {
+        const planResult = await supabaseAdmin
+            .from('plans')
+            .select('*')
+            .eq('id', resolvedSubscription.plan_id)
+            .maybeSingle();
 
-    if (planError) {
-        throw planError;
+        if (planResult.error) {
+            throw planResult.error;
+        }
+
+        plan = planResult.data || null;
     }
 
-    if (!plan) return null;
+    if (!resolvedSubscription || !plan) {
+        const starterPlanResult = await supabaseAdmin
+            .from('plans')
+            .select('*')
+            .ilike('name', 'Starter')
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+
+        if (starterPlanResult.error) {
+            throw starterPlanResult.error;
+        }
+
+        const starterPlan = starterPlanResult.data || null;
+        if (!starterPlan) return null;
+
+        const validStarterSubscription = (subscriptions || []).find((subscription) =>
+            subscription.plan_id === starterPlan.id && isSubscriptionCurrentlyValid(subscription, now)
+        );
+
+        if (validStarterSubscription) {
+            resolvedSubscription = validStarterSubscription;
+            plan = starterPlan;
+        } else {
+            const { currentPeriodStart, currentPeriodEnd } = buildStarterPeriodWindow(now);
+            const upsertStarterResult = await supabaseAdmin
+                .from('subscriptions')
+                .insert([{
+                    user_id: workspace.owner_id,
+                    plan_id: starterPlan.id,
+                    status: 'active',
+                    current_period_start: currentPeriodStart,
+                    current_period_end: currentPeriodEnd,
+                }])
+                .select('*')
+                .single();
+
+            if (upsertStarterResult.error) {
+                throw upsertStarterResult.error;
+            }
+
+            resolvedSubscription = upsertStarterResult.data;
+            plan = starterPlan;
+        }
+    }
+
+    if (!resolvedSubscription || !plan) return null;
 
     return {
         workspace,
-        subscription: validSubscription,
+        subscription: resolvedSubscription,
         plan,
     };
 }

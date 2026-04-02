@@ -31,5 +31,5 @@ export const PAYMENTS_ENABLED = true;
 ### What this flag does not affect
 
 - The pricing UI itself remains visible
-- Free plan entry points remain available
+- Landing page CTA buttons remain available
 - Backend billing code is not removed; this only hides paid checkout actions in the client
