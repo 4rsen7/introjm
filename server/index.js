@@ -63,6 +63,44 @@ const ADMIN_HOST = (() => {
 const APP_ROUTE_PREFIXES = ['/auth', '/dashboard', '/journeys', '/journey', '/personas', '/portraits', '/metrics', '/interviews', '/materials', '/settings', '/archive', '/export'];
 const isAppRoutePath = (path = '/') => APP_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
+function ensurePlaywrightBrowserExecutables(localBrowsersDir) {
+    if (!localBrowsersDir || !fs.existsSync(localBrowsersDir)) return;
+
+    const executableNames = new Set([
+        'chrome',
+        'chrome-headless-shell',
+        'headless_shell',
+    ]);
+
+    const visit = (currentPath) => {
+        let stat;
+        try {
+            stat = fs.statSync(currentPath);
+        } catch {
+            return;
+        }
+
+        if (stat.isDirectory()) {
+            for (const entry of fs.readdirSync(currentPath)) {
+                visit(path.join(currentPath, entry));
+            }
+            return;
+        }
+
+        if (!stat.isFile()) return;
+
+        const basename = path.basename(currentPath);
+        if (!executableNames.has(basename)) return;
+
+        const desiredMode = stat.mode | 0o755;
+        if (desiredMode !== stat.mode) {
+            fs.chmodSync(currentPath, desiredMode);
+        }
+    };
+
+    visit(localBrowsersDir);
+}
+
 const hostRedirects = {
   'www.iterojm.com': { origin: CANONICAL_ORIGIN, buildPath: (path) => path },
   'iterojm.vercel.app': { origin: CANONICAL_ORIGIN, buildPath: (path) => path },
@@ -1567,6 +1605,7 @@ app.post('/api/export/journeys/:id/pdf', async (req, res) => {
 
             if (hasProjectLocalBrowsers) {
                 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '0';
+                ensurePlaywrightBrowserExecutables(localBrowsersDir);
             }
         }
         const { chromium } = require('playwright');

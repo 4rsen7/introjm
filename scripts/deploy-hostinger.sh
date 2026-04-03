@@ -113,6 +113,14 @@ npm install --include=dev
 log "Installing Playwright Chromium runtime"
 npm run install:playwright:chromium
 
+PLAYWRIGHT_LOCAL_BROWSERS_DIR="$REPO_DIR/node_modules/playwright-core/.local-browsers"
+if [[ -d "$PLAYWRIGHT_LOCAL_BROWSERS_DIR" ]]; then
+  log "Ensuring Playwright browser binaries are executable"
+  while IFS= read -r browser_binary; do
+    chmod 755 "$browser_binary"
+  done < <(find "$PLAYWRIGHT_LOCAL_BROWSERS_DIR" -type f \( -name 'chrome-headless-shell' -o -name 'chrome' -o -name 'headless_shell' \))
+fi
+
 log "Building client and admin bundles"
 rm -rf "$REPO_DIR/server/public/client" "$REPO_DIR/server/public/admin"
 npm run build --workspace=client
