@@ -260,6 +260,9 @@ const OPENAI_TRANSCRIPTION_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_OPENAI_TRANSCRIPTION_TIMEOUT_MS = 3 * 60 * 1000;
 const DEFAULT_OPENAI_TRANSCRIPTION_MAX_ATTEMPTS = 1;
 const DEFAULT_GEMINI_TRANSCRIPTION_MAX_ATTEMPTS = 2;
+const DEFAULT_GEMINI_TRANSCRIPTION_TIMEOUT_MS = 6 * 60 * 1000;
+const DEFAULT_GEMINI_PRIMARY_MIN_DURATION_SECONDS = 5 * 60;
+const DEFAULT_GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_INTERVIEW_PROCESSING_STALE_MS = 30 * 60 * 1000;
 const DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE = '48k';
@@ -282,6 +285,24 @@ const GEMINI_TRANSCRIPTION_MAX_ATTEMPTS = (() => {
     return Number.isInteger(configuredAttempts) && configuredAttempts > 0
         ? configuredAttempts
         : DEFAULT_GEMINI_TRANSCRIPTION_MAX_ATTEMPTS;
+})();
+const GEMINI_TRANSCRIPTION_TIMEOUT_MS = (() => {
+    const configuredTimeout = Number(process.env.GEMINI_TRANSCRIPTION_TIMEOUT_MS);
+    return Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_GEMINI_TRANSCRIPTION_TIMEOUT_MS;
+})();
+const GEMINI_PRIMARY_MIN_DURATION_SECONDS = (() => {
+    const configuredDuration = Number(process.env.GEMINI_PRIMARY_MIN_DURATION_SECONDS);
+    return Number.isFinite(configuredDuration) && configuredDuration > 0
+        ? configuredDuration
+        : DEFAULT_GEMINI_PRIMARY_MIN_DURATION_SECONDS;
+})();
+const GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES = (() => {
+    const configuredSize = Number(process.env.GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES);
+    return Number.isFinite(configuredSize) && configuredSize > 0
+        ? configuredSize
+        : DEFAULT_GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES;
 })();
 const INTERVIEW_PROCESSING_STALE_MS = (() => {
     const configuredTimeout = Number(process.env.INTERVIEW_PROCESSING_STALE_MS);
@@ -930,6 +951,21 @@ async function fetchWithTimeout(url, options = {}, timeoutMs, timeoutMessage) {
             throw createTimeoutError(timeoutMessage || 'Request timed out.');
         }
         throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function runWithTimeout(operation, timeoutMs, timeoutMessage) {
+    let timeoutId = null;
+    const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(createTimeoutError(timeoutMessage || 'Operation timed out.'));
+        }, timeoutMs);
+    });
+
+    try {
+        return await Promise.race([operation, timeout]);
     } finally {
         clearTimeout(timeoutId);
     }
@@ -6064,6 +6100,51 @@ const isRetryableGeminiTranscriptionError = (error) => {
     return isRetryableTranscriptionTransportError(error);
 };
 
+const getTranscriptionFileSizeBytes = (file) => {
+    if (Number.isFinite(file?.sourceUploadSizeBytes)) return file.sourceUploadSizeBytes;
+    if (Number.isFinite(file?.size)) return file.size;
+    return null;
+};
+
+const getGeminiPrimarySelection = (file) => {
+    if (!process.env.GEMINI_API_KEY) {
+        return { shouldUse: false, reason: 'gemini_api_key_missing' };
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+        return { shouldUse: true, reason: 'openai_api_key_missing' };
+    }
+
+    const durationSeconds = Number(file?.measuredDurationSeconds);
+    if (Number.isFinite(durationSeconds) && durationSeconds >= GEMINI_PRIMARY_MIN_DURATION_SECONDS) {
+        return {
+            shouldUse: true,
+            reason: 'duration_threshold',
+            durationSeconds,
+            durationThresholdSeconds: GEMINI_PRIMARY_MIN_DURATION_SECONDS,
+        };
+    }
+
+    const fileSizeBytes = getTranscriptionFileSizeBytes(file);
+    if (!Number.isFinite(durationSeconds) && Number.isFinite(fileSizeBytes) && fileSizeBytes >= GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES) {
+        return {
+            shouldUse: true,
+            reason: 'file_size_threshold',
+            fileSizeBytes,
+            fileSizeThresholdBytes: GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES,
+        };
+    }
+
+    return {
+        shouldUse: false,
+        reason: 'below_threshold',
+        durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+        fileSizeBytes: Number.isFinite(fileSizeBytes) ? fileSizeBytes : null,
+        durationThresholdSeconds: GEMINI_PRIMARY_MIN_DURATION_SECONDS,
+        fileSizeThresholdBytes: GEMINI_PRIMARY_MIN_FILE_SIZE_BYTES,
+    };
+};
+
 const createEmptyTranscriptError = (provider) => {
     const error = new Error(`${provider} transcription returned an empty transcript.`);
     error.code = 'EMPTY_TRANSCRIPT';
@@ -6287,11 +6368,18 @@ const transcribeAudioWithGeminiRetry = async (file, { interviewId, openAiError }
 
     for (let attempt = 1; attempt <= GEMINI_TRANSCRIPTION_MAX_ATTEMPTS; attempt += 1) {
         try {
-            const result = await transcribeAudioWithGemini(file);
+            const result = await runWithTimeout(
+                transcribeAudioWithGemini(file),
+                GEMINI_TRANSCRIPTION_TIMEOUT_MS,
+                `Gemini transcription timed out after ${Math.round(GEMINI_TRANSCRIPTION_TIMEOUT_MS / 1000)} seconds.`
+            );
             if (!Array.isArray(result.transcript) || result.transcript.length === 0) {
                 throw createEmptyTranscriptError('Gemini');
             }
-            return result;
+            return {
+                ...result,
+                attemptCount: attempt,
+            };
         } catch (error) {
             lastError = error;
             const shouldRetry = isRetryableGeminiTranscriptionError(error)
@@ -6333,7 +6421,120 @@ const createCombinedTranscriptionError = (openAiError, fallbackError) => {
     return error;
 };
 
+const createPrimaryFallbackTranscriptionError = (primaryProvider, primaryError, fallbackProvider, fallbackError) => {
+    const error = new Error(
+        `${primaryProvider} transcription failed (${primaryError?.message || 'unknown error'}); `
+        + `${fallbackProvider} fallback failed (${fallbackError?.message || 'unknown error'}).`
+    );
+    error.cause = fallbackError;
+    return error;
+};
+
+const transcribeAudioWithGeminiPrimary = async (file, { interviewId, selection } = {}) => {
+    await logSystemEvent('info', 'Gemini selected as primary transcription provider', {
+        context: `ASYNC interview upload ${interviewId}`,
+        interviewId,
+        selection,
+        sourceUploadFileName: file?.sourceUploadName || file?.originalname || '',
+        sourceUploadFileSizeBytes: Number.isFinite(file?.sourceUploadSizeBytes) ? file.sourceUploadSizeBytes : null,
+        fileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+        mimeType: file?.mimetype || '',
+        durationSeconds: Number.isFinite(file?.measuredDurationSeconds) ? file.measuredDurationSeconds : null,
+        geminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+        geminiTimeoutMs: GEMINI_TRANSCRIPTION_TIMEOUT_MS,
+    });
+
+    try {
+        const geminiResult = await transcribeAudioWithGeminiRetry(file, { interviewId });
+        await logSystemEvent('info', 'Gemini primary transcription succeeded', {
+            context: `ASYNC interview upload ${interviewId}`,
+            interviewId,
+            selection,
+            provider: geminiResult.systemState?.provider || 'gemini',
+            model: geminiResult.systemState?.model || 'gemini-2.5-pro',
+            transcriptTurns: geminiResult.transcript.length,
+            geminiAttempts: geminiResult.attemptCount || null,
+            geminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+            sourceUploadFileName: file?.sourceUploadName || file?.originalname || '',
+            sourceUploadFileSizeBytes: Number.isFinite(file?.sourceUploadSizeBytes) ? file.sourceUploadSizeBytes : null,
+            fileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+            durationSeconds: Number.isFinite(file?.measuredDurationSeconds) ? file.measuredDurationSeconds : null,
+        });
+
+        return {
+            ...geminiResult,
+            systemState: {
+                ...geminiResult.systemState,
+                primaryProvider: 'gemini',
+                primarySelectionReason: selection?.reason || 'unknown',
+                primarySelectedAt: new Date().toISOString(),
+                geminiAttempts: geminiResult.attemptCount || null,
+                geminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+            },
+        };
+    } catch (geminiError) {
+        if (!process.env.OPENAI_API_KEY) {
+            throw geminiError;
+        }
+
+        await logSystemEvent('warning', 'Gemini primary transcription failed, falling back to OpenAI', {
+            context: `ASYNC interview upload ${interviewId}`,
+            interviewId,
+            selection,
+            geminiError: geminiError.message,
+            geminiErrorDetails: serializeErrorForLog(geminiError),
+            openAiMaxAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+        });
+
+        try {
+            const openAiResult = await transcribeAudioWithOpenAIRetry(file);
+            await logSystemEvent('warning', 'OpenAI transcription fallback succeeded after Gemini primary failed', {
+                context: `ASYNC interview upload ${interviewId}`,
+                interviewId,
+                selection,
+                fallbackFromProvider: 'gemini',
+                fallbackReason: geminiError.message,
+                geminiError: serializeErrorForLog(geminiError),
+                provider: openAiResult.systemState?.provider || 'openai',
+                model: openAiResult.systemState?.model || DEFAULT_OPENAI_TRANSCRIPTION_MODEL,
+                transcriptTurns: openAiResult.transcript.length,
+            });
+
+            return {
+                ...openAiResult,
+                systemState: {
+                    ...openAiResult.systemState,
+                    primaryProvider: 'gemini',
+                    fallbackFromProvider: 'gemini',
+                    fallbackReason: geminiError.message,
+                    fallbackAt: new Date().toISOString(),
+                    fallbackOpenAiAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+                },
+            };
+        } catch (openAiError) {
+            await logSystemEvent('error', 'OpenAI transcription fallback failed after Gemini primary failed', {
+                context: `ASYNC interview upload ${interviewId}`,
+                interviewId,
+                selection,
+                geminiError: geminiError.message,
+                geminiErrorDetails: serializeErrorForLog(geminiError),
+                openAiError: openAiError.message,
+                openAiErrorDetails: serializeErrorForLog(openAiError),
+            });
+            throw createPrimaryFallbackTranscriptionError('Gemini', geminiError, 'OpenAI', openAiError);
+        }
+    }
+};
+
 const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) => {
+    const geminiPrimarySelection = getGeminiPrimarySelection(file);
+    if (geminiPrimarySelection.shouldUse) {
+        return transcribeAudioWithGeminiPrimary(file, {
+            interviewId,
+            selection: geminiPrimarySelection,
+        });
+    }
+
     try {
         return await transcribeAudioWithOpenAIRetry(file);
     } catch (openAiError) {
@@ -6369,7 +6570,8 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
                 fallbackFromProvider: 'openai',
                 fallbackReason: openAiError.message,
                 openAiError: serializeErrorForLog(openAiError),
-                geminiAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+                geminiAttempts: geminiResult.attemptCount || null,
+                geminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
                 provider: geminiResult.systemState?.provider || 'gemini',
                 model: geminiResult.systemState?.model || 'gemini-2.5-pro',
                 transcriptTurns: geminiResult.transcript.length,
@@ -6387,6 +6589,7 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
                     fallbackReason: openAiError.message,
                     fallbackAt: new Date().toISOString(),
                     fallbackOpenAiAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+                    fallbackGeminiAttempts: geminiResult.attemptCount || null,
                     fallbackGeminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
                 },
             };
@@ -6398,7 +6601,7 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
                 openAiErrorDetails: serializeErrorForLog(openAiError),
                 geminiError: fallbackError.message,
                 geminiErrorDetails: serializeErrorForLog(fallbackError),
-                geminiAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+                geminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
             });
             throw createCombinedTranscriptionError(openAiError, fallbackError);
         }
@@ -6410,8 +6613,8 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
     let transcriptionInputFile = file;
 
     try {
-        if (!process.env.OPENAI_API_KEY) {
-            throw new Error('OPENAI_API_KEY is not configured on the server.');
+        if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
+            throw new Error('No transcription provider API key is configured on the server.');
         }
 
         transcriptionInputFile = await prepareInterviewUploadForTranscription(file);
