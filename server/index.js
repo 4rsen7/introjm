@@ -257,10 +257,31 @@ const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try upload
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
 const DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const OPENAI_TRANSCRIPTION_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const DEFAULT_OPENAI_TRANSCRIPTION_TIMEOUT_MS = 6 * 60 * 1000;
+const DEFAULT_OPENAI_TRANSCRIPTION_MAX_ATTEMPTS = 2;
+const DEFAULT_INTERVIEW_PROCESSING_STALE_MS = 30 * 60 * 1000;
 const DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE = '48k';
 const TRANSCRIPTION_EXTRACTED_AUDIO_SAMPLE_RATE = 16000;
 const TRANSCRIPTION_NORMALIZED_AUDIO_MIME_TYPE = 'audio/mpeg';
+const OPENAI_TRANSCRIPTION_TIMEOUT_MS = (() => {
+    const configuredTimeout = Number(process.env.OPENAI_TRANSCRIPTION_TIMEOUT_MS);
+    return Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_OPENAI_TRANSCRIPTION_TIMEOUT_MS;
+})();
+const OPENAI_TRANSCRIPTION_MAX_ATTEMPTS = (() => {
+    const configuredAttempts = Number(process.env.OPENAI_TRANSCRIPTION_MAX_ATTEMPTS);
+    return Number.isInteger(configuredAttempts) && configuredAttempts > 0
+        ? configuredAttempts
+        : DEFAULT_OPENAI_TRANSCRIPTION_MAX_ATTEMPTS;
+})();
+const INTERVIEW_PROCESSING_STALE_MS = (() => {
+    const configuredTimeout = Number(process.env.INTERVIEW_PROCESSING_STALE_MS);
+    return Number.isFinite(configuredTimeout) && configuredTimeout > 0
+        ? configuredTimeout
+        : DEFAULT_INTERVIEW_PROCESSING_STALE_MS;
+})();
 const INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = (() => {
     const configuredLimit = Number(process.env.INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES);
     return Number.isFinite(configuredLimit) && configuredLimit > 0
@@ -840,6 +861,73 @@ function sanitizeInterviewForClient(interview) {
     };
 }
 
+function parseIsoDateMs(value) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getInterviewProcessingStartedAtMs(interview) {
+    const systemState = getInterviewSystemState(interview?.summary_data);
+    return (
+        parseIsoDateMs(systemState.startedAt)
+        ?? parseIsoDateMs(interview?.updated_at)
+        ?? parseIsoDateMs(interview?.created_at)
+    );
+}
+
+function isInterviewProcessingStale(interview) {
+    if (!interview || getEffectiveInterviewStatus(interview) !== 'processing') return false;
+    const transcriptData = Array.isArray(interview.transcript_data) ? interview.transcript_data : [];
+    if (transcriptData.length > 0) return false;
+
+    const startedAtMs = getInterviewProcessingStartedAtMs(interview);
+    if (!Number.isFinite(startedAtMs)) return false;
+
+    return Date.now() - startedAtMs > INTERVIEW_PROCESSING_STALE_MS;
+}
+
+function createTimeoutError(message) {
+    const error = new Error(message);
+    error.code = 'REQUEST_TIMEOUT';
+    return error;
+}
+
+function serializeErrorForLog(error) {
+    if (!error) return null;
+    return {
+        name: error.name || null,
+        message: error.message || 'Unknown error',
+        code: error.code || null,
+        status: Number.isInteger(error.status) ? error.status : null,
+        causeName: error.cause?.name || null,
+        causeMessage: error.cause?.message || null,
+        causeCode: error.cause?.code || null,
+        stack: error.stack || null,
+    };
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs, timeoutMessage) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        controller.abort();
+    }, timeoutMs);
+
+    try {
+        return await fetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw createTimeoutError(timeoutMessage || 'Request timed out.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 function isInterviewStatusConstraintError(error) {
     if (!error) return false;
     return error.constraint === 'interviews_status_check' || String(error.message || '').includes('interviews_status_check');
@@ -887,7 +975,9 @@ async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates
         throw error;
     }
 
-    const currentSummaryData = existingSummaryData !== null ? existingSummaryData : null;
+    const currentSummaryData = extraUpdates.summary_data !== undefined
+        ? extraUpdates.summary_data
+        : (existingSummaryData !== null ? existingSummaryData : null);
     const currentSystemState = getInterviewSystemState(currentSummaryData);
     const fallbackSystemState = {
         ...currentSystemState,
@@ -1126,17 +1216,24 @@ app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
 
 // --- SYSTEM LOGGING HELPER ---
-async function logSystemError(error, context = '') {
+async function logSystemEvent(level, message, details = {}) {
     try {
         const { error: insertError } = await supabaseAdmin.from('system_logs').insert([{
-            level: 'error',
-            message: error.message || 'Unknown error',
-            details: { stack: error.stack, context }
+            level,
+            message,
+            details
         }]);
         if (insertError) throw insertError;
     } catch (e) {
-        console.error('Failed to log system error to DB:', e);
+        console.error('Failed to log system event to DB:', e);
     }
+}
+
+async function logSystemError(error, context = '') {
+    await logSystemEvent('error', error.message || 'Unknown error', {
+        ...serializeErrorForLog(error),
+        context,
+    });
 }
 
 // --- WORKSPACE ACCESS HELPERS (owner + member) ---
@@ -5023,6 +5120,19 @@ app.get('/api/interviews/:id', async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Interview not found or access denied' });
         }
 
+        if (isInterviewProcessingStale(interview)) {
+            const { data: failedInterview } = await updateInterviewStatusCompat(
+                interview.id,
+                'failed',
+                {
+                    upload_error_message: 'Transcription timed out. Please upload the audio again.',
+                    summary_data: interview.summary_data,
+                },
+                interview.summary_data
+            );
+            return res.json({ status: 'success', data: failedInterview });
+        }
+
         res.json({ status: 'success', data: sanitizeInterviewForClient(interview) });
     } catch (err) {
         logSystemError(err, `GET /api/interviews/${id}`);
@@ -5851,6 +5961,31 @@ const isOpenAiFileTooLargeError = (error) => {
     );
 };
 
+const isRetryableOpenAiTranscriptionError = (error) => {
+    if (!error) return false;
+    if (error.code === 'REQUEST_TIMEOUT' || error.code === 'EMPTY_TRANSCRIPT') return true;
+    if (isOpenAiFileTooLargeError(error)) return false;
+    if (Number.isInteger(error.status)) {
+        return error.status === 408 || error.status === 429 || error.status >= 500;
+    }
+
+    const message = String(error.message || '').toLowerCase();
+    return (
+        error.name === 'TypeError'
+        || message.includes('fetch failed')
+        || message.includes('socket')
+        || message.includes('network')
+        || message.includes('timeout')
+        || message.includes('timed out')
+    );
+};
+
+const createEmptyTranscriptError = (provider) => {
+    const error = new Error(`${provider} transcription returned an empty transcript.`);
+    error.code = 'EMPTY_TRANSCRIPT';
+    return error;
+};
+
 const transcribeAudioWithOpenAI = async (file) => {
     if (!process.env.OPENAI_API_KEY) {
         throw new Error('OPENAI_API_KEY is not configured.');
@@ -5874,13 +6009,18 @@ const transcribeAudioWithOpenAI = async (file) => {
     };
 
     const requestTranscription = async (responseFormat) => {
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        const response = await fetchWithTimeout(
+            'https://api.openai.com/v1/audio/transcriptions',
+            {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+                },
+                body: createForm(responseFormat),
             },
-            body: createForm(responseFormat),
-        });
+            OPENAI_TRANSCRIPTION_TIMEOUT_MS,
+            `OpenAI transcription timed out after ${Math.round(OPENAI_TRANSCRIPTION_TIMEOUT_MS / 1000)} seconds.`
+        );
 
         const rawText = await response.text();
         let payload = null;
@@ -6027,6 +6167,119 @@ const transcribeAudioWithGemini = async (file) => {
     }
 };
 
+const transcribeAudioWithOpenAIRetry = async (file) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= OPENAI_TRANSCRIPTION_MAX_ATTEMPTS; attempt += 1) {
+        try {
+            const result = await transcribeAudioWithOpenAI(file);
+            if (!Array.isArray(result.transcript) || result.transcript.length === 0) {
+                throw createEmptyTranscriptError('OpenAI');
+            }
+            return result;
+        } catch (error) {
+            lastError = error;
+            const shouldRetry = isRetryableOpenAiTranscriptionError(error)
+                && attempt < OPENAI_TRANSCRIPTION_MAX_ATTEMPTS;
+
+            if (!shouldRetry) {
+                throw error;
+            }
+
+            console.warn('[transcription:openai] retrying failed transcription request', {
+                attempt,
+                maxAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+                error: error.message,
+            });
+            await sleep(Math.min(1000 * attempt, 5000));
+        }
+    }
+
+    throw lastError || new Error('OpenAI transcription failed before a valid response was returned.');
+};
+
+const createCombinedTranscriptionError = (openAiError, fallbackError) => {
+    const error = new Error(
+        `OpenAI transcription failed (${openAiError?.message || 'unknown error'}); `
+        + `Gemini fallback failed (${fallbackError?.message || 'unknown error'}).`
+    );
+    error.cause = fallbackError;
+    return error;
+};
+
+const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) => {
+    try {
+        return await transcribeAudioWithOpenAIRetry(file);
+    } catch (openAiError) {
+        if (!isRetryableOpenAiTranscriptionError(openAiError)) {
+            throw openAiError;
+        }
+
+        if (!process.env.GEMINI_API_KEY) {
+            throw openAiError;
+        }
+
+        console.warn('[transcription] OpenAI failed, falling back to Gemini', {
+            interviewId,
+            error: openAiError.message,
+        });
+        await logSystemEvent('warning', 'OpenAI transcription fallback to Gemini', {
+            context: `ASYNC interview upload ${interviewId}`,
+            interviewId,
+            reason: openAiError.message,
+            openAiError: serializeErrorForLog(openAiError),
+            openAiAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+            sourceUploadFileName: file?.sourceUploadName || file?.originalname || '',
+            sourceUploadFileSizeBytes: Number.isFinite(file?.sourceUploadSizeBytes) ? file.sourceUploadSizeBytes : null,
+            normalizedFileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+            normalizedMimeType: file?.mimetype || '',
+        });
+
+        try {
+            const geminiResult = await transcribeAudioWithGemini(file);
+            if (!Array.isArray(geminiResult.transcript) || geminiResult.transcript.length === 0) {
+                throw createEmptyTranscriptError('Gemini');
+            }
+
+            await logSystemEvent('warning', 'Gemini transcription fallback succeeded', {
+                context: `ASYNC interview upload ${interviewId}`,
+                interviewId,
+                fallbackFromProvider: 'openai',
+                fallbackReason: openAiError.message,
+                openAiError: serializeErrorForLog(openAiError),
+                provider: geminiResult.systemState?.provider || 'gemini',
+                model: geminiResult.systemState?.model || 'gemini-2.5-pro',
+                transcriptTurns: geminiResult.transcript.length,
+                sourceUploadFileName: file?.sourceUploadName || file?.originalname || '',
+                sourceUploadFileSizeBytes: Number.isFinite(file?.sourceUploadSizeBytes) ? file.sourceUploadSizeBytes : null,
+                normalizedFileSizeBytes: Number.isFinite(file?.size) ? file.size : null,
+                durationSeconds: Number.isFinite(file?.measuredDurationSeconds) ? file.measuredDurationSeconds : null,
+            });
+
+            return {
+                ...geminiResult,
+                systemState: {
+                    ...geminiResult.systemState,
+                    fallbackFromProvider: 'openai',
+                    fallbackReason: openAiError.message,
+                    fallbackAt: new Date().toISOString(),
+                    fallbackOpenAiAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+                },
+            };
+        } catch (fallbackError) {
+            await logSystemEvent('error', 'Gemini transcription fallback failed', {
+                context: `ASYNC interview upload ${interviewId}`,
+                interviewId,
+                openAiError: openAiError.message,
+                openAiErrorDetails: serializeErrorForLog(openAiError),
+                geminiError: fallbackError.message,
+                geminiErrorDetails: serializeErrorForLog(fallbackError),
+            });
+            throw createCombinedTranscriptionError(openAiError, fallbackError);
+        }
+    }
+};
+
 const processInterviewAudioUpload = async ({ interviewId, file }) => {
     let transcriptionSystemState = null;
     let transcriptionInputFile = file;
@@ -6037,10 +6290,10 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
         }
 
         transcriptionInputFile = await normalizeInterviewUploadToMp3(file);
-        const openAiResult = await transcribeAudioWithOpenAI(transcriptionInputFile);
-        const newTranscriptData = openAiResult.transcript;
-        transcriptionSystemState = openAiResult.systemState;
-        console.info('[interview-upload] completed with OpenAI transcription', {
+        const transcriptionResult = await transcribeAudioWithProviderFallback(transcriptionInputFile, { interviewId });
+        const newTranscriptData = transcriptionResult.transcript;
+        transcriptionSystemState = transcriptionResult.systemState;
+        console.info('[interview-upload] completed transcription', {
             interviewId,
             model: transcriptionSystemState.model,
             provider: transcriptionSystemState.provider,
@@ -6070,12 +6323,16 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
             .eq('id', interviewId)
             .maybeSingle();
 
+        const failureSummaryData = transcriptionSystemState
+            ? withInterviewSystemState(latestInterview?.summary_data ?? null, transcriptionSystemState)
+            : (latestInterview?.summary_data ?? null);
+
         await updateInterviewStatusCompat(
             interviewId,
             'failed',
             {
                 upload_error_message: err.message || INTERVIEW_UPLOAD_ERROR_FALLBACK,
-                summary_data: withInterviewSystemState(latestInterview?.summary_data ?? null, transcriptionSystemState),
+                summary_data: failureSummaryData,
             },
             latestInterview?.summary_data ?? null
         );
@@ -6113,9 +6370,22 @@ app.post('/api/interviews/:id/upload-audio', interviewUploadMiddleware, async (r
             return res.status(409).json({ status: 'error', error: 'Transcription is already in progress for this interview.' });
         }
 
+        const uploadFile = {
+            path: req.file.path,
+            mimetype: req.file.mimetype,
+            originalname: req.file.originalname,
+            size: req.file.size,
+        };
+        const processingSystemState = {
+            uploadStatus: 'processing',
+            startedAt: new Date().toISOString(),
+            sourceUploadFileName: uploadFile.originalname || '',
+            sourceUploadFileSizeBytes: Number.isFinite(uploadFile.size) ? uploadFile.size : null,
+            sourceUploadMimeType: uploadFile.mimetype || '',
+        };
         const processingPayload = {
             transcript_data: [],
-            summary_data: null,
+            summary_data: withInterviewSystemState(null, processingSystemState),
             updated_at: new Date().toISOString()
         };
 
@@ -6125,13 +6395,6 @@ app.post('/api/interviews/:id/upload-audio', interviewUploadMiddleware, async (r
             processingPayload,
             existing.summary_data ?? null
         );
-
-        const uploadFile = {
-            path: req.file.path,
-            mimetype: req.file.mimetype,
-            originalname: req.file.originalname,
-            size: req.file.size,
-        };
 
         setImmediate(() => {
             processInterviewAudioUpload({
