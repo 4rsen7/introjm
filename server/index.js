@@ -259,6 +259,7 @@ const DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 const OPENAI_TRANSCRIPTION_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_OPENAI_TRANSCRIPTION_TIMEOUT_MS = 3 * 60 * 1000;
 const DEFAULT_OPENAI_TRANSCRIPTION_MAX_ATTEMPTS = 1;
+const DEFAULT_GEMINI_TRANSCRIPTION_MAX_ATTEMPTS = 2;
 const DEFAULT_INTERVIEW_PROCESSING_STALE_MS = 30 * 60 * 1000;
 const DEFAULT_INTERVIEW_UPLOAD_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TRANSCRIPTION_EXTRACTED_AUDIO_BITRATE = '48k';
@@ -275,6 +276,12 @@ const OPENAI_TRANSCRIPTION_MAX_ATTEMPTS = (() => {
     return Number.isInteger(configuredAttempts) && configuredAttempts > 0
         ? configuredAttempts
         : DEFAULT_OPENAI_TRANSCRIPTION_MAX_ATTEMPTS;
+})();
+const GEMINI_TRANSCRIPTION_MAX_ATTEMPTS = (() => {
+    const configuredAttempts = Number(process.env.GEMINI_TRANSCRIPTION_MAX_ATTEMPTS);
+    return Number.isInteger(configuredAttempts) && configuredAttempts > 0
+        ? configuredAttempts
+        : DEFAULT_GEMINI_TRANSCRIPTION_MAX_ATTEMPTS;
 })();
 const INTERVIEW_PROCESSING_STALE_MS = (() => {
     const configuredTimeout = Number(process.env.INTERVIEW_PROCESSING_STALE_MS);
@@ -6017,15 +6024,16 @@ const isOpenAiFileTooLargeError = (error) => {
     );
 };
 
-const isRetryableOpenAiTranscriptionError = (error) => {
+const isRetryableTranscriptionTransportError = (error) => {
     if (!error) return false;
     if (error.code === 'REQUEST_TIMEOUT' || error.code === 'EMPTY_TRANSCRIPT') return true;
-    if (isOpenAiFileTooLargeError(error)) return false;
     if (Number.isInteger(error.status)) {
         return error.status === 408 || error.status === 429 || error.status >= 500;
     }
 
     const message = String(error.message || '').toLowerCase();
+    const causeMessage = String(error.cause?.message || '').toLowerCase();
+    const causeCode = String(error.cause?.code || '').toLowerCase();
     return (
         error.name === 'TypeError'
         || message.includes('fetch failed')
@@ -6033,7 +6041,27 @@ const isRetryableOpenAiTranscriptionError = (error) => {
         || message.includes('network')
         || message.includes('timeout')
         || message.includes('timed out')
+        || causeMessage.includes('socket')
+        || causeMessage.includes('network')
+        || causeMessage.includes('timeout')
+        || causeCode === 'econnreset'
+        || causeCode === 'etimedout'
+        || causeCode === 'eai_again'
     );
+};
+
+const isRetryableOpenAiTranscriptionError = (error) => {
+    if (!error) return false;
+    if (isOpenAiFileTooLargeError(error)) return false;
+    return isRetryableTranscriptionTransportError(error);
+};
+
+const isRetryableGeminiTranscriptionError = (error) => {
+    if (!error) return false;
+    const message = String(error.message || '').toLowerCase();
+    if (message.includes('invalid transcript format')) return false;
+    if (message.includes('audio processing failed on gemini servers')) return false;
+    return isRetryableTranscriptionTransportError(error);
 };
 
 const createEmptyTranscriptError = (provider) => {
@@ -6254,6 +6282,48 @@ const transcribeAudioWithOpenAIRetry = async (file) => {
     throw lastError || new Error('OpenAI transcription failed before a valid response was returned.');
 };
 
+const transcribeAudioWithGeminiRetry = async (file, { interviewId, openAiError } = {}) => {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= GEMINI_TRANSCRIPTION_MAX_ATTEMPTS; attempt += 1) {
+        try {
+            const result = await transcribeAudioWithGemini(file);
+            if (!Array.isArray(result.transcript) || result.transcript.length === 0) {
+                throw createEmptyTranscriptError('Gemini');
+            }
+            return result;
+        } catch (error) {
+            lastError = error;
+            const shouldRetry = isRetryableGeminiTranscriptionError(error)
+                && attempt < GEMINI_TRANSCRIPTION_MAX_ATTEMPTS;
+
+            if (!shouldRetry) {
+                throw error;
+            }
+
+            console.warn('[transcription:gemini] retrying failed transcription fallback', {
+                interviewId,
+                attempt,
+                maxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+                error: error.message,
+            });
+            await logSystemEvent('warning', 'Gemini transcription fallback retrying', {
+                context: `ASYNC interview upload ${interviewId}`,
+                interviewId,
+                attempt,
+                maxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
+                openAiError: openAiError?.message || null,
+                openAiErrorDetails: serializeErrorForLog(openAiError),
+                geminiError: error.message,
+                geminiErrorDetails: serializeErrorForLog(error),
+            });
+            await sleep(Math.min(1000 * attempt, 5000));
+        }
+    }
+
+    throw lastError || new Error('Gemini transcription failed before a valid response was returned.');
+};
+
 const createCombinedTranscriptionError = (openAiError, fallbackError) => {
     const error = new Error(
         `OpenAI transcription failed (${openAiError?.message || 'unknown error'}); `
@@ -6292,17 +6362,14 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
         });
 
         try {
-            const geminiResult = await transcribeAudioWithGemini(file);
-            if (!Array.isArray(geminiResult.transcript) || geminiResult.transcript.length === 0) {
-                throw createEmptyTranscriptError('Gemini');
-            }
-
+            const geminiResult = await transcribeAudioWithGeminiRetry(file, { interviewId, openAiError });
             await logSystemEvent('warning', 'Gemini transcription fallback succeeded', {
                 context: `ASYNC interview upload ${interviewId}`,
                 interviewId,
                 fallbackFromProvider: 'openai',
                 fallbackReason: openAiError.message,
                 openAiError: serializeErrorForLog(openAiError),
+                geminiAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
                 provider: geminiResult.systemState?.provider || 'gemini',
                 model: geminiResult.systemState?.model || 'gemini-2.5-pro',
                 transcriptTurns: geminiResult.transcript.length,
@@ -6320,6 +6387,7 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
                     fallbackReason: openAiError.message,
                     fallbackAt: new Date().toISOString(),
                     fallbackOpenAiAttempts: OPENAI_TRANSCRIPTION_MAX_ATTEMPTS,
+                    fallbackGeminiMaxAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
                 },
             };
         } catch (fallbackError) {
@@ -6330,6 +6398,7 @@ const transcribeAudioWithProviderFallback = async (file, { interviewId } = {}) =
                 openAiErrorDetails: serializeErrorForLog(openAiError),
                 geminiError: fallbackError.message,
                 geminiErrorDetails: serializeErrorForLog(fallbackError),
+                geminiAttempts: GEMINI_TRANSCRIPTION_MAX_ATTEMPTS,
             });
             throw createCombinedTranscriptionError(openAiError, fallbackError);
         }
