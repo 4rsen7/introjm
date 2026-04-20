@@ -38,12 +38,12 @@ export default function PortraitGenerationModal({ isOpen, onClose, interviews = 
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedInterviewIds(availableInterviews[0]?.id ? [availableInterviews[0].id] : []);
+    setSelectedInterviewIds([]);
     setTitle('');
     setError('');
     setIsGenerating(false);
-    setExpandedFolderIds(['root', ...interviewFolders.map((folder) => folder.id)]);
-  }, [availableInterviews, interviewFolders, isOpen]);
+    setExpandedFolderIds([]);
+  }, [availableInterviews, isOpen]);
 
   if (!isOpen) return null;
 

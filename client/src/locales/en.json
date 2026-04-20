@@ -182,6 +182,7 @@
     "allInterviews": "All interviews",
     "noFolder": "No folder",
     "noFolders": "No folders yet",
+    "visibleInterviews": "shown",
     "deleteFolderTitle": "Delete folder?",
     "deleteFolderMessage": "Delete \"{{name}}\"? Interviews will stay in the list without a folder."
   },
