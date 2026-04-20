@@ -363,13 +363,13 @@ export default function InterviewsList({ interviews = [], folders = [], userProf
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="app-surface h-fit overflow-hidden rounded-2xl">
-          <div className="border-b border-gray-100 px-4 py-4">
+          <div className="border-b border-gray-100 px-5 py-4 lg:min-h-[88px]">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold text-gray-500">{t('interviews.folders')}</div>
-                <div className="mt-1 text-sm font-semibold text-gray-900">
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold tracking-tight text-gray-900">{t('interviews.folders')}</h2>
+                <p className="mt-1 text-sm font-medium text-gray-500">
                   {t('interviews.allInterviews')}
-                </div>
+                </p>
               </div>
               <Tooltip content={t('interviews.newFolder') || 'New folder'}>
                 <button
@@ -417,7 +417,7 @@ export default function InterviewsList({ interviews = [], folders = [], userProf
         </aside>
 
         <section className="app-surface min-w-0 overflow-hidden rounded-2xl">
-          <div className="border-b border-gray-100 px-5 py-4 lg:px-6">
+          <div className="border-b border-gray-100 px-5 py-4 lg:min-h-[88px] lg:px-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
