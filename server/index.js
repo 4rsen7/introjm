@@ -5105,6 +5105,167 @@ app.post(['/api/users-manage/assign-plan', '/api/admin/users/assign-plan'], asyn
 
 // --- РОУТИ ДЛЯ ІНТЕРВ'Ю (INTERVIEWS) ---
 
+const normalizeInterviewFolderName = (name) => String(name || '').trim().slice(0, 80);
+
+async function assertInterviewFolderAccess(folderId, workspaceId, workspaceIds) {
+    if (!folderId) return null;
+    const { data: folder, error } = await supabaseAdmin
+        .from('interview_folders')
+        .select('id, workspace_id')
+        .eq('id', folderId)
+        .single();
+    if (error || !folder) {
+        const notFound = new Error('Folder not found');
+        notFound.status = 404;
+        throw notFound;
+    }
+    if (!workspaceIds.includes(folder.workspace_id) || (workspaceId && folder.workspace_id !== workspaceId)) {
+        const accessDenied = new Error('Folder access denied');
+        accessDenied.status = 403;
+        throw accessDenied;
+    }
+    return folder;
+}
+
+app.get('/api/interview-folders', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        if (workspaceIds.length === 0) {
+            return res.json({ status: 'success', data: [] });
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('interview_folders')
+            .select('*')
+            .in('workspace_id', workspaceIds)
+            .order('created_at', { ascending: true });
+        if (error) throw error;
+
+        res.json({ status: 'success', data: data || [] });
+    } catch (err) {
+        logSystemError(err, 'GET /api/interview-folders');
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+app.post('/api/interview-folders', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { name, workspace_id: bodyWorkspaceId } = req.body;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const folderName = normalizeInterviewFolderName(name);
+        if (!folderName) return res.status(400).json({ status: 'error', message: 'Folder name is required' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        let workspace = null;
+        if (bodyWorkspaceId && workspaceIds.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId };
+        if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
+        if (!workspace) {
+            return res.status(403).json({ status: 'error', message: 'Create or join a workspace first' });
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('interview_folders')
+            .insert([{
+                name: folderName,
+                workspace_id: workspace.id,
+                user_id: user.id,
+            }])
+            .select()
+            .single();
+        if (error) throw error;
+
+        res.status(201).json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, 'POST /api/interview-folders');
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+app.put('/api/interview-folders/:id', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        const { data: existing, error: fetchErr } = await supabaseAdmin
+            .from('interview_folders')
+            .select('id, workspace_id')
+            .eq('id', id)
+            .single();
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Folder not found' });
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const folderName = normalizeInterviewFolderName(name);
+        if (!folderName) return res.status(400).json({ status: 'error', message: 'Folder name is required' });
+
+        const { data, error } = await supabaseAdmin
+            .from('interview_folders')
+            .update({ name: folderName, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+            .select()
+            .single();
+        if (error) throw error;
+
+        res.json({ status: 'success', data });
+    } catch (err) {
+        logSystemError(err, `PUT /api/interview-folders/${id}`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
+app.delete('/api/interview-folders/:id', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const { id } = req.params;
+    if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+
+        const workspaceIds = await getAccessibleWorkspaceIds(user.id);
+        const { data: existing, error: fetchErr } = await supabaseAdmin
+            .from('interview_folders')
+            .select('id, workspace_id')
+            .eq('id', id)
+            .single();
+        if (fetchErr || !existing) return res.status(404).json({ status: 'error', message: 'Folder not found' });
+        if (!workspaceIds.includes(existing.workspace_id)) return res.status(403).json({ status: 'error', message: 'Access denied' });
+
+        const { error: clearFolderError } = await supabaseAdmin
+            .from('interviews')
+            .update({ folder_id: null, updated_at: new Date().toISOString() })
+            .eq('folder_id', existing.id);
+        if (clearFolderError) throw clearFolderError;
+
+        const { error } = await supabaseAdmin
+            .from('interview_folders')
+            .delete()
+            .eq('id', existing.id);
+        if (error) throw error;
+
+        res.json({ status: 'success', message: 'Folder deleted successfully' });
+    } catch (err) {
+        logSystemError(err, `DELETE /api/interview-folders/${id}`);
+        res.status(500).json({ status: 'error', error: err.message });
+    }
+});
+
 // 1. Отримати всі інтерв'ю робочого простору
 app.get('/api/interviews', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
@@ -5186,20 +5347,23 @@ app.get('/api/interviews/:id', async (req, res) => {
 // 3. Створити інтерв'ю
 app.post('/api/interviews', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
-    const { title, status, transcript_data, workspace_id: bodyWorkspaceId, type } = req.body;
+    const { title, status, transcript_data, workspace_id: bodyWorkspaceId, type, folder_id } = req.body;
     if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
     try {
         const { data: { user }, error: authError } = await supabase.auth.getUser(token);
         if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
+        const accessibleWorkspaceIds = await getAccessibleWorkspaceIds(user.id);
         let workspace = null;
         if (bodyWorkspaceId) {
-            const allowed = await getAccessibleWorkspaceIds(user.id);
-            if (allowed.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId };
+            if (accessibleWorkspaceIds.includes(bodyWorkspaceId)) workspace = { id: bodyWorkspaceId };
         }
         if (!workspace) workspace = await getCurrentWorkspaceForUser(user.id);
         if (!workspace) return res.status(403).json({ status: 'error', message: 'Create or join a workspace first' });
+        const folder = folder_id
+            ? await assertInterviewFolderAccess(folder_id, workspace.id, accessibleWorkspaceIds)
+            : null;
 
         // PLAN LIMIT CHECK
         const interviewLimitCheck = await assertWorkspaceFeatureLimit(workspace.id, 'interviews');
@@ -5213,7 +5377,8 @@ app.post('/api/interviews', async (req, res) => {
             type: type || 'live',
             transcript_data: transcript_data || [],
             workspace_id: workspace.id,
-            user_id: user.id
+            user_id: user.id,
+            folder_id: folder?.id || null
         }]).select().single();
 
         if (error) throw error;
@@ -5247,7 +5412,7 @@ app.post('/api/interviews', async (req, res) => {
 app.put('/api/interviews/:id', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     const { id } = req.params;
-    const { title, status, transcript_data, summary_data, type } = req.body;
+    const { title, status, transcript_data, summary_data, type, folder_id } = req.body;
     if (!token) return res.status(401).json({ status: 'error', message: 'Unauthorized' });
 
     try {
@@ -5266,6 +5431,14 @@ app.put('/api/interviews/:id', async (req, res) => {
         if (type !== undefined) updates.type = type;
         if (transcript_data !== undefined) updates.transcript_data = transcript_data;
         if (summary_data !== undefined) updates.summary_data = summary_data;
+        if (folder_id !== undefined) {
+            if (folder_id === null || folder_id === '') {
+                updates.folder_id = null;
+            } else {
+                const folder = await assertInterviewFolderAccess(folder_id, existing.workspace_id, workspaceIds);
+                updates.folder_id = folder.id;
+            }
+        }
 
         const { data, error } = await supabaseAdmin.from('interviews').update(updates).eq('id', existing.id).select().single();
         if (error) throw error;

@@ -168,7 +168,22 @@
     "copyFailed": "Не вдалося скопіювати це речення. Спробуйте ще раз.",
     "deleteTitle": "Видалити інтерв'ю",
     "deleteMessage": "Ви впевнені, що хочете видалити \"{{title}}\"?",
-    "deleteConfirm": "Видалити"
+    "deleteConfirm": "Видалити",
+    "folders": "Папки",
+    "newFolder": "Нова папка",
+    "folderNamePrompt": "Назва папки",
+    "createFolderTitle": "Нова папка",
+    "createFolderDesc": "Згрупуйте інтервʼю за проєктом, сегментом або хвилею дослідження.",
+    "folderName": "Назва папки",
+    "folderNamePlaceholder": "Наприклад: Березневі інтервʼю",
+    "folderNameRequired": "Введіть назву папки.",
+    "folderCreateFailed": "Не вдалося створити папку. Спробуйте ще раз.",
+    "createFolderAction": "Створити папку",
+    "allInterviews": "Усі інтервʼю",
+    "noFolder": "Без папки",
+    "noFolders": "Папок ще немає",
+    "deleteFolderTitle": "Видалити папку?",
+    "deleteFolderMessage": "Видалити папку «{{name}}»? Інтервʼю залишаться в списку без папки."
   },
   "auth": {
     "welcomeBack": "З поверненням",

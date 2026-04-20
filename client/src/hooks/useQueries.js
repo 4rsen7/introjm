@@ -61,6 +61,11 @@ export const mapInterviewToClient = (i) => ({
   updatedAt: formatDate(i.updated_at || i.created_at),
 });
 
+export const mapInterviewFolderToClient = (folder) => ({
+  ...folder,
+  updatedAt: formatDate(folder.updated_at || folder.created_at),
+});
+
 export const mapLearningMaterialToClient = (material) => ({
   ...material,
   coverImageUrl: material.cover_image_url || '',
@@ -105,6 +110,18 @@ export const useInterviews = (enabled = true) => {
     queryFn: async () => {
       const data = await fetchData('/interviews');
       return data.map(mapInterviewToClient);
+    },
+    enabled,
+    refetchOnWindowFocus: true,
+  });
+};
+
+export const useInterviewFolders = (enabled = true) => {
+  return useQuery({
+    queryKey: ['interview_folders'],
+    queryFn: async () => {
+      const data = await fetchData('/interview-folders');
+      return data.map(mapInterviewFolderToClient);
     },
     enabled,
     refetchOnWindowFocus: true,

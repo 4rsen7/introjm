@@ -168,7 +168,22 @@
     "copyFailed": "Couldn't copy this sentence. Please try again.",
     "deleteTitle": "Delete Interview",
     "deleteMessage": "Are you sure you want to delete \"{{title}}\"?",
-    "deleteConfirm": "Delete"
+    "deleteConfirm": "Delete",
+    "folders": "Folders",
+    "newFolder": "New folder",
+    "folderNamePrompt": "Folder name",
+    "createFolderTitle": "New folder",
+    "createFolderDesc": "Group interviews by project, segment, or research wave.",
+    "folderName": "Folder name",
+    "folderNamePlaceholder": "Example: March interviews",
+    "folderNameRequired": "Enter a folder name.",
+    "folderCreateFailed": "Couldn't create the folder. Please try again.",
+    "createFolderAction": "Create folder",
+    "allInterviews": "All interviews",
+    "noFolder": "No folder",
+    "noFolders": "No folders yet",
+    "deleteFolderTitle": "Delete folder?",
+    "deleteFolderMessage": "Delete \"{{name}}\"? Interviews will stay in the list without a folder."
   },
   "auth": {
     "welcomeBack": "Welcome back",

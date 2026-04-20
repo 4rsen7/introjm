@@ -16,6 +16,7 @@ const Personas = ({
   personas = [],
   portraits = [],
   interviews = [],
+  interviewFolders = [],
   currentUserId,
   isWorkspaceOwner,
   onCreate,
@@ -512,6 +513,7 @@ const Personas = ({
         isOpen={isGeneratePortraitModalOpen}
         onClose={() => setIsGeneratePortraitModalOpen(false)}
         interviews={interviews}
+        interviewFolders={interviewFolders}
         onGenerate={onGeneratePortrait}
       />
     </div>

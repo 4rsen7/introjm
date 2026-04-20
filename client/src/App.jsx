@@ -32,7 +32,7 @@ import { clearStoredAuthState, getActiveSession, getAuthToken, persistStoredAuth
 import { API_BASE_URL } from './config/api'
 import { supabase } from './supabaseClient'
 import { useQueryClient } from '@tanstack/react-query'
-import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useLearningMaterials, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
+import { useJourneys, usePersonas, usePortraits, useMetrics, useInterviews, useInterviewFolders, useLearningMaterials, useWorkspaceList, useWorkspaceLimits, useProfile, mapPersonaToClient, mapMetricToClient } from './hooks/useQueries'
 
 const SELECTED_WORKSPACE_KEY = 'selectedWorkspaceId';
 
@@ -420,11 +420,15 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['portraits'] });
     } else if (path === '/metrics' || path.startsWith('/metrics')) {
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    } else if (path === '/interviews' || path.startsWith('/interviews/')) {
+      queryClient.invalidateQueries({ queryKey: ['interviews'] });
+      queryClient.invalidateQueries({ queryKey: ['interview_folders'] });
     } else if (path === '/archive') {
       queryClient.invalidateQueries({ queryKey: ['journeys'] });
       queryClient.invalidateQueries({ queryKey: ['personas'] });
       queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['interview_folders'] });
     }
   }, [location.pathname, queryClient]);
 
@@ -439,6 +443,7 @@ function App() {
       queryClient.invalidateQueries({ queryKey: ['personas'] });
       queryClient.invalidateQueries({ queryKey: ['portraits'] });
       queryClient.invalidateQueries({ queryKey: ['metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['interview_folders'] });
     }
   }, [authReady, isAuthenticated, queryClient]);
 
@@ -496,6 +501,8 @@ function App() {
     queryClient.invalidateQueries({ queryKey: ['personas'] });
     queryClient.invalidateQueries({ queryKey: ['portraits'] });
     queryClient.invalidateQueries({ queryKey: ['metrics'] });
+    queryClient.invalidateQueries({ queryKey: ['interviews'] });
+    queryClient.invalidateQueries({ queryKey: ['interview_folders'] });
     queryClient.invalidateQueries({ queryKey: ['workspace', 'limits'] });
   };
 
@@ -516,9 +523,14 @@ function App() {
     [globalMetrics, currentWorkspace]
   );
   const { data: globalInterviews = [] } = useInterviews(queriesEnabled);
+  const { data: globalInterviewFolders = [] } = useInterviewFolders(queriesEnabled);
   const filteredInterviews = useMemo(() =>
     currentWorkspace ? globalInterviews.filter((i) => i.workspace_id === currentWorkspace.id) : globalInterviews,
     [globalInterviews, currentWorkspace]
+  );
+  const filteredInterviewFolders = useMemo(() =>
+    currentWorkspace ? globalInterviewFolders.filter((folder) => folder.workspace_id === currentWorkspace.id) : globalInterviewFolders,
+    [globalInterviewFolders, currentWorkspace]
   );
 
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
@@ -1002,6 +1014,7 @@ function App() {
                 personas={personasWithUsage.filter(p => p.status !== 'archived')} 
                 portraits={filteredPortraits}
                 interviews={filteredInterviews}
+                interviewFolders={filteredInterviewFolders}
                 currentUserId={userProfile?.id}
                 isWorkspaceOwner={currentWorkspace?.role === 'owner'}
                 onCreate={() => { setEditingPersona(null); setIsPersonaModalOpen(true); }} 
@@ -1023,7 +1036,7 @@ function App() {
             <Route path="/metrics/:id" element={<MetricEditorWrapper metrics={filteredMetrics} currentUserId={userProfile?.id} onBack={() => navigate('/metrics')} onSave={handleSaveMetric} onSyncSuccess={() => queryClient.invalidateQueries(['metrics'])} />} />
             <Route path="/materials" element={<LearningMaterialsPage />} />
             <Route path="/materials/:slug" element={<LearningMaterialArticlePage />} />
-            <Route path="/interviews" element={<InterviewsList interviews={filteredInterviews} userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
+            <Route path="/interviews" element={<InterviewsList interviews={filteredInterviews} folders={filteredInterviewFolders} userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/interviews/:id" element={<InterviewRoom userProfile={userProfile} currentWorkspace={currentWorkspace} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/settings" element={<SettingsPage initialTab={settingsTab} workspace={currentWorkspace} onUpdateWorkspace={handleUpdateWorkspace} onDeleteWorkspace={handleDeleteWorkspace} userProfile={userProfile} onUpdateProfile={handleUpdateProfile} onOpenPricing={() => setShowPricingModal(true)} onLimitReached={(limit) => setLimitReached({ open: true, limit })} />} />
             <Route path="/archive" element={<ArchivePage 

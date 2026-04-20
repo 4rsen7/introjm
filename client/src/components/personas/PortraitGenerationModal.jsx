@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Sparkles, X } from 'lucide-react';
+import { ChevronDown, Folder, FolderOpen, Loader2, Sparkles, X } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
-export default function PortraitGenerationModal({ isOpen, onClose, interviews = [], onGenerate }) {
+export default function PortraitGenerationModal({ isOpen, onClose, interviews = [], interviewFolders = [], onGenerate }) {
   const { t } = useTranslation();
   useBodyScrollLock(isOpen);
 
@@ -16,6 +16,25 @@ export default function PortraitGenerationModal({ isOpen, onClose, interviews = 
   const [title, setTitle] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
+  const [expandedFolderIds, setExpandedFolderIds] = useState([]);
+
+  const interviewGroups = useMemo(() => {
+    const folderMap = new Map(interviewFolders.map((folder) => [folder.id, { ...folder, interviews: [] }]));
+    const rootGroup = { id: 'root', name: t('interviews.noFolder'), isRoot: true, interviews: [] };
+
+    availableInterviews.forEach((interview) => {
+      if (interview.folder_id && folderMap.has(interview.folder_id)) {
+        folderMap.get(interview.folder_id).interviews.push(interview);
+        return;
+      }
+      rootGroup.interviews.push(interview);
+    });
+
+    return [
+      rootGroup,
+      ...Array.from(folderMap.values()),
+    ].filter((group) => group.interviews.length > 0);
+  }, [availableInterviews, interviewFolders, t]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -23,7 +42,8 @@ export default function PortraitGenerationModal({ isOpen, onClose, interviews = 
     setTitle('');
     setError('');
     setIsGenerating(false);
-  }, [availableInterviews, isOpen]);
+    setExpandedFolderIds(['root', ...interviewFolders.map((folder) => folder.id)]);
+  }, [availableInterviews, interviewFolders, isOpen]);
 
   if (!isOpen) return null;
 
@@ -50,6 +70,25 @@ export default function PortraitGenerationModal({ isOpen, onClose, interviews = 
         ? current.filter((id) => id !== interviewId)
         : [...current, interviewId]
     ));
+  };
+
+  const toggleFolderExpanded = (folderId) => {
+    setExpandedFolderIds((current) => (
+      current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId]
+    ));
+  };
+
+  const toggleFolderSelection = (group) => {
+    const ids = group.interviews.map((interview) => interview.id);
+    const allSelected = ids.every((id) => selectedInterviewIds.includes(id));
+    setSelectedInterviewIds((current) => {
+      if (allSelected) {
+        return current.filter((id) => !ids.includes(id));
+      }
+      return Array.from(new Set([...current, ...ids]));
+    });
   };
 
   return (
@@ -82,23 +121,67 @@ export default function PortraitGenerationModal({ isOpen, onClose, interviews = 
                   </span>
                 </div>
                 <div className="app-surface-soft max-h-64 overflow-y-auto rounded-xl divide-y divide-gray-100">
-                  {availableInterviews.map((interview) => {
-                    const checked = selectedInterviewIds.includes(interview.id);
+                  {interviewGroups.map((group) => {
+                    const isExpanded = expandedFolderIds.includes(group.id);
+                    const selectedInGroup = group.interviews.filter((interview) => selectedInterviewIds.includes(interview.id)).length;
+                    const allSelected = selectedInGroup === group.interviews.length;
+                    const partiallySelected = selectedInGroup > 0 && !allSelected;
+                    const GroupIcon = group.isRoot ? FolderOpen : Folder;
+
                     return (
-                      <label key={interview.id} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleInterview(interview.id)}
-                          className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-gray-900">{interview.title}</div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {(interview.transcript_data?.length || 0)} {t('interviews.transcriptLines')}
-                          </div>
+                      <div key={group.id}>
+                        <div className="flex items-center gap-3 px-4 py-3 bg-white/70">
+                          <button
+                            type="button"
+                            onClick={() => toggleFolderExpanded(group.id)}
+                            className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            <ChevronDown size={16} className={`transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                          </button>
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            ref={(node) => {
+                              if (node) node.indeterminate = partiallySelected;
+                            }}
+                            onChange={() => toggleFolderSelection(group)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <GroupIcon size={16} className="text-gray-400" />
+                          <button
+                            type="button"
+                            onClick={() => toggleFolderExpanded(group.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <div className="truncate text-sm font-semibold text-gray-900">{group.name}</div>
+                          </button>
+                          <span className="text-xs text-gray-400">{group.interviews.length}</span>
                         </div>
-                      </label>
+
+                        {isExpanded ? (
+                          <div className="divide-y divide-gray-100">
+                            {group.interviews.map((interview) => {
+                              const checked = selectedInterviewIds.includes(interview.id);
+                              return (
+                                <label key={interview.id} className="flex items-start gap-3 pl-14 pr-4 py-3 hover:bg-gray-50 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleInterview(interview.id)}
+                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-gray-900">{interview.title}</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      {(interview.transcript_data?.length || 0)} {t('interviews.transcriptLines')}
+                                    </div>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
