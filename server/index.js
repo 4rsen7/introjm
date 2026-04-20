@@ -5606,6 +5606,58 @@ const normalizeInterviewUploadToMp3 = async (file) => {
     };
 };
 
+const SOURCE_TRANSCRIPTION_EXTENSIONS = new Set(['.mp3', '.mp4', '.m4a']);
+const SOURCE_TRANSCRIPTION_MIME_TYPES = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/mp4',
+    'audio/m4a',
+    'audio/x-m4a',
+    'video/mp4',
+]);
+
+const canUseSourceUploadForTranscription = (file = {}) => {
+    const extension = getInterviewUploadExtension(file.originalname);
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    return SOURCE_TRANSCRIPTION_EXTENSIONS.has(extension) || SOURCE_TRANSCRIPTION_MIME_TYPES.has(mimeType);
+};
+
+const useSourceUploadForTranscription = async (file) => {
+    let measuredDurationSeconds = null;
+
+    try {
+        measuredDurationSeconds = await getMediaDurationSeconds(file.path);
+    } catch (error) {
+        console.warn('[interview-upload] continuing without measured duration for source upload', {
+            fileName: file.originalname,
+            error: error.message,
+        });
+    }
+
+    console.info('[interview-upload] using source upload for transcription', {
+        originalFileName: file.originalname,
+        originalMimeType: file.mimetype,
+        originalSizeBytes: file.size,
+        measuredDurationSeconds,
+    });
+
+    return {
+        ...file,
+        sourceUploadName: file.originalname || '',
+        sourceUploadSizeBytes: Number.isFinite(file.size) ? file.size : null,
+        measuredDurationSeconds: Number.isFinite(measuredDurationSeconds) ? measuredDurationSeconds : null,
+        skippedNormalization: true,
+    };
+};
+
+const prepareInterviewUploadForTranscription = async (file) => {
+    if (canUseSourceUploadForTranscription(file)) {
+        return useSourceUploadForTranscription(file);
+    }
+
+    return normalizeInterviewUploadToMp3(file);
+};
+
 const interviewUploadMiddleware = (req, res, next) => {
     upload.single('audio')(req, res, (err) => {
         if (!err) {
@@ -5656,6 +5708,10 @@ const buildInterviewTranscriptionSystemState = ({
 
     if (Number.isFinite(file?.sourceUploadSizeBytes)) {
         metadata.sourceUploadFileSizeBytes = file.sourceUploadSizeBytes;
+    }
+
+    if (file?.skippedNormalization) {
+        metadata.skippedNormalization = true;
     }
 
     const configuredRate = Number(process.env.OPENAI_TRANSCRIPTION_RATE_USD_PER_MINUTE);
@@ -6289,7 +6345,7 @@ const processInterviewAudioUpload = async ({ interviewId, file }) => {
             throw new Error('OPENAI_API_KEY is not configured on the server.');
         }
 
-        transcriptionInputFile = await normalizeInterviewUploadToMp3(file);
+        transcriptionInputFile = await prepareInterviewUploadForTranscription(file);
         const transcriptionResult = await transcribeAudioWithProviderFallback(transcriptionInputFile, { interviewId });
         const newTranscriptData = transcriptionResult.transcript;
         transcriptionSystemState = transcriptionResult.systemState;
