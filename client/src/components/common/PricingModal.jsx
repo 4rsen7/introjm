@@ -4,8 +4,11 @@ import { X, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 import { API_BASE_URL } from '../../config/api';
 import { PAYMENTS_ENABLED } from '../../config/features';
+import { getPaddle } from '../../lib/paddle';
 
 const API_URL = API_BASE_URL;
+const PADDLE_CLIENT_TOKEN = import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '';
+const PADDLE_ENV = import.meta.env.VITE_PADDLE_ENV || 'production';
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', UAH: '₴' };
 const EMPTY_PLANS = [];
@@ -19,6 +22,8 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
   const [plans, setPlans] = useState(EMPTY_PLANS);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState(null);
+  const [checkoutPlanId, setCheckoutPlanId] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -44,11 +49,13 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
         }
 
         setUserId(sessionResponse.data.session?.user?.id ?? null);
+        setUserEmail(sessionResponse.data.session?.user?.email ?? null);
       } catch (err) {
         if (!active) return;
         console.error('Failed to load plans:', err);
         setPlans(EMPTY_PLANS);
         setUserId(null);
+        setUserEmail(null);
       } finally {
         if (active) {
           setLoading(false);
@@ -64,6 +71,8 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
   }, [isOpen, i18n.language]);
 
   if (!isOpen) return null;
+
+  const isPaddleReady = Boolean(PADDLE_CLIENT_TOKEN);
 
   // Current plan tier (for disabling "Upgrade" on lower tiers)
   const currentPlanTier = (currentPlanName && plans.length)
@@ -117,7 +126,14 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                     const isCurrentPlan = Boolean(currentPlanName && plan.name === currentPlanName);
                     const isLowerTier = currentPlanTier > 0 && plan.tier < currentPlanTier;
                     const isFreePlan = Number(plan.price_monthly ?? 0) === 0 && Number(plan.price_yearly ?? 0) === 0;
-                    const isPaymentDisabled = !PAYMENTS_ENABLED && !isFreePlan && !isCurrentPlan && !isLowerTier;
+                    const selectedPriceId = billingCycle === 'monthly' ? plan.paddle_price_id_monthly : plan.paddle_price_id_yearly;
+                    const checkoutDisabledReason = !PAYMENTS_ENABLED
+                      ? 'soon'
+                      : !isPaddleReady || !selectedPriceId
+                        ? 'unavailable'
+                        : null;
+                    const isProcessingCheckout = checkoutPlanId === plan.id;
+                    const isPaymentDisabled = Boolean(checkoutDisabledReason) && !isFreePlan && !isCurrentPlan && !isLowerTier;
                     const style = getPlanStyle(plan.tier, isCurrentPlan);
                     const price = billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly;
                     const period = billingCycle === 'monthly' ? t('pricing.perMonth') : t('pricing.perYear');
@@ -159,27 +175,52 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                         </ul>
 
                         <button 
-                        onClick={() => {
-                            if (isCurrentPlan || isLowerTier || isPaymentDisabled) return;
-                            const url = billingCycle === 'monthly' ? plan.checkout_url_monthly : plan.checkout_url_yearly;
-                            if (url) {
-                                let target = url;
-                                if (userId) {
-                                    const sep = target.includes('?') ? '&' : '?';
-                                    target = `${target}${sep}checkout[custom][user_id]=${encodeURIComponent(userId)}`;
-                                }
-                                window.open(target, '_blank', 'noopener,noreferrer');
+                        onClick={async () => {
+                            if (isCurrentPlan || isLowerTier || isPaymentDisabled || !selectedPriceId || isProcessingCheckout) return;
+
+                            setCheckoutPlanId(plan.id);
+
+                            try {
+                              const Paddle = await getPaddle({
+                                clientToken: PADDLE_CLIENT_TOKEN,
+                                environment: PADDLE_ENV,
+                              });
+
+                              Paddle.Checkout.open({
+                                items: [{ priceId: selectedPriceId, quantity: 1 }],
+                                customer: userEmail ? { email: userEmail } : undefined,
+                                customData: {
+                                  user_id: userId || undefined,
+                                  user_email: userEmail || undefined,
+                                  plan_name: plan.name,
+                                  billing_interval: billingCycle,
+                                },
+                                settings: {
+                                  displayMode: 'overlay',
+                                  theme: 'light',
+                                  successUrl: `${window.location.origin}/settings?checkout=success`,
+                                },
+                              });
+                            } catch (error) {
+                              console.error('Failed to open Paddle checkout:', error);
+                              window.alert(t('pricing.checkoutFailed'));
+                            } finally {
+                              setCheckoutPlanId(null);
                             }
                         }}
-                        disabled={isCurrentPlan || isLowerTier || isPaymentDisabled}
+                        disabled={isCurrentPlan || isLowerTier || isPaymentDisabled || isProcessingCheckout}
                         className={`w-full py-3 rounded-xl font-bold transition-all ${style.btn} ${(isCurrentPlan || isLowerTier || isPaymentDisabled) ? 'opacity-90' : ''} ${isPaymentDisabled ? 'cursor-not-allowed' : ''}`}
                         >
-                        {isCurrentPlan
+                        {isProcessingCheckout
+                          ? t('pricing.loadingCheckout')
+                          : isCurrentPlan
                           ? t('pricing.currentPlan')
                           : isLowerTier
                             ? t('pricing.downgrade')
-                            : isPaymentDisabled
+                            : checkoutDisabledReason === 'soon'
                               ? `${t('pricing.upgrade')} (${t('common.soon')})`
+                              : checkoutDisabledReason === 'unavailable'
+                                ? t('pricing.unavailable')
                               : t('pricing.upgrade')}
                         </button>
                     </div>

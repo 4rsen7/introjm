@@ -15,6 +15,8 @@ jobs:
       VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
       VITE_LANDING_ORIGIN: ${{ secrets.VITE_LANDING_ORIGIN }}
       VITE_APP_ORIGIN: ${{ secrets.VITE_APP_ORIGIN }}
+      VITE_PADDLE_CLIENT_TOKEN: ${{ secrets.VITE_PADDLE_CLIENT_TOKEN }}
+      VITE_PADDLE_ENV: ${{ secrets.VITE_PADDLE_ENV }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -38,7 +40,9 @@ jobs:
             VITE_SUPABASE_ANON_KEY \
             VITE_API_BASE_URL \
             VITE_LANDING_ORIGIN \
-            VITE_APP_ORIGIN
+            VITE_APP_ORIGIN \
+            VITE_PADDLE_CLIENT_TOKEN \
+            VITE_PADDLE_ENV
           do
             if [ -z "${!var}" ]; then
               echo "Missing required secret: $var" >&2
@@ -54,6 +58,8 @@ jobs:
           VITE_API_BASE_URL=${VITE_API_BASE_URL}
           VITE_LANDING_ORIGIN=${VITE_LANDING_ORIGIN}
           VITE_APP_ORIGIN=${VITE_APP_ORIGIN}
+          VITE_PADDLE_CLIENT_TOKEN=${VITE_PADDLE_CLIENT_TOKEN}
+          VITE_PADDLE_ENV=${VITE_PADDLE_ENV}
           EOF
 
           cat > admin/.env.production.local <<EOF

@@ -63,6 +63,200 @@ const ADMIN_HOST = (() => {
 const APP_ROUTE_PREFIXES = ['/auth', '/dashboard', '/journeys', '/journey', '/personas', '/portraits', '/metrics', '/interviews', '/materials', '/settings', '/archive', '/export'];
 const isAppRoutePath = (path = '/') => APP_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
+const PADDLE_PRICE_CONFIG = Object.freeze({
+  Pro: {
+    productId: process.env.PADDLE_PRO_PRODUCT_ID || null,
+    monthlyPriceId: process.env.PADDLE_PRO_PRICE_ID_MONTHLY || null,
+    yearlyPriceId: process.env.PADDLE_PRO_PRICE_ID_YEARLY || null,
+  },
+  Enterprise: {
+    productId: process.env.PADDLE_ENTERPRISE_PRODUCT_ID || null,
+    monthlyPriceId: process.env.PADDLE_ENTERPRISE_PRICE_ID_MONTHLY || null,
+    yearlyPriceId: process.env.PADDLE_ENTERPRISE_PRICE_ID_YEARLY || null,
+  },
+});
+
+function enrichPlanWithPaddleConfig(plan) {
+  const paddle = PADDLE_PRICE_CONFIG[plan?.name] || {};
+  return {
+    ...plan,
+    paddle_product_id: paddle.productId || null,
+    paddle_price_id_monthly: paddle.monthlyPriceId || null,
+    paddle_price_id_yearly: paddle.yearlyPriceId || null,
+  };
+}
+
+function resolvePaddlePlanConfigByPriceId(priceId) {
+  if (!priceId) return null;
+
+  const normalizedPriceId = String(priceId);
+
+  for (const [planName, config] of Object.entries(PADDLE_PRICE_CONFIG)) {
+    if (config.monthlyPriceId === normalizedPriceId) {
+      return {
+        planName,
+        billingInterval: 'monthly',
+        ...config,
+      };
+    }
+
+    if (config.yearlyPriceId === normalizedPriceId) {
+      return {
+        planName,
+        billingInterval: 'yearly',
+        ...config,
+      };
+    }
+  }
+
+  return null;
+}
+
+function parsePaddleSignatureHeader(headerValue) {
+  if (!headerValue) return { timestamp: null, signatures: [] };
+
+  const pairs = String(headerValue)
+    .split(/[;,]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [key, ...valueParts] = part.split('=');
+      return [key, valueParts.join('=')];
+    });
+
+  const timestamp = pairs.find(([key]) => key === 'ts')?.[1] || null;
+  const signatures = pairs
+    .filter(([key]) => key === 'h1')
+    .map(([, value]) => value)
+    .filter(Boolean);
+
+  return { timestamp, signatures };
+}
+
+function verifyPaddleSignature(rawBody, signatureHeader, secret) {
+  if (!secret) throw new Error('PADDLE_WEBHOOK_SECRET is not configured.');
+  if (!rawBody || !Buffer.isBuffer(rawBody)) return false;
+
+  const { timestamp, signatures } = parsePaddleSignatureHeader(signatureHeader);
+  if (!timestamp || signatures.length === 0) return false;
+
+  const payload = `${timestamp}:${rawBody.toString('utf8')}`;
+  const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+
+  return signatures.some((signature) => {
+    const receivedBuffer = Buffer.from(signature, 'utf8');
+    return receivedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+  });
+}
+
+function normalizePaddleSubscriptionStatus(status) {
+  switch (String(status || '').toLowerCase()) {
+    case 'active':
+    case 'trialing':
+      return 'active';
+    case 'past_due':
+    case 'paused':
+    case 'canceled':
+      return 'canceled';
+    default:
+      return 'canceled';
+  }
+}
+
+function extractPaddleBillingWindow(subscriptionData = {}, billingInterval = null) {
+  const billingPeriod = subscriptionData.current_billing_period || {};
+  const currentPeriodStart = billingPeriod.starts_at || subscriptionData.started_at || new Date().toISOString();
+  let currentPeriodEnd = billingPeriod.ends_at || null;
+
+  if (!currentPeriodEnd && billingInterval) {
+    const fallbackEnd = new Date(currentPeriodStart);
+    if (!Number.isNaN(fallbackEnd.getTime())) {
+      if (billingInterval === 'yearly') {
+        fallbackEnd.setFullYear(fallbackEnd.getFullYear() + 1);
+      } else {
+        fallbackEnd.setMonth(fallbackEnd.getMonth() + 1);
+      }
+      currentPeriodEnd = fallbackEnd.toISOString();
+    }
+  }
+
+  return {
+    currentPeriodStart,
+    currentPeriodEnd,
+  };
+}
+
+async function findPlanByName(planName) {
+  if (!planName) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from('plans')
+    .select('id, name')
+    .ilike('name', planName)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function applyHostedSubscriptionForUser({
+  userId,
+  planId,
+  status,
+  currentPeriodStart,
+  currentPeriodEnd,
+}) {
+  const normalizedStatus = normalizePaddleSubscriptionStatus(status);
+  const normalizedStart = currentPeriodStart ? new Date(currentPeriodStart).toISOString() : new Date().toISOString();
+  const normalizedEnd = currentPeriodEnd ? new Date(currentPeriodEnd).toISOString() : null;
+
+  const { data: existingRows, error: existingError } = await supabaseAdmin
+    .from('subscriptions')
+    .select('id, user_id, plan_id, status, current_period_start, current_period_end')
+    .eq('user_id', userId)
+    .eq('plan_id', planId)
+    .eq('status', normalizedStatus)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (existingError) throw existingError;
+
+  const hasMatchingRow = (existingRows || []).some((row) =>
+    String(row.plan_id) === String(planId)
+    && String(row.status) === normalizedStatus
+    && String(row.current_period_start || '') === String(normalizedStart || '')
+    && String(row.current_period_end || '') === String(normalizedEnd || '')
+  );
+
+  if (hasMatchingRow) {
+    return;
+  }
+
+  await supabaseAdmin
+    .from('subscriptions')
+    .update({
+      status: 'canceled',
+      current_period_end: normalizedEnd || new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .eq('status', 'active');
+
+  const { error: insertError } = await supabaseAdmin
+    .from('subscriptions')
+    .insert([{
+      user_id: userId,
+      plan_id: planId,
+      status: normalizedStatus,
+      current_period_start: normalizedStart,
+      current_period_end: normalizedEnd,
+    }]);
+
+  if (insertError) throw insertError;
+}
+
 function ensurePlaywrightBrowserExecutables(localBrowsersDir) {
     if (!localBrowsersDir || !fs.existsSync(localBrowsersDir)) return;
 
@@ -1243,6 +1437,89 @@ app.post('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' })
         return res.status(500).json({ error: 'Failed to create subscription' });
     }
     return res.status(200).json({ ok: true });
+});
+
+app.post('/api/webhooks/paddle', express.raw({ type: 'application/json' }), async (req, res) => {
+    const secret = process.env.PADDLE_WEBHOOK_SECRET;
+    if (!secret) {
+        console.error('PADDLE_WEBHOOK_SECRET is not set');
+        return res.status(500).json({ error: 'Webhook not configured' });
+    }
+
+    const rawBody = req.body;
+    if (!rawBody || !Buffer.isBuffer(rawBody)) {
+        return res.status(400).json({ error: 'Invalid body' });
+    }
+
+    const signature = req.get('Paddle-Signature');
+    if (!signature) {
+        return res.status(401).json({ error: 'Missing Paddle-Signature' });
+    }
+
+    if (!verifyPaddleSignature(rawBody, signature, secret)) {
+        return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    let payload;
+    try {
+        payload = JSON.parse(rawBody.toString('utf8'));
+    } catch (error) {
+        return res.status(400).json({ error: 'Invalid JSON' });
+    }
+
+    const eventType = payload?.event_type;
+    const subscriptionData = payload?.data || {};
+    const customData = subscriptionData.custom_data || {};
+    const subscriptionItems = Array.isArray(subscriptionData.items) ? subscriptionData.items : [];
+    const firstPriceId = subscriptionItems[0]?.price?.id || null;
+    const planConfig = resolvePaddlePlanConfigByPriceId(firstPriceId);
+
+    if (!planConfig) {
+        return res.status(200).json({ ok: true, message: 'Price not mapped' });
+    }
+
+    const userId = customData.user_id || null;
+    if (!userId) {
+        console.warn('Paddle webhook: missing custom_data.user_id for event', eventType);
+        return res.status(200).json({ ok: true, message: 'User not resolved' });
+    }
+
+    const planRow = await findPlanByName(planConfig.planName);
+    if (!planRow) {
+        console.warn('Paddle webhook: no plan found for mapped name', planConfig.planName);
+        return res.status(200).json({ ok: true, message: 'Plan not found' });
+    }
+
+    const { currentPeriodStart, currentPeriodEnd } = extractPaddleBillingWindow(subscriptionData, planConfig.billingInterval);
+
+    try {
+        switch (eventType) {
+            case 'subscription.created':
+            case 'subscription.activated':
+            case 'subscription.updated':
+            case 'subscription.resumed':
+            case 'subscription.paused':
+            case 'subscription.past_due':
+            case 'subscription.canceled':
+                await applyHostedSubscriptionForUser({
+                    userId,
+                    planId: planRow.id,
+                    status: subscriptionData.status,
+                    currentPeriodStart,
+                    currentPeriodEnd,
+                });
+                return res.status(200).json({ ok: true });
+            case 'transaction.completed':
+            case 'transaction.paid':
+            case 'transaction.payment_failed':
+                return res.status(200).json({ ok: true, message: 'Transaction event acknowledged' });
+            default:
+                return res.status(200).json({ ok: true, message: 'Event ignored' });
+        }
+    } catch (error) {
+        console.error('Paddle webhook processing failed:', error);
+        return res.status(500).json({ error: 'Failed to process webhook' });
+    }
 });
 
 app.use(express.json());
@@ -4887,7 +5164,7 @@ app.get('/api/plans', async (req, res) => {
             const features = (byLocale[locale] != null ? byLocale[locale] : byLocale.en) ?? plan.features ?? [];
             const byDesc = plan.description_by_locale || {};
             const description = (byDesc[locale] != null ? byDesc[locale] : byDesc.en) ?? plan.description ?? '';
-            return { ...plan, features, description };
+            return enrichPlanWithPaddleConfig({ ...plan, features, description });
         });
         res.json({ status: 'success', data: plans });
     } catch (err) {
