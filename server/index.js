@@ -1480,6 +1480,7 @@ function mapLearningMaterialListItem(material) {
     return {
         id: material.id,
         slug: material.slug,
+        locale: material.locale || 'uk',
         title: material.title,
         subtitle: material.subtitle || '',
         excerpt: material.excerpt || '',
@@ -1499,6 +1500,7 @@ function mapSupportNewsItem(news, readNewsIds = new Set()) {
     if (!news) return news;
     return {
         id: news.id,
+        locale: news.locale || 'uk',
         title: news.title,
         subtitle: news.subtitle || '',
         summary: news.summary || '',
@@ -1512,6 +1514,13 @@ function mapSupportNewsItem(news, readNewsIds = new Set()) {
         updated_at: news.updated_at || null,
         is_read: readNewsIds.has(news.id),
     };
+}
+
+function resolveContentLocale(req) {
+    const rawLocale = String(req?.query?.locale || req?.headers?.['x-iterojm-locale'] || '').trim().toLowerCase();
+    if (rawLocale.startsWith('en')) return 'en';
+    if (rawLocale.startsWith('uk') || rawLocale.startsWith('ua')) return 'uk';
+    return 'uk';
 }
 
 app.use(cors({
@@ -4779,11 +4788,13 @@ app.get('/api/learning-materials', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
     const { data, error } = await supabaseAdmin
       .from('learning_materials')
-      .select('id, slug, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at')
+      .select('id, slug, locale, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at')
       .eq('status', 'published')
+      .eq('locale', locale)
       .order('featured', { ascending: false })
       .order('sort_order', { ascending: true })
       .order('published_at', { ascending: false, nullsFirst: false });
@@ -4808,11 +4819,13 @@ app.get('/api/learning-materials/:slug', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
     const { data, error } = await supabaseAdmin
       .from('learning_materials')
-      .select('id, slug, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at, body_html')
+      .select('id, slug, locale, title, subtitle, excerpt, category, cover_image_url, author_name, reading_time_minutes, hero_tone, featured, published_at, created_at, updated_at, body_html')
       .eq('slug', slug)
+      .eq('locale', locale)
       .eq('status', 'published')
       .maybeSingle();
 
@@ -4922,12 +4935,14 @@ app.get('/api/news', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
     const [{ data: newsList, error: newsError }, { data: views, error: viewsError }] = await Promise.all([
       supabaseAdmin
         .from('support_news')
-        .select('id, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
+        .select('id, locale, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
         .eq('status', 'published')
+        .eq('locale', locale)
         .order('pinned', { ascending: false })
         .order('published_at', { ascending: false, nullsFirst: false }),
       supabaseAdmin
@@ -4958,9 +4973,10 @@ app.get('/api/news/unread-count', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
-    const [{ count: publishedCount, error: publishedError }, { data: views, error: viewsError }] = await Promise.all([
-      supabaseAdmin.from('support_news').select('*', { count: 'exact', head: true }).eq('status', 'published'),
+    const [{ data: publishedNews, error: publishedError }, { data: views, error: viewsError }] = await Promise.all([
+      supabaseAdmin.from('support_news').select('id').eq('status', 'published').eq('locale', locale),
       supabaseAdmin.from('support_news_views').select('news_id').eq('user_id', user.id),
     ]);
 
@@ -4968,9 +4984,10 @@ app.get('/api/news/unread-count', async (req, res) => {
     if (viewsError) throw viewsError;
 
     const viewedIds = new Set((views || []).map((item) => item.news_id));
+    const unreadCount = (publishedNews || []).filter((item) => !viewedIds.has(item.id)).length;
     res.json({
       status: 'success',
-      data: Math.max(0, (publishedCount ?? 0) - viewedIds.size),
+      data: unreadCount,
     });
   } catch (err) {
     logSystemError(err, 'GET /api/news/unread-count');
@@ -4987,12 +5004,14 @@ app.get('/api/news/:id', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
     const [{ data: item, error: newsError }, { data: view, error: viewError }] = await Promise.all([
       supabaseAdmin
         .from('support_news')
-        .select('id, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
+        .select('id, locale, title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, published_at, created_at, updated_at')
         .eq('id', id)
+        .eq('locale', locale)
         .eq('status', 'published')
         .maybeSingle(),
       supabaseAdmin
@@ -5026,11 +5045,13 @@ app.patch('/api/news/:id/read', async (req, res) => {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ status: 'error', message: 'Invalid token' });
+    const locale = resolveContentLocale(req);
 
     const { data: newsItem, error: newsError } = await supabaseAdmin
       .from('support_news')
       .select('id')
       .eq('id', id)
+      .eq('locale', locale)
       .eq('status', 'published')
       .maybeSingle();
 
@@ -5395,7 +5416,7 @@ app.post('/api/admin/news', async (req, res) => {
     if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
     if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned } = req.body || {};
+    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, locale } = req.body || {};
     if (!title || !String(title).trim() || !summary || !String(summary).trim() || !body_html || !String(body_html).trim()) {
       return res.status(400).json({ status: 'error', message: 'title, summary, body_html are required' });
     }
@@ -5406,6 +5427,7 @@ app.post('/api/admin/news', async (req, res) => {
       summary: String(summary).trim(),
       body_html: String(body_html).trim(),
       cover_image_url: cover_image_url ? String(cover_image_url).trim() : null,
+      locale: ['uk', 'en'].includes(locale) ? locale : 'uk',
       tone: ['cobalt', 'emerald', 'amber', 'rose'].includes(tone) ? tone : 'cobalt',
       status: status === 'published' ? 'published' : 'draft',
       pinned: !!pinned,
@@ -5433,7 +5455,7 @@ app.put('/api/admin/news/:id', async (req, res) => {
     if (adminAuthError?.message === 'Access denied') return res.status(403).json({ status: 'error', message: 'Access denied' });
     if (adminAuthError) return res.status(401).json({ status: 'error', message: 'Invalid token' });
 
-    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned } = req.body || {};
+    const { title, subtitle, summary, body_html, cover_image_url, tone, status, pinned, locale } = req.body || {};
     if (!title || !String(title).trim() || !summary || !String(summary).trim() || !body_html || !String(body_html).trim()) {
       return res.status(400).json({ status: 'error', message: 'title, summary, body_html are required' });
     }
@@ -5444,6 +5466,7 @@ app.put('/api/admin/news/:id', async (req, res) => {
       summary: String(summary).trim(),
       body_html: String(body_html).trim(),
       cover_image_url: cover_image_url ? String(cover_image_url).trim() : null,
+      locale: ['uk', 'en'].includes(locale) ? locale : 'uk',
       tone: ['cobalt', 'emerald', 'amber', 'rose'].includes(tone) ? tone : 'cobalt',
       status: status === 'published' ? 'published' : 'draft',
       pinned: !!pinned,

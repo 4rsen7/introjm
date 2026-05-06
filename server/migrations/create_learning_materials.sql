@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS public.learning_materials (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  slug text NOT NULL UNIQUE,
+  slug text NOT NULL,
+  locale text NOT NULL DEFAULT 'uk' CHECK (locale IN ('uk', 'en')),
   title text NOT NULL,
   subtitle text,
   excerpt text NOT NULL DEFAULT '',
@@ -21,6 +22,8 @@ CREATE TABLE IF NOT EXISTS public.learning_materials (
 );
 
 CREATE INDEX IF NOT EXISTS learning_materials_status_idx ON public.learning_materials(status);
+CREATE UNIQUE INDEX IF NOT EXISTS learning_materials_slug_locale_uidx ON public.learning_materials(slug, locale);
+CREATE INDEX IF NOT EXISTS learning_materials_locale_status_idx ON public.learning_materials(locale, status, featured, sort_order, published_at DESC);
 CREATE INDEX IF NOT EXISTS learning_materials_featured_idx ON public.learning_materials(featured, published_at DESC);
 CREATE INDEX IF NOT EXISTS learning_materials_sort_order_idx ON public.learning_materials(sort_order, published_at DESC);
 

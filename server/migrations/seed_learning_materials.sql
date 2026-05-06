@@ -1,5 +1,6 @@
 INSERT INTO public.learning_materials (
   slug,
+  locale,
   title,
   subtitle,
   excerpt,
@@ -16,6 +17,7 @@ INSERT INTO public.learning_materials (
 VALUES
 (
   'journey-map-persona-metrics-workflow',
+  'uk',
   'Як будувати джорні-мапу разом із персоною та метриками',
   'Практичний workflow, який зшиває customer journey, persona context і KPI в одну робочу систему.',
   'Покроковий матеріал про те, як починати не з красивої схеми, а з живого customer context: побудувати journey map, підв’язати до неї персону і закріпити метрики, які реально покажуть зміни.',
@@ -96,6 +98,7 @@ VALUES
 ),
 (
   'from-transcription-to-portrait',
+  'uk',
   'Від транскрипції до портрета: як будувати persona на основі інтерв’ю',
   'Як перетворити сирий transcript, AI insights і цитати на портрет, з яким команда реально працює.',
   'Матеріал про workflow після інтерв’ю: як із транскрипції дійти до портрета користувача, не загубити evidence і не перетворити persona на абстрактний шаблон.',
@@ -169,6 +172,7 @@ VALUES
 ),
 (
   'interview-insights-to-system',
+  'uk',
   'Як зшити інтерв’ю, висновки, портрети і джорні в одну систему',
   'Матеріал про те, як не загубити цінність після research і перетворити окремі артефакти на спільний робочий контекст.',
   'Цей матеріал показує, як пов’язувати транскрипції, AI insights, portrait generation і journey maps так, щоб команда не втрачала контекст між етапами роботи.',
@@ -218,8 +222,9 @@ VALUES
   30,
   timezone('utc'::text, now()) - interval '12 hours'
 )
-ON CONFLICT (slug) DO UPDATE
+ON CONFLICT (slug, locale) DO UPDATE
 SET
+  locale = EXCLUDED.locale,
   title = EXCLUDED.title,
   subtitle = EXCLUDED.subtitle,
   excerpt = EXCLUDED.excerpt,

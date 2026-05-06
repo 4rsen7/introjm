@@ -289,7 +289,7 @@ const MainLayout = ({
 };
 
 function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -456,7 +456,8 @@ function App() {
   const { data: globalPersonas = [] } = usePersonas(queriesEnabled);
   const { data: globalPortraits = [] } = usePortraits(queriesEnabled);
   const { data: globalMetrics = [] } = useMetrics(queriesEnabled);
-  const { data: learningMaterials = [] } = useLearningMaterials(queriesEnabled);
+  const contentLocale = i18n.language?.startsWith('en') ? 'en' : 'uk';
+  const { data: learningMaterials = [] } = useLearningMaterials(queriesEnabled, contentLocale);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => localStorage.getItem(SELECTED_WORKSPACE_KEY) || '');
   const workspaceListQuery = useWorkspaceList(queriesEnabled);
   const workspaces = useMemo(() => workspaceListQuery.data ?? [], [workspaceListQuery.data]);

@@ -18,6 +18,11 @@ const STATUS_OPTIONS = [
   { label: "Published", value: "published" },
 ];
 
+const LANGUAGE_OPTIONS = [
+  { label: "Ukrainian", value: "uk" },
+  { label: "English", value: "en" },
+];
+
 function slugify(value: string) {
   return String(value || "")
     .toLowerCase()
@@ -30,6 +35,7 @@ function slugify(value: string) {
 
 export const LEARNING_MATERIAL_INITIAL_VALUES = {
   category: "Playbook",
+  locale: "uk",
   author_name: "IteroJM Team",
   hero_tone: "cobalt",
   status: "draft",
@@ -145,6 +151,10 @@ export const LearningMaterialFields: React.FC<{ form?: FormInstance<any> }> = ({
       </Form.Item>
 
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <Form.Item label="Language" name="locale" rules={[{ required: true, message: "Language is required" }]}>
+          <Select options={LANGUAGE_OPTIONS} />
+        </Form.Item>
+
         <Form.Item label="Category" name="category" rules={[{ required: true, message: "Category is required" }]}>
           <Input placeholder="Playbook / Research / JTBD / Metrics" />
         </Form.Item>

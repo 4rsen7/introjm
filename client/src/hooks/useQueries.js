@@ -4,6 +4,11 @@ import { API_BASE_URL } from '../config/api';
 import { normalizePortraitData } from '../utils/normalizePortraitData';
 
 const API_URL = API_BASE_URL;
+export const normalizeContentLocale = (locale) => {
+  const normalized = String(locale || '').trim().toLowerCase();
+  if (normalized.startsWith('en')) return 'en';
+  return 'uk';
+};
 
 // Helper for consistent date formatting
 const formatDate = (dateString) => {
@@ -68,6 +73,7 @@ export const mapInterviewFolderToClient = (folder) => ({
 
 export const mapLearningMaterialToClient = (material) => ({
   ...material,
+  locale: material.locale || 'uk',
   coverImageUrl: material.cover_image_url || '',
   authorName: material.author_name || 'IteroJM Team',
   readingTimeMinutes: material.reading_time_minutes ?? null,
@@ -128,11 +134,12 @@ export const useInterviewFolders = (enabled = true) => {
   });
 };
 
-export const useLearningMaterials = (enabled = true) => {
+export const useLearningMaterials = (enabled = true, locale = 'uk') => {
+  const contentLocale = normalizeContentLocale(locale);
   return useQuery({
-    queryKey: ['learning_materials'],
+    queryKey: ['learning_materials', contentLocale],
     queryFn: async () => {
-      const data = await fetchData('/learning-materials');
+      const data = await fetchData(`/learning-materials?locale=${contentLocale}`);
       return data.map(mapLearningMaterialToClient);
     },
     enabled,

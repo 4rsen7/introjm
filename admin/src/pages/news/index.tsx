@@ -18,12 +18,18 @@ const NEWS_STATUS_OPTIONS = [
   { label: "Published", value: "published" },
 ];
 
+const NEWS_LANGUAGE_OPTIONS = [
+  { label: "Ukrainian", value: "uk" },
+  { label: "English", value: "en" },
+];
+
 const EMPTY_FORM = {
   title: "",
   subtitle: "",
   summary: "",
   body_html: "<p>Write the update here.</p>",
   cover_image_url: "",
+  locale: "uk",
   tone: "cobalt",
   status: "draft",
   pinned: false,
@@ -188,6 +194,14 @@ export const NewsPage: React.FC = () => {
               ),
             },
             {
+              title: "Language",
+              dataIndex: "locale",
+              width: 120,
+              render: (value: string) => (
+                <Tag color={value === "en" ? "geekblue" : "cyan"}>{value === "en" ? "English" : "Ukrainian"}</Tag>
+              ),
+            },
+            {
               title: "Pinned",
               dataIndex: "pinned",
               width: 100,
@@ -259,20 +273,25 @@ export const NewsPage: React.FC = () => {
           </Form.Item>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
+            <Form.Item label="Language" name="locale" rules={[{ required: true, message: "Language is required" }]}>
+              <Select options={NEWS_LANGUAGE_OPTIONS} />
+            </Form.Item>
             <Form.Item label="Tone" name="tone">
               <Select options={NEWS_TONE_OPTIONS} />
             </Form.Item>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16 }}>
             <Form.Item label="Status" name="status">
               <Select options={NEWS_STATUS_OPTIONS} />
+            </Form.Item>
+            <Form.Item label="Pinned at top" name="pinned" valuePropName="checked">
+              <Switch checkedChildren="Pinned" unCheckedChildren="Standard" />
             </Form.Item>
           </div>
 
           <Form.Item label="Cover image URL" name="cover_image_url">
             <Input placeholder="https://..." />
-          </Form.Item>
-
-          <Form.Item label="Pinned at top" name="pinned" valuePropName="checked">
-            <Switch checkedChildren="Pinned" unCheckedChildren="Standard" />
           </Form.Item>
 
           <Form.Item label="Body HTML" name="body_html" rules={[{ required: true, message: "Body HTML is required" }]}>

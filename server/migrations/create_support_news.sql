@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS public.support_news (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  locale text NOT NULL DEFAULT 'uk' CHECK (locale IN ('uk', 'en')),
   title text NOT NULL,
   subtitle text,
   summary text NOT NULL DEFAULT '',
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.support_news_views (
 );
 
 CREATE INDEX IF NOT EXISTS support_news_status_idx ON public.support_news(status);
+CREATE INDEX IF NOT EXISTS support_news_locale_status_idx ON public.support_news(locale, status, pinned, published_at DESC);
 CREATE INDEX IF NOT EXISTS support_news_published_idx ON public.support_news(pinned, published_at DESC);
 CREATE INDEX IF NOT EXISTS support_news_views_user_idx ON public.support_news_views(user_id, viewed_at DESC);
 

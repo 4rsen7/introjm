@@ -22,6 +22,11 @@ export const LearningMaterialList: React.FC = () => {
       <Table {...tableProps} rowKey="id">
         <Table.Column dataIndex="title" title="Title" />
         <Table.Column dataIndex="slug" title="Slug" />
+        <Table.Column
+          dataIndex="locale"
+          title="Language"
+          render={(value: string) => <Tag color={value === "en" ? "geekblue" : "cyan"}>{value === "en" ? "English" : "Ukrainian"}</Tag>}
+        />
         <Table.Column dataIndex="category" title="Category" />
         <Table.Column
           dataIndex="status"

@@ -2,6 +2,7 @@ DELETE FROM public.support_news
 WHERE title = 'Нове: транскрибація інтерв’ю, AI summary та побудова портретів';
 
 INSERT INTO public.support_news (
+  locale,
   title,
   subtitle,
   summary,
@@ -11,6 +12,7 @@ INSERT INTO public.support_news (
   pinned
 )
 VALUES (
+  'uk',
   'Нове: транскрибація інтерв’ю, AI summary та побудова портретів',
   'Від аудіозапису до структурованих інсайтів і persona portrait в одному workflow.',
   'Тепер у IteroJM можна завантажити аудіоінтерв’ю, отримати транскрипт, згенерувати AI summary з потрібними секціями та використати ці висновки як базу для побудови портрета користувача.',

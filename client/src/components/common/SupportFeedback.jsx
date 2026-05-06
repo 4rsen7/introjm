@@ -45,7 +45,8 @@ function getNewsToneStyles(tone) {
 }
 
 export default function SupportFeedback() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const contentLocale = i18n.language?.startsWith('en') ? 'en' : 'uk';
   const [open, setOpen] = useState(false);
   const [feedbackUnreadCount, setFeedbackUnreadCount] = useState(0);
   const [newsUnreadCount, setNewsUnreadCount] = useState(0);
@@ -103,7 +104,7 @@ export default function SupportFeedback() {
     try {
       const [feedbackRes, newsRes] = await Promise.all([
         fetch(`${API_URL}/feedback/unread-count`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/news/unread-count`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_URL}/news/unread-count?locale=${contentLocale}`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
       const [feedbackJson, newsJson] = await Promise.all([
@@ -120,7 +121,7 @@ export default function SupportFeedback() {
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [contentLocale]);
 
   const fetchFeedbackList = useCallback(async () => {
     const token = await getAuthToken();
@@ -144,7 +145,7 @@ export default function SupportFeedback() {
 
     setNewsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/news`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_URL}/news?locale=${contentLocale}`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       if (json.status === 'success') setNewsList(json.data || []);
     } catch (error) {
@@ -152,7 +153,7 @@ export default function SupportFeedback() {
     } finally {
       setNewsLoading(false);
     }
-  }, []);
+  }, [contentLocale]);
 
   useEffect(() => {
     if (open) {
@@ -271,10 +272,10 @@ export default function SupportFeedback() {
     setOpeningNewsId(id);
     try {
       const requests = [
-        fetch(`${API_URL}/news/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_URL}/news/${id}?locale=${contentLocale}`, { headers: { Authorization: `Bearer ${token}` } }),
       ];
       if (shouldMarkRead) {
-        requests.push(fetch(`${API_URL}/news/${id}/read`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } }));
+        requests.push(fetch(`${API_URL}/news/${id}/read?locale=${contentLocale}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } }));
       }
 
       const [detailRes, readRes] = await Promise.all(requests);

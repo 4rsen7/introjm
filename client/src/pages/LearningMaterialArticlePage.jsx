@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, BookOpen, Clock3, Sparkles } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query';
 import { getAuthToken } from '../services/auth';
 import { API_BASE_URL } from '../config/api';
-import { mapLearningMaterialToClient, useLearningMaterials } from '../hooks/useQueries';
+import { mapLearningMaterialToClient, normalizeContentLocale, useLearningMaterials } from '../hooks/useQueries';
 
 const API_URL = API_BASE_URL;
 
@@ -39,15 +39,16 @@ const MATERIAL_TONES = {
 const getTone = (tone) => MATERIAL_TONES[tone] || MATERIAL_TONES.cobalt;
 
 export default function LearningMaterialArticlePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { slug } = useParams();
-  const { data: materials = [] } = useLearningMaterials(true);
+  const contentLocale = normalizeContentLocale(i18n.language);
+  const { data: materials = [] } = useLearningMaterials(true, contentLocale);
 
   const { data: material, isLoading } = useQuery({
-    queryKey: ['learning_material', slug],
+    queryKey: ['learning_material', slug, contentLocale],
     queryFn: async () => {
       const token = await getAuthToken();
-      const response = await fetch(`${API_URL}/learning-materials/${slug}`, {
+      const response = await fetch(`${API_URL}/learning-materials/${slug}?locale=${contentLocale}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await response.json();

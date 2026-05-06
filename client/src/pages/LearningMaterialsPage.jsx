@@ -34,8 +34,9 @@ const MATERIAL_TONES = {
 const getTone = (tone) => MATERIAL_TONES[tone] || MATERIAL_TONES.cobalt;
 
 export default function LearningMaterialsPage() {
-  const { t } = useTranslation();
-  const { data: materials = [], isLoading } = useLearningMaterials(true);
+  const { t, i18n } = useTranslation();
+  const contentLocale = i18n.language?.startsWith('en') ? 'en' : 'uk';
+  const { data: materials = [], isLoading } = useLearningMaterials(true, contentLocale);
 
   const featuredMaterial = useMemo(
     () => materials.find((item) => item.featured) || materials[0] || null,
