@@ -16,6 +16,21 @@ function getCurrencySymbol(currency) {
   return CURRENCY_SYMBOLS[currency] ?? CURRENCY_SYMBOLS.USD;
 }
 
+function isPaddleCustomerEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return false;
+  return !normalizedEmail.endsWith('.test')
+    && !normalizedEmail.endsWith('.invalid')
+    && !normalizedEmail.endsWith('.localhost');
+}
+
+function buildPaddleCustomData(data) {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  );
+}
+
 const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
   const { t, i18n } = useTranslation();
   const [billingCycle, setBillingCycle] = useState('monthly');
@@ -186,15 +201,19 @@ const PricingModal = ({ isOpen, onClose, currentPlanName }) => {
                                 environment: PADDLE_ENV,
                               });
 
+                              const customer = isPaddleCustomerEmail(userEmail)
+                                ? { email: userEmail.trim() }
+                                : undefined;
+
                               Paddle.Checkout.open({
                                 items: [{ priceId: selectedPriceId, quantity: 1 }],
-                                customer: userEmail ? { email: userEmail } : undefined,
-                                customData: {
+                                customer,
+                                customData: buildPaddleCustomData({
                                   user_id: userId || undefined,
                                   user_email: userEmail || undefined,
                                   plan_name: plan.name,
                                   billing_interval: billingCycle,
-                                },
+                                }),
                                 settings: {
                                   displayMode: 'overlay',
                                   theme: 'light',

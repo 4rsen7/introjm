@@ -55,6 +55,15 @@ export async function getPaddle({ clientToken, environment = DEFAULT_ENVIRONMENT
   if (initializedToken !== clientToken || initializedEnvironment !== environment) {
     Paddle.Initialize({
       token: clientToken,
+      eventCallback: (event) => {
+        if (event?.name?.includes('checkout')) {
+          try {
+            console.info('[Paddle]', event.name, JSON.stringify(event));
+          } catch {
+            console.info('[Paddle]', event.name, event);
+          }
+        }
+      },
     });
     initializedToken = clientToken;
     initializedEnvironment = environment;

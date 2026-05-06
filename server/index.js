@@ -187,6 +187,19 @@ function extractPaddleBillingWindow(subscriptionData = {}, billingInterval = nul
   };
 }
 
+function isSameTimestamp(left, right) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+
+  const leftDate = new Date(left);
+  const rightDate = new Date(right);
+  if (!Number.isNaN(leftDate.getTime()) && !Number.isNaN(rightDate.getTime())) {
+    return leftDate.getTime() === rightDate.getTime();
+  }
+
+  return String(left) === String(right);
+}
+
 async function findPlanByName(planName) {
   if (!planName) return null;
 
@@ -227,8 +240,8 @@ async function applyHostedSubscriptionForUser({
   const hasMatchingRow = (existingRows || []).some((row) =>
     String(row.plan_id) === String(planId)
     && String(row.status) === normalizedStatus
-    && String(row.current_period_start || '') === String(normalizedStart || '')
-    && String(row.current_period_end || '') === String(normalizedEnd || '')
+    && isSameTimestamp(row.current_period_start, normalizedStart)
+    && isSameTimestamp(row.current_period_end, normalizedEnd)
   );
 
   if (hasMatchingRow) {
@@ -255,6 +268,33 @@ async function applyHostedSubscriptionForUser({
     }]);
 
   if (insertError) throw insertError;
+
+  if (normalizedStatus === 'active') {
+    const { data: activeRows, error: activeRowsError } = await supabaseAdmin
+      .from('subscriptions')
+      .select('id, current_period_start, current_period_end, created_at')
+      .eq('user_id', userId)
+      .eq('plan_id', planId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+
+    if (activeRowsError) throw activeRowsError;
+
+    const [, ...duplicateRows] = (activeRows || []).filter((row) =>
+      isSameTimestamp(row.current_period_start, normalizedStart)
+      && isSameTimestamp(row.current_period_end, normalizedEnd)
+    );
+
+    if (duplicateRows.length > 0) {
+      const duplicateIds = duplicateRows.map((row) => row.id);
+      const { error: dedupeError } = await supabaseAdmin
+        .from('subscriptions')
+        .update({ status: 'canceled' })
+        .in('id', duplicateIds);
+
+      if (dedupeError) throw dedupeError;
+    }
+  }
 }
 
 function ensurePlaywrightBrowserExecutables(localBrowsersDir) {
@@ -525,7 +565,8 @@ const ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES = new Set([
     'video/webm',
     'video/mp4',
 ]);
-const INTERVIEW_SUMMARY_SECTION_ORDER = [
+const INTERVIEW_SUMMARY_ANALYSIS_MODES = new Set(['service_design', 'prototype_testing']);
+const INTERVIEW_SERVICE_DESIGN_SECTION_ORDER = [
     'summary',
     'journeyDraft',
     'jtbdProfile',
@@ -538,12 +579,52 @@ const INTERVIEW_SUMMARY_SECTION_ORDER = [
     'strengths',
     'quotes',
 ];
+const INTERVIEW_PROTOTYPE_TESTING_SECTION_ORDER = [
+    'summary',
+    'testedProductContext',
+    'taskSuccess',
+    'whatWorked',
+    'whatDidNotWork',
+    'confusionsObjections',
+    'featureRequests',
+    'actionableRecommendations',
+    'quotes',
+];
+const INTERVIEW_SUMMARY_SECTION_ORDER = [
+    ...new Set([
+        ...INTERVIEW_SERVICE_DESIGN_SECTION_ORDER,
+        ...INTERVIEW_PROTOTYPE_TESTING_SECTION_ORDER,
+    ]),
+];
+const INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS = new Set([
+    'testedProductContext',
+    'taskSuccess',
+    'whatWorked',
+    'whatDidNotWork',
+    'confusionsObjections',
+    'featureRequests',
+    'actionableRecommendations',
+]);
 const INTERVIEW_SUMMARY_PRESET_SECTIONS = {
-    full_analysis: INTERVIEW_SUMMARY_SECTION_ORDER,
+    full_analysis: INTERVIEW_SERVICE_DESIGN_SECTION_ORDER,
     quick_summary: ['summary', 'painPoints', 'strengths', 'quotes'],
     research_insights: ['summary', 'painPoints', 'strengths', 'momentsOfFriction', 'unmetNeeds', 'workarounds', 'opportunityAreas', 'quotes'],
     journey_mapping: ['summary', 'journeyDraft', 'painPoints', 'strengths', 'momentsOfFriction', 'quotes'],
     jtbd_analysis: ['summary', 'jtbdProfile', 'forcesOfProgress', 'strengths', 'quotes'],
+    prototype_testing: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'actionableRecommendations', 'quotes'],
+    usability_findings: ['testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'quotes'],
+    product_opportunities: ['summary', 'featureRequests', 'actionableRecommendations', 'quotes'],
+    decision_ready_report: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'featureRequests', 'actionableRecommendations', 'quotes'],
+};
+const INTERVIEW_SUMMARY_PRESET_MODES = {
+    quick_summary: 'service_design',
+    research_insights: 'service_design',
+    journey_mapping: 'service_design',
+    jtbd_analysis: 'service_design',
+    prototype_testing: 'prototype_testing',
+    usability_findings: 'prototype_testing',
+    product_opportunities: 'prototype_testing',
+    decision_ready_report: 'prototype_testing',
 };
 const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
     summary: {
@@ -726,6 +807,122 @@ const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
             'strengths: up to 5',
         ],
     },
+    testedProductContext: {
+        focus: [
+            'the product, prototype, concept, or flow being tested',
+            'the scenario and research goal implied by the conversation',
+            'the target user context if it is stated by the respondent or interviewer',
+        ],
+        schema: `"testedProductContext": {
+    "productOrPrototype": "string",
+    "testedScenario": "string",
+    "researchGoal": "string",
+    "targetUser": "string"
+  }`,
+        limits: [
+            'testedProductContext: keep every field to one concise sentence',
+        ],
+    },
+    taskSuccess: {
+        focus: [
+            'whether the respondent understood and completed the tested tasks',
+            'where task progress was completed, partial, failed, or not observed',
+            'observable evidence from the test session',
+        ],
+        schema: `"taskSuccess": [
+    {
+      "task": "string",
+      "outcome": "completed|partial|failed|not_observed",
+      "whatHappened": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'taskSuccess: up to 6',
+        ],
+    },
+    whatWorked: {
+        focus: [
+            'prototype elements that were clear, useful, desirable, or confidence-building',
+            'what the respondent liked and why it helped',
+        ],
+        schema: `"whatWorked": [
+    {
+      "item": "string",
+      "whyItWorked": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'whatWorked: up to 5',
+        ],
+    },
+    whatDidNotWork: {
+        focus: [
+            'prototype elements that were confusing, unusable, missing, or weak',
+            'the impact of each issue on comprehension, trust, or task completion',
+        ],
+        schema: `"whatDidNotWork": [
+    {
+      "item": "string",
+      "problem": "string",
+      "impact": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'whatDidNotWork: up to 5',
+        ],
+    },
+    confusionsObjections: {
+        focus: [
+            'moments where the respondent hesitated, misunderstood, objected, or expected something different',
+            'likely causes of confusion based only on the transcript',
+        ],
+        schema: `"confusionsObjections": [
+    {
+      "moment": "string",
+      "confusionOrObjection": "string",
+      "likelyCause": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'confusionsObjections: up to 5',
+        ],
+    },
+    featureRequests: {
+        focus: [
+            'explicit requests, expectations, or missing capabilities mentioned by the respondent',
+            'the underlying need behind each requested feature',
+        ],
+        schema: `"featureRequests": [
+    {
+      "request": "string",
+      "underlyingNeed": "string",
+      "evidenceQuote": "string"
+    }
+  ]`,
+        limits: [
+            'featureRequests: up to 5',
+        ],
+    },
+    actionableRecommendations: {
+        focus: [
+            'specific next design or product changes supported by the test evidence',
+            'prioritized recommendations that help the team decide what to improve next',
+        ],
+        schema: `"actionableRecommendations": [
+    {
+      "recommendation": "string",
+      "rationale": "string",
+      "priority": "low|medium|high"
+    }
+  ]`,
+        limits: [
+            'actionableRecommendations: up to 5',
+        ],
+    },
     quotes: {
         focus: [
             'the strongest verbatim quotes that represent the customer\'s voice',
@@ -769,32 +966,59 @@ function normalizeInterviewSummarySections(value) {
     }, []);
 }
 
+function inferInterviewSummaryAnalysisMode({ requestedMode, preset, selectedSections }) {
+    const modeCandidate = typeof requestedMode === 'string' ? requestedMode.trim() : '';
+    if (INTERVIEW_SUMMARY_ANALYSIS_MODES.has(modeCandidate)) return modeCandidate;
+    if (INTERVIEW_SUMMARY_PRESET_MODES[preset]) return INTERVIEW_SUMMARY_PRESET_MODES[preset];
+    return selectedSections.some((sectionKey) => INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS.has(sectionKey))
+        ? 'prototype_testing'
+        : 'service_design';
+}
+
 function resolveInterviewSummaryRequest(body = {}) {
     const requestedSections = normalizeInterviewSummarySections(body?.selectedSections);
     const presetCandidate = typeof body?.preset === 'string' ? body.preset.trim() : '';
     const preset = Object.prototype.hasOwnProperty.call(INTERVIEW_SUMMARY_PRESET_SECTIONS, presetCandidate)
         ? presetCandidate
         : (requestedSections.length > 0 ? 'custom' : 'full_analysis');
+    const selectedSections = requestedSections.length > 0
+        ? requestedSections
+        : [...(INTERVIEW_SUMMARY_PRESET_SECTIONS[preset] || INTERVIEW_SUMMARY_PRESET_SECTIONS.full_analysis)];
 
     return {
         preset,
-        selectedSections: requestedSections.length > 0
-            ? requestedSections
-            : [...(INTERVIEW_SUMMARY_PRESET_SECTIONS[preset] || INTERVIEW_SUMMARY_PRESET_SECTIONS.full_analysis)],
+        analysisMode: inferInterviewSummaryAnalysisMode({
+            requestedMode: body?.analysisMode,
+            preset,
+            selectedSections,
+        }),
+        selectedSections,
         mergeMode: body?.mergeMode === 'replace_all' ? 'replace_all' : 'merge_selected',
     };
 }
 
-function buildInterviewSummaryPrompt({ conversationText, selectedSections }) {
+function buildInterviewSummaryPrompt({ conversationText, selectedSections, analysisMode = 'service_design' }) {
     const sectionDefs = selectedSections
         .map((sectionKey) => INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS[sectionKey])
         .filter(Boolean);
     const focusBullets = [...new Set(sectionDefs.flatMap((section) => section.focus || []))];
     const schema = sectionDefs.map((section) => section.schema).join(',\n');
     const limits = [...new Set(sectionDefs.flatMap((section) => section.limits || []))];
+    const includesPrototypeSections = analysisMode === 'prototype_testing'
+        || selectedSections.some((sectionKey) => INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS.has(sectionKey));
+    const prototypeRules = includesPrototypeSections
+        ? `
+PROTOTYPE TESTING RULES:
+- Treat this as product/prototype/concept testing when the transcript contains product reactions, task attempts, screen feedback, or feature expectations.
+- Separate what the respondent liked from what was actually clear, usable, or useful.
+- Track task success only when a task or expected action is stated or observable.
+- Turn recommendations into concrete next design or product decisions.
+- Do not invent prototype context, screens, tasks, or product details that are not stated in the transcript.
+`
+        : '';
 
-    return `You are a senior CX Researcher and Service Designer.
-Your task is to analyze this interview as evidence about the customer's lived experience across a service, not just to summarize the conversation.
+    return `You are a senior UX/CX Researcher.
+Your task is to analyze this interview as evidence about the respondent's lived experience, service journey, or product/prototype test depending on the requested sections.
 
 Only generate the requested analysis sections.
 
@@ -812,6 +1036,7 @@ CRITICAL RULES:
 - In journeyDraft, keep customerActions limited to observable steps or decisions, and place motivations, delights, incentives, or reasons in drivers instead of customerActions.
 - If something is unclear, prefer an empty string or empty array instead of guessing.
 - Return only the requested top-level keys and omit everything else.
+${prototypeRules}
 
 Return EXACTLY one valid JSON object with this schema:
 {
@@ -851,13 +1076,14 @@ function mergeInterviewSummarySections(existingSummaryData, generatedSummaryData
     return normalizeInterviewSummaryData(mergedSummary) || generatedSummaryData;
 }
 
-function buildInterviewSummarySystemState(currentSystemState, { provider, model, preset, selectedSections, mergeMode }) {
+function buildInterviewSummarySystemState(currentSystemState, { provider, model, preset, analysisMode, selectedSections, mergeMode }) {
     return {
         ...currentSystemState,
         summaryGeneration: {
             provider,
             model,
             preset,
+            analysisMode,
             selectedSections,
             mergeMode,
             generatedAt: new Date().toISOString(),
@@ -3448,6 +3674,7 @@ function normalizeInterviewSummaryData(raw) {
   const journeyDraft = raw.journeyDraft && typeof raw.journeyDraft === 'object' && !Array.isArray(raw.journeyDraft) ? raw.journeyDraft : {};
   const jtbdProfile = raw.jtbdProfile && typeof raw.jtbdProfile === 'object' && !Array.isArray(raw.jtbdProfile) ? raw.jtbdProfile : {};
   const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress) ? raw.forcesOfProgress : {};
+  const testedProductContext = raw.testedProductContext && typeof raw.testedProductContext === 'object' && !Array.isArray(raw.testedProductContext) ? raw.testedProductContext : {};
   const normalized = {
     summary: {
       jobToBeDone: cleanString(summary.jobToBeDone || raw.jobToBeDone),
@@ -3591,6 +3818,103 @@ function normalizeInterviewSummaryData(raw) {
       },
       5
     ),
+    testedProductContext: {
+      productOrPrototype: cleanString(testedProductContext.productOrPrototype || testedProductContext.product || testedProductContext.prototype),
+      testedScenario: cleanString(testedProductContext.testedScenario || testedProductContext.scenario),
+      researchGoal: cleanString(testedProductContext.researchGoal || testedProductContext.goal),
+      targetUser: cleanString(testedProductContext.targetUser || testedProductContext.audience),
+    },
+    taskSuccess: normalizeObjectArray(
+      raw.taskSuccess,
+      (item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const task = cleanString(item.task);
+        const outcome = normalizeEnum(item.outcome, ['completed', 'partial', 'failed', 'not_observed']);
+        const whatHappened = cleanString(item.whatHappened || item.observation);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!task && !outcome && !whatHappened && !evidenceQuote) return null;
+        return { task, outcome, whatHappened, evidenceQuote };
+      },
+      6
+    ),
+    whatWorked: normalizeObjectArray(
+      raw.whatWorked,
+      (item) => {
+        if (typeof item === 'string') {
+          const value = cleanString(item);
+          return value ? { item: value, whyItWorked: '', evidenceQuote: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const itemName = cleanString(item.item || item.title);
+        const whyItWorked = cleanString(item.whyItWorked || item.reason);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!itemName && !whyItWorked && !evidenceQuote) return null;
+        return { item: itemName, whyItWorked, evidenceQuote };
+      },
+      5
+    ),
+    whatDidNotWork: normalizeObjectArray(
+      raw.whatDidNotWork,
+      (item) => {
+        if (typeof item === 'string') {
+          const value = cleanString(item);
+          return value ? { item: value, problem: '', impact: '', evidenceQuote: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const itemName = cleanString(item.item || item.title);
+        const problem = cleanString(item.problem || item.description);
+        const impact = cleanString(item.impact);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!itemName && !problem && !impact && !evidenceQuote) return null;
+        return { item: itemName, problem, impact, evidenceQuote };
+      },
+      5
+    ),
+    confusionsObjections: normalizeObjectArray(
+      raw.confusionsObjections,
+      (item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const moment = cleanString(item.moment || item.stage);
+        const confusionOrObjection = cleanString(item.confusionOrObjection || item.confusion || item.objection);
+        const likelyCause = cleanString(item.likelyCause || item.cause);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!moment && !confusionOrObjection && !likelyCause && !evidenceQuote) return null;
+        return { moment, confusionOrObjection, likelyCause, evidenceQuote };
+      },
+      5
+    ),
+    featureRequests: normalizeObjectArray(
+      raw.featureRequests,
+      (item) => {
+        if (typeof item === 'string') {
+          const request = cleanString(item);
+          return request ? { request, underlyingNeed: '', evidenceQuote: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const request = cleanString(item.request || item.feature);
+        const underlyingNeed = cleanString(item.underlyingNeed || item.need);
+        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+        if (!request && !underlyingNeed && !evidenceQuote) return null;
+        return { request, underlyingNeed, evidenceQuote };
+      },
+      5
+    ),
+    actionableRecommendations: normalizeObjectArray(
+      raw.actionableRecommendations,
+      (item) => {
+        if (typeof item === 'string') {
+          const recommendation = cleanString(item);
+          return recommendation ? { recommendation, rationale: '', priority: '' } : null;
+        }
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const recommendation = cleanString(item.recommendation || item.action);
+        const rationale = cleanString(item.rationale || item.reason);
+        const priority = normalizeEnum(item.priority, ['low', 'medium', 'high']);
+        if (!recommendation && !rationale && !priority) return null;
+        return { recommendation, rationale, priority };
+      },
+      5
+    ),
     quotes: normalizeStringArray(raw.quotes, 3),
   };
 
@@ -3617,6 +3941,16 @@ function normalizeInterviewSummaryData(raw) {
     normalized.workarounds.length > 0 ||
     normalized.opportunityAreas.length > 0 ||
     normalized.strengths.length > 0 ||
+    normalized.testedProductContext.productOrPrototype ||
+    normalized.testedProductContext.testedScenario ||
+    normalized.testedProductContext.researchGoal ||
+    normalized.testedProductContext.targetUser ||
+    normalized.taskSuccess.length > 0 ||
+    normalized.whatWorked.length > 0 ||
+    normalized.whatDidNotWork.length > 0 ||
+    normalized.confusionsObjections.length > 0 ||
+    normalized.featureRequests.length > 0 ||
+    normalized.actionableRecommendations.length > 0 ||
     normalized.quotes.length > 0;
 
   return hasContent ? normalized : null;
@@ -5789,7 +6123,7 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
         }
 
         const summaryRequest = resolveInterviewSummaryRequest(req.body || {});
-        const { preset, selectedSections, mergeMode } = summaryRequest;
+        const { preset, analysisMode, selectedSections, mergeMode } = summaryRequest;
 
         // 1. Initialize Gemini API
         if (!process.env.GEMINI_API_KEY) {
@@ -5805,7 +6139,7 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
         ).join('\n');
 
         // 3. Construct the prompt
-        const prompt = buildInterviewSummaryPrompt({ conversationText, selectedSections });
+        const prompt = buildInterviewSummaryPrompt({ conversationText, selectedSections, analysisMode });
 
         // 4. Call Gemini
         const result = await model.generateContent(prompt);
@@ -5837,6 +6171,7 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
                     provider: 'gemini',
                     model: 'gemini-2.5-pro',
                     preset,
+                    analysisMode,
                     selectedSections,
                     mergeMode,
                 }

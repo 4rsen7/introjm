@@ -11,7 +11,7 @@ const INSIGHTS_PANEL_WIDTH_KEY = 'iterojm.interview.insightsWidth';
 const DEFAULT_INSIGHTS_WIDTH = 420;
 const MIN_INSIGHTS_WIDTH = 320;
 const MAX_INSIGHTS_WIDTH = 680;
-const INSIGHT_SECTION_ORDER = [
+const SERVICE_DESIGN_INSIGHT_SECTION_ORDER = [
   'summary',
   'journeyDraft',
   'jtbdProfile',
@@ -24,13 +24,57 @@ const INSIGHT_SECTION_ORDER = [
   'strengths',
   'quotes',
 ];
+const PROTOTYPE_TESTING_INSIGHT_SECTION_ORDER = [
+  'summary',
+  'testedProductContext',
+  'taskSuccess',
+  'whatWorked',
+  'whatDidNotWork',
+  'confusionsObjections',
+  'featureRequests',
+  'actionableRecommendations',
+  'quotes',
+];
+const INSIGHT_SECTION_ORDER = [
+  ...new Set([
+    ...SERVICE_DESIGN_INSIGHT_SECTION_ORDER,
+    ...PROTOTYPE_TESTING_INSIGHT_SECTION_ORDER,
+  ]),
+];
 const INSIGHT_PRESET_SECTIONS = {
   quick_summary: ['summary', 'painPoints', 'strengths', 'quotes'],
   research_insights: ['summary', 'painPoints', 'strengths', 'momentsOfFriction', 'unmetNeeds', 'workarounds', 'opportunityAreas', 'quotes'],
   journey_mapping: ['summary', 'journeyDraft', 'painPoints', 'strengths', 'momentsOfFriction', 'quotes'],
   jtbd_analysis: ['summary', 'jtbdProfile', 'forcesOfProgress', 'strengths', 'quotes'],
+  prototype_testing: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'actionableRecommendations', 'quotes'],
+  usability_findings: ['testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'quotes'],
+  product_opportunities: ['summary', 'featureRequests', 'actionableRecommendations', 'quotes'],
+  decision_ready_report: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'featureRequests', 'actionableRecommendations', 'quotes'],
+};
+const INSIGHT_PRESET_MODES = {
+  quick_summary: 'service_design',
+  research_insights: 'service_design',
+  journey_mapping: 'service_design',
+  jtbd_analysis: 'service_design',
+  prototype_testing: 'prototype_testing',
+  usability_findings: 'prototype_testing',
+  product_opportunities: 'prototype_testing',
+  decision_ready_report: 'prototype_testing',
+};
+const INSIGHT_MODES = {
+  service_design: {
+    defaultPreset: 'research_insights',
+    presets: ['quick_summary', 'research_insights', 'journey_mapping', 'jtbd_analysis'],
+    sections: SERVICE_DESIGN_INSIGHT_SECTION_ORDER,
+  },
+  prototype_testing: {
+    defaultPreset: 'prototype_testing',
+    presets: ['prototype_testing', 'usability_findings', 'product_opportunities', 'decision_ready_report'],
+    sections: PROTOTYPE_TESTING_INSIGHT_SECTION_ORDER,
+  },
 };
 const DEFAULT_INSIGHT_PRESET = 'research_insights';
+const DEFAULT_INSIGHT_MODE = 'service_design';
 const DEFAULT_INSIGHT_SECTIONS = [...INSIGHT_PRESET_SECTIONS[DEFAULT_INSIGHT_PRESET]];
 const INTERVIEW_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024;
 const SUPPORTED_UPLOAD_FILE_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.mp4', '.webm'];
@@ -133,6 +177,7 @@ const normalizeInterviewSummary = (raw) => {
   const journeyDraft = raw.journeyDraft && typeof raw.journeyDraft === 'object' && !Array.isArray(raw.journeyDraft) ? raw.journeyDraft : {};
   const jtbdProfile = raw.jtbdProfile && typeof raw.jtbdProfile === 'object' && !Array.isArray(raw.jtbdProfile) ? raw.jtbdProfile : {};
   const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress) ? raw.forcesOfProgress : {};
+  const testedProductContext = raw.testedProductContext && typeof raw.testedProductContext === 'object' && !Array.isArray(raw.testedProductContext) ? raw.testedProductContext : {};
   const painPoints = Array.isArray(raw.painPoints)
     ? raw.painPoints
         .map((item) => {
@@ -203,6 +248,97 @@ const normalizeInterviewSummary = (raw) => {
         })
         .filter(Boolean)
     : [];
+  const taskSuccess = Array.isArray(raw.taskSuccess)
+    ? raw.taskSuccess
+        .map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const task = cleanString(item.task);
+          const outcome = cleanString(item.outcome);
+          const whatHappened = cleanString(item.whatHappened || item.observation);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!task && !outcome && !whatHappened && !evidenceQuote) return null;
+          return { task, outcome, whatHappened, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
+  const whatWorked = Array.isArray(raw.whatWorked)
+    ? raw.whatWorked
+        .map((item) => {
+          if (typeof item === 'string') {
+            const value = cleanString(item);
+            return value ? { item: value, whyItWorked: '', evidenceQuote: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const itemName = cleanString(item.item || item.title);
+          const whyItWorked = cleanString(item.whyItWorked || item.reason);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!itemName && !whyItWorked && !evidenceQuote) return null;
+          return { item: itemName, whyItWorked, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
+  const whatDidNotWork = Array.isArray(raw.whatDidNotWork)
+    ? raw.whatDidNotWork
+        .map((item) => {
+          if (typeof item === 'string') {
+            const value = cleanString(item);
+            return value ? { item: value, problem: '', impact: '', evidenceQuote: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const itemName = cleanString(item.item || item.title);
+          const problem = cleanString(item.problem || item.description);
+          const impact = cleanString(item.impact);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!itemName && !problem && !impact && !evidenceQuote) return null;
+          return { item: itemName, problem, impact, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
+  const confusionsObjections = Array.isArray(raw.confusionsObjections)
+    ? raw.confusionsObjections
+        .map((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const moment = cleanString(item.moment || item.stage);
+          const confusionOrObjection = cleanString(item.confusionOrObjection || item.confusion || item.objection);
+          const likelyCause = cleanString(item.likelyCause || item.cause);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!moment && !confusionOrObjection && !likelyCause && !evidenceQuote) return null;
+          return { moment, confusionOrObjection, likelyCause, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
+  const featureRequests = Array.isArray(raw.featureRequests)
+    ? raw.featureRequests
+        .map((item) => {
+          if (typeof item === 'string') {
+            const request = cleanString(item);
+            return request ? { request, underlyingNeed: '', evidenceQuote: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const request = cleanString(item.request || item.feature);
+          const underlyingNeed = cleanString(item.underlyingNeed || item.need);
+          const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
+          if (!request && !underlyingNeed && !evidenceQuote) return null;
+          return { request, underlyingNeed, evidenceQuote };
+        })
+        .filter(Boolean)
+    : [];
+  const actionableRecommendations = Array.isArray(raw.actionableRecommendations)
+    ? raw.actionableRecommendations
+        .map((item) => {
+          if (typeof item === 'string') {
+            const recommendation = cleanString(item);
+            return recommendation ? { recommendation, rationale: '', priority: '' } : null;
+          }
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const recommendation = cleanString(item.recommendation || item.action);
+          const rationale = cleanString(item.rationale || item.reason);
+          const priority = cleanString(item.priority);
+          if (!recommendation && !rationale && !priority) return null;
+          return { recommendation, rationale, priority };
+        })
+        .filter(Boolean)
+    : [];
 
   const normalized = {
     summary: {
@@ -249,6 +385,18 @@ const normalizeInterviewSummary = (raw) => {
     workarounds: normalizePairList(raw.workarounds, 'workaround', 'whatItSignals'),
     opportunityAreas: normalizePairList(raw.opportunityAreas, 'area', 'rationale'),
     strengths,
+    testedProductContext: {
+      productOrPrototype: cleanString(testedProductContext.productOrPrototype || testedProductContext.product || testedProductContext.prototype),
+      testedScenario: cleanString(testedProductContext.testedScenario || testedProductContext.scenario),
+      researchGoal: cleanString(testedProductContext.researchGoal || testedProductContext.goal),
+      targetUser: cleanString(testedProductContext.targetUser || testedProductContext.audience),
+    },
+    taskSuccess,
+    whatWorked,
+    whatDidNotWork,
+    confusionsObjections,
+    featureRequests,
+    actionableRecommendations,
     quotes: Array.isArray(raw.quotes) ? raw.quotes.map((q) => cleanString(q)).filter(Boolean) : [],
   };
 
@@ -275,6 +423,16 @@ const normalizeInterviewSummary = (raw) => {
     normalized.workarounds.length > 0 ||
     normalized.opportunityAreas.length > 0 ||
     normalized.strengths.length > 0 ||
+    normalized.testedProductContext.productOrPrototype ||
+    normalized.testedProductContext.testedScenario ||
+    normalized.testedProductContext.researchGoal ||
+    normalized.testedProductContext.targetUser ||
+    normalized.taskSuccess.length > 0 ||
+    normalized.whatWorked.length > 0 ||
+    normalized.whatDidNotWork.length > 0 ||
+    normalized.confusionsObjections.length > 0 ||
+    normalized.featureRequests.length > 0 ||
+    normalized.actionableRecommendations.length > 0 ||
     normalized.quotes.length > 0;
 
   return hasContent ? normalized : null;
@@ -306,6 +464,42 @@ const sentimentLabel = (sentiment, t) => {
   }
 };
 
+const taskOutcomeLabel = (outcome, t) => {
+  switch (outcome) {
+    case 'completed':
+      return t('interviews.taskOutcomeCompleted');
+    case 'partial':
+      return t('interviews.taskOutcomePartial');
+    case 'failed':
+      return t('interviews.taskOutcomeFailed');
+    case 'not_observed':
+      return t('interviews.taskOutcomeNotObserved');
+    default:
+      return outcome;
+  }
+};
+
+const priorityLabel = (priority, t) => {
+  switch (priority) {
+    case 'high':
+      return t('interviews.priorityHigh');
+    case 'medium':
+      return t('interviews.priorityMedium');
+    case 'low':
+      return t('interviews.priorityLow');
+    default:
+      return priority;
+  }
+};
+
+const inferInsightMode = ({ mode, preset, selectedSections = [] } = {}) => {
+  if (mode && INSIGHT_MODES[mode]) return mode;
+  if (preset && INSIGHT_PRESET_MODES[preset]) return INSIGHT_PRESET_MODES[preset];
+  return selectedSections.some((sectionKey) => PROTOTYPE_TESTING_INSIGHT_SECTION_ORDER.includes(sectionKey))
+    ? 'prototype_testing'
+    : DEFAULT_INSIGHT_MODE;
+};
+
 const normalizeInsightConfigFromSummary = (summaryData) => {
   if (!isPlainObject(summaryData)) return null;
   const systemState = isPlainObject(summaryData._system) ? summaryData._system : null;
@@ -320,11 +514,17 @@ const normalizeInsightConfigFromSummary = (summaryData) => {
     ? presetCandidate
     : '';
   const mergeMode = summaryGeneration.mergeMode === 'replace_all' ? 'replace_all' : 'merge_selected';
+  const analysisMode = inferInsightMode({
+    mode: cleanString(summaryGeneration.analysisMode),
+    preset,
+    selectedSections,
+  });
 
   if (!preset && selectedSections.length === 0) return null;
 
   return {
     preset: preset || 'custom',
+    analysisMode,
     selectedSections: selectedSections.length > 0 ? selectedSections : [...DEFAULT_INSIGHT_SECTIONS],
     mergeMode,
   };
@@ -388,6 +588,7 @@ export default function InterviewRoom({ onLimitReached }) {
   const [generatingAI, setGeneratingAI] = useState(false);
   const [insightStage, setInsightStage] = useState(1);
   const [isInsightsConfigOpen, setIsInsightsConfigOpen] = useState(false);
+  const [activeInsightMode, setActiveInsightMode] = useState(DEFAULT_INSIGHT_MODE);
   const [selectedInsightPreset, setSelectedInsightPreset] = useState(DEFAULT_INSIGHT_PRESET);
   const [selectedInsightSections, setSelectedInsightSections] = useState(DEFAULT_INSIGHT_SECTIONS);
   const [insightMergeMode, setInsightMergeMode] = useState('merge_selected');
@@ -398,7 +599,19 @@ export default function InterviewRoom({ onLimitReached }) {
   const normalizedSummary = useMemo(() => normalizeInterviewSummary(interview?.summary_data), [interview?.summary_data]);
   const persistedInsightConfig = useMemo(() => normalizeInsightConfigFromSummary(interview?.summary_data), [interview?.summary_data]);
   const interviewStatus = interview?.status;
-  const insightPresets = useMemo(() => ([
+  const insightModes = useMemo(() => ([
+    {
+      key: 'service_design',
+      label: t('interviews.insightModeServiceDesign'),
+      description: t('interviews.insightModeServiceDesignDesc'),
+    },
+    {
+      key: 'prototype_testing',
+      label: t('interviews.insightModePrototypeTesting'),
+      description: t('interviews.insightModePrototypeTestingDesc'),
+    },
+  ]), [t]);
+  const allInsightPresets = useMemo(() => ([
     {
       key: 'quick_summary',
       label: t('interviews.presetQuickSummary'),
@@ -419,8 +632,28 @@ export default function InterviewRoom({ onLimitReached }) {
       label: t('interviews.presetJtbdAnalysis'),
       description: t('interviews.presetJtbdAnalysisDesc'),
     },
+    {
+      key: 'prototype_testing',
+      label: t('interviews.presetPrototypeTesting'),
+      description: t('interviews.presetPrototypeTestingDesc'),
+    },
+    {
+      key: 'usability_findings',
+      label: t('interviews.presetUsabilityFindings'),
+      description: t('interviews.presetUsabilityFindingsDesc'),
+    },
+    {
+      key: 'product_opportunities',
+      label: t('interviews.presetProductOpportunities'),
+      description: t('interviews.presetProductOpportunitiesDesc'),
+    },
+    {
+      key: 'decision_ready_report',
+      label: t('interviews.presetDecisionReadyReport'),
+      description: t('interviews.presetDecisionReadyReportDesc'),
+    },
   ]), [t]);
-  const insightSectionOptions = useMemo(() => ([
+  const allInsightSectionOptions = useMemo(() => ([
     { key: 'summary', label: t('interviews.sectionSummary'), description: t('interviews.sectionSummaryDesc') },
     { key: 'journeyDraft', label: t('interviews.journeyDraft'), description: t('interviews.sectionJourneyDraftDesc') },
     { key: 'jtbdProfile', label: t('interviews.jtbdProfile'), description: t('interviews.sectionJtbdProfileDesc') },
@@ -431,8 +664,23 @@ export default function InterviewRoom({ onLimitReached }) {
     { key: 'workarounds', label: t('interviews.workarounds'), description: t('interviews.sectionWorkaroundsDesc') },
     { key: 'opportunityAreas', label: t('interviews.opportunityAreas'), description: t('interviews.sectionOpportunityAreasDesc') },
     { key: 'strengths', label: t('interviews.strengths'), description: t('interviews.sectionStrengthsDesc') },
+    { key: 'testedProductContext', label: t('interviews.testedProductContext'), description: t('interviews.sectionTestedProductContextDesc') },
+    { key: 'taskSuccess', label: t('interviews.taskSuccess'), description: t('interviews.sectionTaskSuccessDesc') },
+    { key: 'whatWorked', label: t('interviews.whatWorked'), description: t('interviews.sectionWhatWorkedDesc') },
+    { key: 'whatDidNotWork', label: t('interviews.whatDidNotWork'), description: t('interviews.sectionWhatDidNotWorkDesc') },
+    { key: 'confusionsObjections', label: t('interviews.confusionsObjections'), description: t('interviews.sectionConfusionsObjectionsDesc') },
+    { key: 'featureRequests', label: t('interviews.featureRequests'), description: t('interviews.sectionFeatureRequestsDesc') },
+    { key: 'actionableRecommendations', label: t('interviews.actionableRecommendations'), description: t('interviews.sectionActionableRecommendationsDesc') },
     { key: 'quotes', label: t('interviews.keyQuotes'), description: t('interviews.sectionQuotesDesc') },
   ]), [t]);
+  const insightPresets = useMemo(() => {
+    const presetKeys = INSIGHT_MODES[activeInsightMode]?.presets || INSIGHT_MODES[DEFAULT_INSIGHT_MODE].presets;
+    return allInsightPresets.filter((preset) => presetKeys.includes(preset.key));
+  }, [activeInsightMode, allInsightPresets]);
+  const insightSectionOptions = useMemo(() => {
+    const sectionKeys = INSIGHT_MODES[activeInsightMode]?.sections || INSIGHT_MODES[DEFAULT_INSIGHT_MODE].sections;
+    return allInsightSectionOptions.filter((section) => sectionKeys.includes(section.key));
+  }, [activeInsightMode, allInsightSectionOptions]);
   const uploadFailureShownRef = useRef(false);
   const validateUploadFile = useCallback((file) => {
     if (!file) return false;
@@ -627,8 +875,19 @@ export default function InterviewRoom({ onLimitReached }) {
   const applyInsightPreset = (presetKey) => {
     const presetSections = INSIGHT_PRESET_SECTIONS[presetKey];
     if (!presetSections) return;
+    const presetMode = INSIGHT_PRESET_MODES[presetKey];
+    if (presetMode) setActiveInsightMode(presetMode);
     setSelectedInsightPreset(presetKey);
     setSelectedInsightSections([...presetSections]);
+  };
+
+  const handleInsightModeChange = (modeKey) => {
+    const mode = INSIGHT_MODES[modeKey];
+    if (!mode) return;
+    const nextPreset = mode.defaultPreset;
+    setActiveInsightMode(modeKey);
+    setSelectedInsightPreset(nextPreset);
+    setSelectedInsightSections([...(INSIGHT_PRESET_SECTIONS[nextPreset] || [])]);
   };
 
   const toggleInsightSection = (sectionKey) => {
@@ -684,6 +943,7 @@ export default function InterviewRoom({ onLimitReached }) {
 
   useEffect(() => {
     if (!persistedInsightConfig || isInsightsConfigOpen) return;
+    setActiveInsightMode(persistedInsightConfig.analysisMode || DEFAULT_INSIGHT_MODE);
     setSelectedInsightPreset(persistedInsightConfig.preset);
     setSelectedInsightSections(persistedInsightConfig.selectedSections);
     setInsightMergeMode(persistedInsightConfig.mergeMode);
@@ -1069,6 +1329,7 @@ export default function InterviewRoom({ onLimitReached }) {
 
   const generateAIInsights = async ({
     preset = selectedInsightPreset,
+    analysisMode = activeInsightMode,
     selectedSections = selectedInsightSections,
     mergeMode = insightMergeMode,
   } = {}) => {
@@ -1098,6 +1359,7 @@ export default function InterviewRoom({ onLimitReached }) {
         },
         body: JSON.stringify({
           preset,
+          analysisMode,
           selectedSections: normalizedSections,
           mergeMode,
         }),
@@ -1133,6 +1395,7 @@ export default function InterviewRoom({ onLimitReached }) {
     setIsInsightsConfigOpen(false);
     await generateAIInsights({
       preset: selectedInsightPreset,
+      analysisMode: activeInsightMode,
       selectedSections: selectedInsightSections,
       mergeMode: insightMergeMode,
     });
@@ -1646,6 +1909,163 @@ export default function InterviewRoom({ onLimitReached }) {
                   </div>
                 </div>
 
+                {(normalizedSummary.testedProductContext.productOrPrototype ||
+                  normalizedSummary.testedProductContext.testedScenario ||
+                  normalizedSummary.testedProductContext.researchGoal ||
+                  normalizedSummary.testedProductContext.targetUser) && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.testedProductContext')}</h3>
+                    <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4 shadow-sm space-y-3">
+                      {[
+                        ['productOrPrototype', t('interviews.productOrPrototype')],
+                        ['testedScenario', t('interviews.testedScenario')],
+                        ['researchGoal', t('interviews.researchGoal')],
+                        ['targetUser', t('interviews.targetUser')],
+                      ].map(([key, label]) => {
+                        const value = normalizedSummary.testedProductContext[key];
+                        if (!value) return null;
+                        return (
+                          <div key={key}>
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-sky-600 mb-1">{label}</div>
+                            <div className="text-sm text-sky-950 leading-relaxed">{value}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.taskSuccess.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.taskSuccess')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.taskSuccess.map((item, i) => (
+                        <div key={`${item.task || item.whatHappened}-${i}`} className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold text-gray-900">{item.task || item.whatHappened}</div>
+                            {item.outcome && (
+                              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                                {taskOutcomeLabel(item.outcome, t)}
+                              </span>
+                            )}
+                          </div>
+                          {item.task && item.whatHappened && <p className="text-sm text-gray-700 leading-relaxed">{item.whatHappened}</p>}
+                          {item.evidenceQuote && (
+                            <blockquote className="rounded-r-lg border-l-4 border-sky-300 bg-sky-50/70 pl-4 py-2 text-sm italic text-sky-900">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.whatWorked.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-emerald-500" />
+                      {t('interviews.whatWorked')}
+                    </h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.whatWorked.map((item, i) => (
+                        <div key={`${item.item || item.whyItWorked}-${i}`} className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-4 shadow-sm space-y-2">
+                          <div className="text-sm font-semibold text-emerald-950">{item.item || item.whyItWorked}</div>
+                          {item.item && item.whyItWorked && <p className="text-sm text-emerald-900 leading-relaxed">{item.whyItWorked}</p>}
+                          {item.evidenceQuote && (
+                            <blockquote className="rounded-r-lg border-l-4 border-emerald-300 bg-white/70 pl-4 py-2 text-sm italic text-emerald-900">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.whatDidNotWork.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                      <AlertCircle size={16} className="text-rose-500" />
+                      {t('interviews.whatDidNotWork')}
+                    </h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.whatDidNotWork.map((item, i) => (
+                        <div key={`${item.item || item.problem}-${i}`} className="rounded-lg border border-rose-100 bg-rose-50/70 p-4 shadow-sm space-y-2">
+                          <div className="text-sm font-semibold text-rose-950">{item.item || item.problem}</div>
+                          {item.item && item.problem && <p className="text-sm text-rose-900 leading-relaxed">{item.problem}</p>}
+                          {item.impact && <div className="text-xs text-rose-800"><span className="font-semibold text-rose-950">{t('interviews.customerImpact')}:</span> {item.impact}</div>}
+                          {item.evidenceQuote && (
+                            <blockquote className="rounded-r-lg border-l-4 border-rose-300 bg-white/70 pl-4 py-2 text-sm italic text-rose-900">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.confusionsObjections.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.confusionsObjections')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.confusionsObjections.map((item, i) => (
+                        <div key={`${item.moment || item.confusionOrObjection}-${i}`} className="rounded-lg border border-amber-100 bg-amber-50/70 p-4 shadow-sm space-y-2">
+                          {item.moment && <div className="text-xs font-bold uppercase tracking-wider text-amber-600">{item.moment}</div>}
+                          {item.confusionOrObjection && <div className="text-sm text-amber-950"><span className="font-semibold">{t('interviews.confusionOrObjection')}:</span> {item.confusionOrObjection}</div>}
+                          {item.likelyCause && <div className="text-sm text-amber-900"><span className="font-semibold">{t('interviews.likelyCause')}:</span> {item.likelyCause}</div>}
+                          {item.evidenceQuote && (
+                            <blockquote className="rounded-r-lg border-l-4 border-amber-300 bg-white/70 pl-4 py-2 text-sm italic text-amber-900">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.featureRequests.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.featureRequests')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.featureRequests.map((item, i) => (
+                        <div key={`${item.request || item.underlyingNeed}-${i}`} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-2">
+                          <div className="text-sm font-semibold text-gray-900">{item.request || item.underlyingNeed}</div>
+                          {item.request && item.underlyingNeed && <div className="text-sm text-gray-700 leading-relaxed">{item.underlyingNeed}</div>}
+                          {item.evidenceQuote && (
+                            <blockquote className="text-sm italic text-gray-600 border-l-4 border-gray-300 bg-gray-50 pl-4 py-2 rounded-r-lg">
+                              "{item.evidenceQuote}"
+                            </blockquote>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {normalizedSummary.actionableRecommendations.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.actionableRecommendations')}</h3>
+                    <div className="space-y-3">
+                      {normalizedSummary.actionableRecommendations.map((item, i) => (
+                        <div key={`${item.recommendation || item.rationale}-${i}`} className="bg-white border border-gray-100 shadow-sm p-4 rounded-lg space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold text-gray-900">{item.recommendation || item.rationale}</div>
+                            {item.priority && (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(item.priority === 'high' ? 'negative' : item.priority === 'medium' ? 'mixed' : 'positive')}`}>
+                                {priorityLabel(item.priority, t)}
+                              </span>
+                            )}
+                          </div>
+                          {item.recommendation && item.rationale && <div className="text-sm text-gray-700 leading-relaxed">{item.rationale}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {normalizedSummary.journeyDraft.stages.length > 0 && (
                   <div className="space-y-3">
                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t('interviews.journeyDraft')}</h3>
@@ -2018,6 +2438,33 @@ export default function InterviewRoom({ onLimitReached }) {
             </div>
 
             <div className="max-h-[75vh] overflow-y-auto px-6 py-6 space-y-8 bg-gray-50">
+              <section className="space-y-3">
+                <div>
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">{t('interviews.insightMode')}</h4>
+                  <p className="mt-1 text-sm text-gray-600">{t('interviews.insightModeDesc')}</p>
+                </div>
+                <div className="grid gap-2 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm md:grid-cols-2">
+                  {insightModes.map((mode) => {
+                    const isActive = activeInsightMode === mode.key;
+                    return (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => handleInsightModeChange(mode.key)}
+                        className={`rounded-xl px-4 py-3 text-left transition-all ${
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="text-sm font-semibold">{mode.label}</div>
+                        <p className={`mt-1 text-xs leading-relaxed ${isActive ? 'text-blue-50' : 'text-gray-500'}`}>{mode.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
               <section className="space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
