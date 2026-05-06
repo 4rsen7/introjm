@@ -83,7 +83,6 @@
     "generateInsights": "Generate Insights",
     "configureInsights": "Configure",
     "updateInsights": "Update",
-    "recommended": "Recommended",
     "insightSetupTitle": "Choose what to extract",
     "insightSetupDesc": "Select a preset or customize the exact sections to generate before the AI starts.",
     "insightMode": "Analysis type",

@@ -2424,7 +2424,6 @@ export default function InterviewRoom({ onLimitReached }) {
             <div className="border-b border-gray-200 px-6 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-500">{t('interviews.recommended')}</div>
                   <h3 className="text-xl font-bold text-gray-900">{t('interviews.insightSetupTitle')}</h3>
                   <p className="max-w-2xl text-sm text-gray-600">{t('interviews.insightSetupDesc')}</p>
                 </div>

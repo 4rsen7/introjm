@@ -83,7 +83,6 @@
     "generateInsights": "Згенерувати висновки",
     "configureInsights": "Налаштувати",
     "updateInsights": "Оновити",
-    "recommended": "Рекомендовано",
     "insightSetupTitle": "Оберіть, що саме визначати",
     "insightSetupDesc": "Виберіть готовий пресет або вручну вкажіть секції, які потрібно згенерувати перед запуском AI.",
     "insightMode": "Тип аналізу",
