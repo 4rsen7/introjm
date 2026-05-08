@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ArrowRight, Check, FileText, Gauge, Layers3, Users2 } from 'lucide-react';
+import MarketingHeader from '../components/common/MarketingHeader';
 import SeoInternalLinksSection from '../components/common/SeoInternalLinksSection';
 
 const LANDING_ORIGIN = ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_LANDING_ORIGIN) || 'https://iterojm.com').replace(/\/$/, '');
@@ -357,7 +358,8 @@ export default function JourneyMapSoftwarePage() {
 
   return (
     <div className="min-h-screen bg-[#060814] text-white">
-      <main className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+      <MarketingHeader lang={lang} />
+      <main className="mx-auto max-w-7xl px-4 pb-16 pt-28 sm:px-6 lg:px-8 lg:pb-24 lg:pt-32">
         <section className="mx-auto max-w-5xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/80">
             {copy.eyebrow}
