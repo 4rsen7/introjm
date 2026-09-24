@@ -1,0 +1,40 @@
+name: Research local checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'research/**'
+      - 'client/src/components/interviews/**'
+      - 'client/src/pages/InterviewRoom.jsx'
+      - 'server/**'
+      - 'package*.json'
+      - 'playwright.research.config.js'
+      - '.github/workflows/research-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:server
+      - run: npm run test:research-ui
+      - run: npm run build:research
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: research-test-results
+          path: test-results

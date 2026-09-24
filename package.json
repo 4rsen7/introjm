@@ -5,10 +5,15 @@
   "workspaces": [
     "admin",
     "client",
-    "server"
+    "server",
+    "research"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\" \"npm run dev -w admin\"",
+    "dev:research": "concurrently \"npm run dev -w server\" \"npm run dev -w research\"",
+    "build:research": "npm run build --workspace=research",
+    "test:server": "node --test server/tests/*.test.js",
+    "test:research-ui": "PLAYWRIGHT_BROWSERS_PATH=0 playwright test --config=playwright.research.config.js",
     "start": "npm start --workspace=server",
     "deploy:hostinger": "bash ./scripts/deploy-hostinger.sh",
     "deploy:hostinger:ssh": "bash ./scripts/deploy-hostinger-over-ssh.sh",
@@ -22,9 +27,11 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:smoke": "playwright test --grep @smoke --workers=1",
-    "test:e2e:smoke:local": "bash ./scripts/run-e2e-local.sh smoke"
+    "test:e2e:smoke:local": "bash ./scripts/run-e2e-local.sh smoke",
+    "worker:research": "npm run worker:research --workspace=server"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@playwright/test": "^1.54.2",
     "concurrently": "^8.2.2"
   },
@@ -32,7 +39,7 @@
     "express": "^4.18.0"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.57.1",
-    "@esbuild/linux-x64": "^0.27.2"
+    "@esbuild/linux-x64": "^0.27.2",
+    "@rollup/rollup-linux-x64-gnu": "^4.57.1"
   }
 }

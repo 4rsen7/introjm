@@ -1,0 +1,150 @@
+const express = require('express');
+const { ResearchError, assertDatabaseResult, listProductWorkspaces, requireProductWorkspace } = require('../access/productScope');
+const validate = require('./validation');
+
+const INTERVIEW_LIST_COLUMNS = 'id,workspace_id,study_id,user_id,title,type,status,created_at,updated_at,research_revision,transcript_revision,summary_revision,summary_stale,research_archived_at';
+const RPC_ERRORS = {
+    RESEARCH_ACCESS_REQUIRED: [403, 'Research beta access is required'],
+    RESEARCH_LIMIT_REACHED: [403, 'Research beta limit reached'],
+    RESEARCH_NOT_FOUND: [404, 'Resource not found'],
+    RESEARCH_CONFLICT: [409, 'This record changed. Reload before saving'],
+    RESEARCH_INVALID_INPUT: [400, 'Invalid research data'],
+};
+
+function publicError(error) {
+    if (error instanceof ResearchError) return error;
+    for (const [code, [status, message]] of Object.entries(RPC_ERRORS)) {
+        if (String(error?.message || '').includes(code)) return new ResearchError(status, code, message);
+    }
+    if (['42P01', '42703', '42883', 'PGRST202', 'PGRST204'].includes(error?.code)) {
+        return new ResearchError(503, 'RESEARCH_NOT_READY', 'Research setup is not complete');
+    }
+    return new ResearchError(500, 'RESEARCH_ERROR', 'Research request failed');
+}
+
+function createResearchRouter({ supabaseAdmin: db, authenticate, enabled = false, onError = () => {} }) {
+    if (!db || typeof authenticate !== 'function') throw new Error('Research requires database and authenticate dependencies');
+    const router = express.Router();
+    const route = (handler) => async (req, res, next) => {
+        try { await handler(req, res); } catch (error) { next(error); }
+    };
+    const send = (res, data, status = 200) => res.status(status).json({ status: 'success', data });
+    const rpc = async (name, args) => assertDatabaseResult(await db.rpc(name, args));
+    router.use(async (req, res, next) => {
+        try {
+            if (!(typeof enabled === 'function' ? enabled() : enabled === true)) {
+                throw new ResearchError(404, 'RESEARCH_DISABLED', 'Research is not enabled');
+            }
+            const token = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1];
+            if (!token) throw new ResearchError(401, 'UNAUTHORIZED', 'Sign in to continue');
+            const { user, error } = await authenticate(token);
+            if (error || !user) throw new ResearchError(401, 'UNAUTHORIZED', 'Sign in to continue');
+            req.researchUser = user;
+            next();
+        } catch (error) { next(error); }
+    });
+
+    async function studyAccess(userId, studyId) {
+        const study = assertDatabaseResult(await db.from('research_studies').select('*').eq('id', validate.uuid(studyId)).is('archived_at', null).maybeSingle());
+        if (!study) throw new ResearchError(404, 'NOT_FOUND', 'Study not found');
+        await requireProductWorkspace(db, userId, study.workspace_id);
+        return study;
+    }
+    async function interviewAccess(userId, interviewId) {
+        const interview = assertDatabaseResult(await db.from('interviews').select('*').eq('id', validate.uuid(interviewId)).is('research_archived_at', null).maybeSingle());
+        if (!interview || !interview.study_id) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
+        const study = await studyAccess(userId, interview.study_id);
+        if (study.workspace_id !== interview.workspace_id) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
+        return interview;
+    }
+
+    router.get('/workspaces', route(async (req, res) => send(res, await listProductWorkspaces(db, req.researchUser.id))));
+    router.post('/bootstrap', route(async (req, res) => {
+        const result = await rpc('research_bootstrap', {
+            p_user_id: req.researchUser.id,
+            p_name: req.body?.name == null ? 'Research workspace' : validate.text(req.body.name, 'name'),
+        });
+        const workspace = Array.isArray(result) ? result[0] : result;
+        if (!workspace) throw new ResearchError(503, 'RESEARCH_NOT_READY', 'Research setup is not complete');
+        send(res, await requireProductWorkspace(db, req.researchUser.id, workspace.id));
+    }));
+    router.get('/studies', route(async (req, res) => {
+        const workspaceId = validate.uuid(req.query.workspace_id, 'workspace_id');
+        await requireProductWorkspace(db, req.researchUser.id, workspaceId);
+        let query = db.from('research_studies').select('*').eq('workspace_id', workspaceId).is('archived_at', null)
+            .order('id', { ascending: false }).limit(validate.pageLimit(req.query.limit));
+        if (req.query.before) query = query.lt('id', validate.uuid(req.query.before, 'before'));
+        send(res, assertDatabaseResult(await query) || []);
+    }));
+    router.post('/studies', route(async (req, res) => {
+        const body = req.body || {};
+        const workspaceId = validate.uuid(body.workspace_id, 'workspace_id');
+        await requireProductWorkspace(db, req.researchUser.id, workspaceId);
+        send(res, await rpc('research_create_study', {
+            p_user_id: req.researchUser.id, p_workspace_id: workspaceId,
+            p_title: validate.text(body.title, 'title'), p_goal: validate.text(body.goal, 'goal', 12000),
+            p_brief: validate.text(body.brief, 'brief', 30000, true),
+        }), 201);
+    }));
+    router.get('/studies/:id', route(async (req, res) => send(res, await studyAccess(req.researchUser.id, req.params.id))));
+    router.patch('/studies/:id', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        const body = req.body || {};
+        send(res, await rpc('research_update_study', {
+            p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_revision: validate.revision(body.revision),
+            p_title: body.title === undefined ? study.title : validate.text(body.title, 'title'),
+            p_goal: body.goal === undefined ? study.goal : validate.text(body.goal, 'goal', 12000),
+            p_brief: body.brief === undefined ? study.brief : validate.text(body.brief, 'brief', 30000, true),
+            p_archive: false,
+        }));
+    }));
+    router.delete('/studies/:id', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        send(res, await rpc('research_update_study', {
+            p_user_id: req.researchUser.id, p_study_id: study.id, p_revision: validate.revision(req.body?.revision),
+            p_title: study.title, p_goal: study.goal, p_brief: study.brief, p_archive: true,
+        }));
+    }));
+    router.get('/studies/:id/interviews', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        let query = db.from('interviews').select(INTERVIEW_LIST_COLUMNS).eq('study_id', study.id).eq('workspace_id', study.workspace_id)
+            .is('research_archived_at', null).order('id', { ascending: false }).limit(validate.pageLimit(req.query.limit));
+        if (req.query.before) query = query.lt('id', validate.uuid(req.query.before, 'before'));
+        send(res, assertDatabaseResult(await query) || []);
+    }));
+    router.post('/studies/:id/interviews', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        send(res, await rpc('research_create_interview', {
+            p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_title: validate.text(req.body?.title, 'title'),
+        }), 201);
+    }));
+    router.get('/interviews/:id', route(async (req, res) => send(res, await interviewAccess(req.researchUser.id, req.params.id))));
+    async function updateInterview(req, res, archive) {
+        const interview = await interviewAccess(req.researchUser.id, req.params.id);
+        const body = req.body || {};
+        send(res, await rpc('research_update_interview', {
+            p_user_id: req.researchUser.id, p_interview_id: interview.id,
+            p_revision: validate.revision(body.research_revision, 'research_revision'),
+            p_transcript_revision: validate.revision(body.transcript_revision, 'transcript_revision'),
+            p_summary_revision: validate.revision(body.summary_revision, 'summary_revision'),
+            p_title: body.title === undefined ? interview.title : validate.text(body.title, 'title'),
+            p_transcript: body.transcript_data === undefined ? interview.transcript_data : validate.transcript(body.transcript_data),
+            p_archive: archive,
+        }));
+    }
+    router.patch('/interviews/:id', route((req, res) => updateInterview(req, res, false)));
+    router.delete('/interviews/:id', route((req, res) => updateInterview(req, res, true)));
+    router.use((req, res) => res.status(404).json({ status: 'error', code: 'NOT_FOUND', message: 'Research route not found' }));
+    router.use((error, req, res, next) => {
+        const safe = publicError(error);
+        if (safe.status >= 500) {
+            try { Promise.resolve(onError(error)).catch(() => {}); } catch (_) { /* logging cannot expose a raw error */ }
+        }
+        res.status(safe.status).json({ status: 'error', code: safe.code, message: safe.message });
+    });
+    return router;
+}
+
+module.exports = { createResearchRouter, publicError, INTERVIEW_LIST_COLUMNS };

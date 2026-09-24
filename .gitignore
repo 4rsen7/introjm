@@ -11,6 +11,9 @@ client/.env.production.local
 client/.env.production
 admin/.env.production.local
 admin/.env.production
+research/.env.production.local
+research/.env.production
+server/public/research/
 .DS_Store
 
 # Логи та збірки

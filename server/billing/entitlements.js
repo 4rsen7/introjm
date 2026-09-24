@@ -1,6 +1,9 @@
 const supabase = require('../supabaseClient');
-
-const supabaseAdmin = supabase.supabaseAdmin || supabase;
+const { createLegacyDataClient, readProductFlags } = require('../productScope');
+// Research admission currently uses explicit beta grants, never legacy plans.
+const supabaseAdmin = createLegacyDataClient(supabase.supabaseAdmin || supabase, {
+    enabled: readProductFlags().productScopeEnabled,
+});
 
 const PERIOD_USAGE_FEATURE_KEYS = {
     interviews: 'interviews_created',

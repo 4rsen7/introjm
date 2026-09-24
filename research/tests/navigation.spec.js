@@ -1,0 +1,77 @@
+import { test, expect } from '@playwright/test';
+
+const ids = {
+  user: '00000000-0000-4000-8000-000000000001',
+  workspace: '00000000-0000-4000-8000-000000000002',
+  otherWorkspace: '00000000-0000-4000-8000-000000000005',
+  study: '00000000-0000-4000-8000-000000000003',
+  interview: '00000000-0000-4000-8000-000000000004',
+};
+
+async function mockResearch(page) {
+  await page.addInitScript(({ userId }) => {
+    localStorage.setItem('research.locale', 'en');
+    localStorage.setItem('sb-127-auth-token', JSON.stringify({
+      access_token: 'local-test-token', refresh_token: 'local-test-refresh', token_type: 'bearer',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: { id: userId, email: 'research@example.test', aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {} },
+    }));
+  }, { userId: ids.user });
+  await page.route('**/*', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.hostname !== '127.0.0.1') return route.abort();
+    if (url.port === '5399') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    if (!url.pathname.startsWith('/api/research')) return route.continue();
+    const send = (data) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'success', data }) });
+    const path = url.pathname.replace('/api/research', '');
+    if (path === '/workspaces') return send([{ id: ids.workspace, name: 'Product team' }, { id: ids.otherWorkspace, name: 'Another team' }]);
+    if (path === '/studies') {
+      if (url.searchParams.get('workspace_id') === ids.otherWorkspace) return send([]);
+      const before = url.searchParams.get('before');
+      const count = before ? 1 : 50;
+      return send(Array.from({ length: count }, (_, index) => ({
+        id: before ? ids.study : `00000000-0000-4000-8000-${String(100 - index).padStart(12, '0')}`,
+        workspace_id: ids.workspace, title: before ? 'Last study' : `Study ${index + 1}`,
+        goal: 'Find the delivery time', revision: 0,
+      })));
+    }
+    if (path === `/studies/${ids.study}`) return send({ id: ids.study, workspace_id: ids.workspace, title: 'Last study', goal: 'Find the delivery time', revision: 0 });
+    if (path.startsWith('/studies/') && path.endsWith('/interviews')) return send([{ id: ids.interview, study_id: ids.study, workspace_id: ids.workspace, title: 'Session 01', status: 'draft' }]);
+    if (path === `/interviews/${ids.interview}`) return send({
+      id: ids.interview, study_id: ids.study, workspace_id: ids.workspace, title: 'Session 01', status: 'draft',
+      research_revision: 0, transcript_revision: 0, summary_revision: 0, transcript_data: [{ text: 'Initial words', speaker: 'Participant' }],
+    });
+    return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+  });
+}
+
+test('study pagination reaches the end and preserves version zero', async ({ page }) => {
+  await mockResearch(page);
+  await page.goto('/');
+  await expect(page.getByTestId('research-study-card')).toHaveCount(50);
+  await expect(page.getByText('Version 0').first()).toBeVisible();
+  await page.getByTestId('research-load-more').click();
+  await expect(page.getByTestId('research-study-card')).toHaveCount(51);
+  await expect(page.getByTestId('research-load-more')).toHaveCount(0);
+});
+
+test('unsaved transcript blocks home, workspace switch, logout, and browser back', async ({ page }) => {
+  await mockResearch(page);
+  await page.goto('/');
+  await page.getByTestId('research-load-more').click();
+  await page.getByRole('link', { name: /Last study/ }).click();
+  await page.getByRole('link', { name: /Session 01/ }).click();
+  await page.getByRole('tab', { name: 'Transcript' }).click();
+  await page.getByLabel('What was said').fill('Unsaved words');
+  let prompts = 0;
+  page.on('dialog', async (dialog) => { prompts += 1; await dialog.dismiss(); });
+  await page.getByRole('link', { name: 'Research home' }).click();
+  await expect(page).toHaveURL(new RegExp(`/interviews/${ids.interview}$`));
+  await page.getByTestId('research-workspace').selectOption(ids.otherWorkspace);
+  await expect(page.getByTestId('research-workspace')).toHaveValue(ids.workspace);
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByLabel('What was said')).toHaveValue('Unsaved words');
+  await page.evaluate(() => window.history.back());
+  await expect(page).toHaveURL(new RegExp(`/interviews/${ids.interview}$`));
+  expect(prompts).toBe(4);
+});

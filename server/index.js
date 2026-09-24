@@ -1,3 +1,16 @@
+const {
+    INTERVIEW_SYSTEM_KEY,
+    isPlainObject,
+    getInterviewSystemState,
+    withInterviewSystemState,
+    cleanModelJson,
+    cleanString,
+    normalizeEnum,
+    normalizeStringArray,
+    normalizeInterviewSummaryData,
+    DEFAULT_SUMMARY_MODEL,
+    SummaryService,
+} = require('./modules/interviews/summary');
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
@@ -16,8 +29,15 @@ const { getIntegrationProvider, getIntegrationProviders } = require('./integrati
 const { mapRowsToMetric } = require('./integrations/mapRowsToMetric');
 const { initMetricAutoSyncScheduler } = require('./jobs/metricAutoSync');
 const { createExportToken, verifyExportToken } = require('./exportToken');
-const supabase = require('./supabaseClient');
-const supabaseAdmin = supabase.supabaseAdmin || supabase;
+const rawSupabase = require('./supabaseClient');
+const rawSupabaseAdmin = rawSupabase.supabaseAdmin || rawSupabase;
+const { readProductFlags, createLegacyDataClient, verifyProductScope } = require('./productScope');
+const productFlags = readProductFlags();
+const supabase = createLegacyDataClient(rawSupabase, { enabled: productFlags.productScopeEnabled });
+const supabaseAdmin = createLegacyDataClient(rawSupabaseAdmin, { enabled: productFlags.productScopeEnabled });
+const { createResearchRouter } = require('./modules/research/router');
+const { createResearchJobsRouter } = require('./modules/research/jobs/router');
+const { loadAdminUserDetails } = require('./modules/access/adminDetails');
 const rateLimit = require('express-rate-limit');
 const {
     assertWorkspaceFeatureLimit,
@@ -51,6 +71,8 @@ const APP_HOST = (() => {
   }
 })();
 const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN || APP_ORIGIN).replace(/\/$/, '');
+const RESEARCH_ORIGIN = (process.env.RESEARCH_ORIGIN || 'https://research.iterojm.com').replace(/\/$/, '');
+const RESEARCH_HOST = new URL(RESEARCH_ORIGIN).hostname;
 const ADMIN_ORIGIN = (process.env.ADMIN_ORIGIN || 'https://admin.iterojm.com').replace(/\/$/, '');
 const ADMIN_HOST = (() => {
   try {
@@ -480,13 +502,13 @@ const allowedOrigins = [
   CANONICAL_ORIGIN,
   APP_ORIGIN,
   ADMIN_ORIGIN,
+  RESEARCH_ORIGIN,
   'https://www.iterojm.com',
   'https://iterojm.vercel.app',
   'https://iterojm-app.vercel.app',
   'https://iterojm-admin.vercel.app',
 ];
 
-const INTERVIEW_SYSTEM_KEY = '_system';
 const INTERVIEW_UPLOAD_ERROR_FALLBACK = 'Transcription failed. Please try uploading again.';
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe-diarize';
 const DEFAULT_OPENAI_REALTIME_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
@@ -565,532 +587,6 @@ const ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES = new Set([
     'video/webm',
     'video/mp4',
 ]);
-const INTERVIEW_SUMMARY_ANALYSIS_MODES = new Set(['service_design', 'prototype_testing']);
-const INTERVIEW_SERVICE_DESIGN_SECTION_ORDER = [
-    'summary',
-    'journeyDraft',
-    'jtbdProfile',
-    'forcesOfProgress',
-    'painPoints',
-    'momentsOfFriction',
-    'unmetNeeds',
-    'workarounds',
-    'opportunityAreas',
-    'strengths',
-    'quotes',
-];
-const INTERVIEW_PROTOTYPE_TESTING_SECTION_ORDER = [
-    'summary',
-    'testedProductContext',
-    'taskSuccess',
-    'whatWorked',
-    'whatDidNotWork',
-    'confusionsObjections',
-    'featureRequests',
-    'actionableRecommendations',
-    'quotes',
-];
-const INTERVIEW_SUMMARY_SECTION_ORDER = [
-    ...new Set([
-        ...INTERVIEW_SERVICE_DESIGN_SECTION_ORDER,
-        ...INTERVIEW_PROTOTYPE_TESTING_SECTION_ORDER,
-    ]),
-];
-const INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS = new Set([
-    'testedProductContext',
-    'taskSuccess',
-    'whatWorked',
-    'whatDidNotWork',
-    'confusionsObjections',
-    'featureRequests',
-    'actionableRecommendations',
-]);
-const INTERVIEW_SUMMARY_PRESET_SECTIONS = {
-    full_analysis: INTERVIEW_SERVICE_DESIGN_SECTION_ORDER,
-    quick_summary: ['summary', 'painPoints', 'strengths', 'quotes'],
-    research_insights: ['summary', 'painPoints', 'strengths', 'momentsOfFriction', 'unmetNeeds', 'workarounds', 'opportunityAreas', 'quotes'],
-    journey_mapping: ['summary', 'journeyDraft', 'painPoints', 'strengths', 'momentsOfFriction', 'quotes'],
-    jtbd_analysis: ['summary', 'jtbdProfile', 'forcesOfProgress', 'strengths', 'quotes'],
-    prototype_testing: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'actionableRecommendations', 'quotes'],
-    usability_findings: ['testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'confusionsObjections', 'quotes'],
-    product_opportunities: ['summary', 'featureRequests', 'actionableRecommendations', 'quotes'],
-    decision_ready_report: ['summary', 'testedProductContext', 'taskSuccess', 'whatWorked', 'whatDidNotWork', 'featureRequests', 'actionableRecommendations', 'quotes'],
-};
-const INTERVIEW_SUMMARY_PRESET_MODES = {
-    quick_summary: 'service_design',
-    research_insights: 'service_design',
-    journey_mapping: 'service_design',
-    jtbd_analysis: 'service_design',
-    prototype_testing: 'prototype_testing',
-    usability_findings: 'prototype_testing',
-    product_opportunities: 'prototype_testing',
-    decision_ready_report: 'prototype_testing',
-};
-const INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS = {
-    summary: {
-        focus: [
-            'what the respondent is trying to achieve',
-            'the sharpest evidence-backed summary of the interview',
-            'the overall emotional tone of the experience',
-        ],
-        schema: `"summary": {
-    "jobToBeDone": "string",
-    "generalInsight": "string",
-    "overallSentiment": "positive|mixed|negative"
-  }`,
-        limits: [
-            'summary.generalInsight: 1 concise paragraph',
-        ],
-    },
-    journeyDraft: {
-        focus: [
-            'the customer journey they are moving through',
-            'stages, customer actions, drivers, touchpoints, and pain points at each stage',
-        ],
-        schema: `"journeyDraft": {
-    "jobContext": "string",
-    "stages": [
-      {
-        "stage": "string",
-        "customerActions": ["string"],
-        "drivers": ["string"],
-        "touchpoints": [
-          {
-            "touchpoint": "string",
-            "interactsWith": "string",
-            "channel": "string"
-          }
-        ],
-        "painPoints": [
-          {
-            "title": "string",
-            "description": "string",
-            "severity": "low|medium|high"
-          }
-        ]
-      }
-    ]
-  }`,
-        limits: [
-            'journeyDraft.stages: up to 8',
-            'journeyDraft.customerActions: up to 6 per stage',
-            'journeyDraft.drivers: up to 5 per stage',
-            'journeyDraft.touchpoints: up to 6 per stage',
-            'journeyDraft.painPoints: up to 5 per stage',
-        ],
-    },
-    jtbdProfile: {
-        focus: [
-            'the customer\'s JTBD profile',
-        ],
-        schema: `"jtbdProfile": {
-    "mainJob": "string",
-    "functionalJob": "string",
-    "emotionalJob": "string",
-    "socialJob": "string",
-    "jobContext": "string",
-    "desiredOutcome": "string",
-    "successCriteria": ["string"]
-  }`,
-        limits: [
-            'jtbdProfile.successCriteria: up to 5',
-        ],
-    },
-    forcesOfProgress: {
-        focus: [
-            'the 4 forces of progress (push, pull, anxiety, habit)',
-        ],
-        schema: `"forcesOfProgress": {
-    "pushes": ["string"],
-    "pulls": ["string"],
-    "anxieties": ["string"],
-    "habits": ["string"]
-  }`,
-        limits: [
-            'forcesOfProgress.pushes/pulls/anxieties/habits: up to 5 each',
-        ],
-    },
-    painPoints: {
-        focus: [
-            'broken expectations',
-            'the likely root causes behind complaints',
-            'the most important pain points and their impact',
-        ],
-        schema: `"painPoints": [
-    {
-      "title": "string",
-      "description": "string",
-      "rootCause": "string",
-      "impact": "string",
-      "severity": "low|medium|high",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'painPoints: up to 5',
-        ],
-    },
-    momentsOfFriction: {
-        focus: [
-            'friction and service gaps across touchpoints',
-            'moments where the experience breaks down and how the customer reacts',
-        ],
-        schema: `"momentsOfFriction": [
-    {
-      "stage": "string",
-      "situation": "string",
-      "breakdown": "string",
-      "customerReaction": "string"
-    }
-  ]`,
-        limits: [
-            'momentsOfFriction: up to 5',
-        ],
-    },
-    unmetNeeds: {
-        focus: [
-            'unmet needs',
-        ],
-        schema: `"unmetNeeds": [
-    {
-      "need": "string",
-      "whyItMatters": "string"
-    }
-  ]`,
-        limits: [
-            'unmetNeeds: up to 5',
-        ],
-    },
-    workarounds: {
-        focus: [
-            'workarounds',
-        ],
-        schema: `"workarounds": [
-    {
-      "workaround": "string",
-      "whatItSignals": "string"
-    }
-  ]`,
-        limits: [
-            'workarounds: up to 3',
-        ],
-    },
-    opportunityAreas: {
-        focus: [
-            'evidence-backed opportunity areas for improving the experience',
-        ],
-        schema: `"opportunityAreas": [
-    {
-      "area": "string",
-      "rationale": "string"
-    }
-  ]`,
-        limits: [
-            'opportunityAreas: up to 5',
-        ],
-    },
-    strengths: {
-        focus: [
-            'what already works well in the experience',
-            'service elements, solutions, or touchpoints that genuinely help the customer',
-            'positive moments worth preserving or scaling',
-        ],
-        schema: `"strengths": [
-    {
-      "title": "string",
-      "description": "string",
-      "whyItWorks": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'strengths: up to 5',
-        ],
-    },
-    testedProductContext: {
-        focus: [
-            'the product, prototype, concept, or flow being tested',
-            'the scenario and research goal implied by the conversation',
-            'the target user context if it is stated by the respondent or interviewer',
-        ],
-        schema: `"testedProductContext": {
-    "productOrPrototype": "string",
-    "testedScenario": "string",
-    "researchGoal": "string",
-    "targetUser": "string"
-  }`,
-        limits: [
-            'testedProductContext: keep every field to one concise sentence',
-        ],
-    },
-    taskSuccess: {
-        focus: [
-            'whether the respondent understood and completed the tested tasks',
-            'where task progress was completed, partial, failed, or not observed',
-            'observable evidence from the test session',
-        ],
-        schema: `"taskSuccess": [
-    {
-      "task": "string",
-      "outcome": "completed|partial|failed|not_observed",
-      "whatHappened": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'taskSuccess: up to 6',
-        ],
-    },
-    whatWorked: {
-        focus: [
-            'prototype elements that were clear, useful, desirable, or confidence-building',
-            'what the respondent liked and why it helped',
-        ],
-        schema: `"whatWorked": [
-    {
-      "item": "string",
-      "whyItWorked": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'whatWorked: up to 5',
-        ],
-    },
-    whatDidNotWork: {
-        focus: [
-            'prototype elements that were confusing, unusable, missing, or weak',
-            'the impact of each issue on comprehension, trust, or task completion',
-        ],
-        schema: `"whatDidNotWork": [
-    {
-      "item": "string",
-      "problem": "string",
-      "impact": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'whatDidNotWork: up to 5',
-        ],
-    },
-    confusionsObjections: {
-        focus: [
-            'moments where the respondent hesitated, misunderstood, objected, or expected something different',
-            'likely causes of confusion based only on the transcript',
-        ],
-        schema: `"confusionsObjections": [
-    {
-      "moment": "string",
-      "confusionOrObjection": "string",
-      "likelyCause": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'confusionsObjections: up to 5',
-        ],
-    },
-    featureRequests: {
-        focus: [
-            'explicit requests, expectations, or missing capabilities mentioned by the respondent',
-            'the underlying need behind each requested feature',
-        ],
-        schema: `"featureRequests": [
-    {
-      "request": "string",
-      "underlyingNeed": "string",
-      "evidenceQuote": "string"
-    }
-  ]`,
-        limits: [
-            'featureRequests: up to 5',
-        ],
-    },
-    actionableRecommendations: {
-        focus: [
-            'specific next design or product changes supported by the test evidence',
-            'prioritized recommendations that help the team decide what to improve next',
-        ],
-        schema: `"actionableRecommendations": [
-    {
-      "recommendation": "string",
-      "rationale": "string",
-      "priority": "low|medium|high"
-    }
-  ]`,
-        limits: [
-            'actionableRecommendations: up to 5',
-        ],
-    },
-    quotes: {
-        focus: [
-            'the strongest verbatim quotes that represent the customer\'s voice',
-        ],
-        schema: `"quotes": ["string"]`,
-        limits: [
-            'quotes: up to 3',
-        ],
-    },
-};
-
-function isPlainObject(value) {
-    return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function getInterviewSystemState(summaryData) {
-    if (!isPlainObject(summaryData)) return {};
-    const systemState = summaryData[INTERVIEW_SYSTEM_KEY];
-    return isPlainObject(systemState) ? systemState : {};
-}
-
-function withInterviewSystemState(summaryData, nextSystemState) {
-    const baseSummary = isPlainObject(summaryData) ? { ...summaryData } : {};
-    if (!nextSystemState || Object.keys(nextSystemState).length === 0) {
-        delete baseSummary[INTERVIEW_SYSTEM_KEY];
-        return baseSummary;
-    }
-    baseSummary[INTERVIEW_SYSTEM_KEY] = nextSystemState;
-    return baseSummary;
-}
-
-function normalizeInterviewSummarySections(value) {
-    if (!Array.isArray(value)) return [];
-    const seen = new Set();
-    return value.reduce((sections, item) => {
-        const sectionKey = typeof item === 'string' ? item.trim() : '';
-        if (!INTERVIEW_SUMMARY_SECTION_ORDER.includes(sectionKey) || seen.has(sectionKey)) return sections;
-        seen.add(sectionKey);
-        sections.push(sectionKey);
-        return sections;
-    }, []);
-}
-
-function inferInterviewSummaryAnalysisMode({ requestedMode, preset, selectedSections }) {
-    const modeCandidate = typeof requestedMode === 'string' ? requestedMode.trim() : '';
-    if (INTERVIEW_SUMMARY_ANALYSIS_MODES.has(modeCandidate)) return modeCandidate;
-    if (INTERVIEW_SUMMARY_PRESET_MODES[preset]) return INTERVIEW_SUMMARY_PRESET_MODES[preset];
-    return selectedSections.some((sectionKey) => INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS.has(sectionKey))
-        ? 'prototype_testing'
-        : 'service_design';
-}
-
-function resolveInterviewSummaryRequest(body = {}) {
-    const requestedSections = normalizeInterviewSummarySections(body?.selectedSections);
-    const presetCandidate = typeof body?.preset === 'string' ? body.preset.trim() : '';
-    const preset = Object.prototype.hasOwnProperty.call(INTERVIEW_SUMMARY_PRESET_SECTIONS, presetCandidate)
-        ? presetCandidate
-        : (requestedSections.length > 0 ? 'custom' : 'full_analysis');
-    const selectedSections = requestedSections.length > 0
-        ? requestedSections
-        : [...(INTERVIEW_SUMMARY_PRESET_SECTIONS[preset] || INTERVIEW_SUMMARY_PRESET_SECTIONS.full_analysis)];
-
-    return {
-        preset,
-        analysisMode: inferInterviewSummaryAnalysisMode({
-            requestedMode: body?.analysisMode,
-            preset,
-            selectedSections,
-        }),
-        selectedSections,
-        mergeMode: body?.mergeMode === 'replace_all' ? 'replace_all' : 'merge_selected',
-    };
-}
-
-function buildInterviewSummaryPrompt({ conversationText, selectedSections, analysisMode = 'service_design' }) {
-    const sectionDefs = selectedSections
-        .map((sectionKey) => INTERVIEW_SUMMARY_SECTION_PROMPT_DEFS[sectionKey])
-        .filter(Boolean);
-    const focusBullets = [...new Set(sectionDefs.flatMap((section) => section.focus || []))];
-    const schema = sectionDefs.map((section) => section.schema).join(',\n');
-    const limits = [...new Set(sectionDefs.flatMap((section) => section.limits || []))];
-    const includesPrototypeSections = analysisMode === 'prototype_testing'
-        || selectedSections.some((sectionKey) => INTERVIEW_PROTOTYPE_SUMMARY_SECTIONS.has(sectionKey));
-    const prototypeRules = includesPrototypeSections
-        ? `
-PROTOTYPE TESTING RULES:
-- Treat this as product/prototype/concept testing when the transcript contains product reactions, task attempts, screen feedback, or feature expectations.
-- Separate what the respondent liked from what was actually clear, usable, or useful.
-- Track task success only when a task or expected action is stated or observable.
-- Turn recommendations into concrete next design or product decisions.
-- Do not invent prototype context, screens, tasks, or product details that are not stated in the transcript.
-`
-        : '';
-
-    return `You are a senior UX/CX Researcher.
-Your task is to analyze this interview as evidence about the respondent's lived experience, service journey, or product/prototype test depending on the requested sections.
-
-Only generate the requested analysis sections.
-
-Focus on:
-${focusBullets.map((item) => `- ${item}`).join('\n')}
-
-CRITICAL RULES:
-- Detect the dominant language of the transcript and write the entire output in that exact same language.
-- Base every conclusion only on evidence from the transcript.
-- Do not invent facts, motivations, stages, or context that are not supported by the transcript.
-- Prioritize the respondent's statements over the interviewer's framing.
-- Merge duplicate observations.
-- Be specific, concise, and insight-rich.
-- Highlight not only problems, but also what already works well when that section is requested.
-- In journeyDraft, keep customerActions limited to observable steps or decisions, and place motivations, delights, incentives, or reasons in drivers instead of customerActions.
-- If something is unclear, prefer an empty string or empty array instead of guessing.
-- Return only the requested top-level keys and omit everything else.
-${prototypeRules}
-
-Return EXACTLY one valid JSON object with this schema:
-{
-  ${schema}
-}
-
-LIMITS:
-${limits.map((item) => `- ${item}`).join('\n')}
-
-Do not include markdown fences.
-Return only JSON.
-
-Transcript:
-"""
-${conversationText}
-"""`;
-}
-
-function mergeInterviewSummarySections(existingSummaryData, generatedSummaryData, selectedSections) {
-    const existingSummary = normalizeInterviewSummaryData(existingSummaryData) || {};
-    const mergedSummary = {};
-
-    INTERVIEW_SUMMARY_SECTION_ORDER.forEach((sectionKey) => {
-        if (selectedSections.includes(sectionKey)) {
-            mergedSummary[sectionKey] = generatedSummaryData[sectionKey];
-            return;
-        }
-
-        if (Object.prototype.hasOwnProperty.call(existingSummary, sectionKey)) {
-            mergedSummary[sectionKey] = existingSummary[sectionKey];
-            return;
-        }
-
-        mergedSummary[sectionKey] = generatedSummaryData[sectionKey];
-    });
-
-    return normalizeInterviewSummaryData(mergedSummary) || generatedSummaryData;
-}
-
-function buildInterviewSummarySystemState(currentSystemState, { provider, model, preset, analysisMode, selectedSections, mergeMode }) {
-    return {
-        ...currentSystemState,
-        summaryGeneration: {
-            provider,
-            model,
-            preset,
-            analysisMode,
-            selectedSections,
-            mergeMode,
-            generatedAt: new Date().toISOString(),
-        },
-    };
-}
-
 function buildInterviewPortraitPrompt({ interviewTitles, conversationText, summaryContext }) {
     const summaryJson = summaryContext ? JSON.stringify(summaryContext, null, 2) : 'null';
     const titlesBlock = Array.isArray(interviewTitles) && interviewTitles.length > 0
@@ -1757,6 +1253,17 @@ app.post('/api/webhooks/paddle', express.raw({ type: 'application/json' }), asyn
     }
 });
 
+app.use('/api/research', express.json({ limit: '3mb' }), createResearchJobsRouter({
+    supabaseAdmin: rawSupabaseAdmin,
+    authenticate: getAuthenticatedUserFromToken,
+    enabled: productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED === 'true',
+    onError: (error) => console.error('[Research jobs]', error?.code || 'REQUEST_FAILED'),
+}), createResearchRouter({
+    supabaseAdmin: rawSupabaseAdmin,
+    authenticate: getAuthenticatedUserFromToken,
+    enabled: productFlags.researchEnabled,
+    onError: (error) => console.error('Research API error:', error.code || 'RESEARCH_ERROR'),
+}));
 app.use(express.json());
 
 // Rate limit for auth: 10 requests per minute per IP
@@ -3602,369 +3109,6 @@ async function runNightlyMetricAutoSync() {
   return summary;
 }
 
-function cleanModelJson(text) {
-  if (!text) return '';
-  const trimmed = String(text).trim();
-  const withoutFence = trimmed.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-  if (withoutFence.startsWith('{') && withoutFence.endsWith('}')) return withoutFence;
-  const start = withoutFence.indexOf('{');
-  const end = withoutFence.lastIndexOf('}');
-  if (start >= 0 && end > start) return withoutFence.slice(start, end + 1);
-  return withoutFence;
-}
-
-function cleanString(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeEnum(value, allowed) {
-  const normalized = cleanString(value).toLowerCase();
-  return allowed.includes(normalized) ? normalized : '';
-}
-
-function normalizeStringArray(value, maxItems) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => cleanString(item))
-    .filter(Boolean)
-    .slice(0, maxItems);
-}
-
-function normalizeObjectArray(value, mapper, maxItems) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map(mapper)
-    .filter(Boolean)
-    .slice(0, maxItems);
-}
-
-function normalizeTouchpoints(value, maxItems) {
-  return normalizeObjectArray(
-    value,
-    (item) => {
-      if (typeof item === 'string') {
-        const touchpoint = cleanString(item);
-        return touchpoint ? { touchpoint, interactsWith: '', channel: '' } : null;
-      }
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      const touchpoint = cleanString(item.touchpoint);
-      const interactsWith = cleanString(item.interactsWith || item.actor || item.stakeholder);
-      const channel = cleanString(item.channel);
-      if (!touchpoint && !interactsWith && !channel) return null;
-      return { touchpoint, interactsWith, channel };
-    },
-    maxItems
-  );
-}
-
-function normalizeStagePainPoints(value, maxItems) {
-  return normalizeObjectArray(
-    value,
-    (item) => {
-      if (typeof item === 'string') {
-        const description = cleanString(item);
-        return description ? { title: '', description, severity: '' } : null;
-      }
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-      const title = cleanString(item.title);
-      const description = cleanString(item.description || item.problem || item.painPoint);
-      const severity = normalizeEnum(item.severity, ['low', 'medium', 'high']);
-      if (!title && !description && !severity) return null;
-      return { title, description, severity };
-    },
-    maxItems
-  );
-}
-
-function normalizeInterviewSummaryData(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-
-  const summary = raw.summary && typeof raw.summary === 'object' && !Array.isArray(raw.summary) ? raw.summary : {};
-  const journeyDraft = raw.journeyDraft && typeof raw.journeyDraft === 'object' && !Array.isArray(raw.journeyDraft) ? raw.journeyDraft : {};
-  const jtbdProfile = raw.jtbdProfile && typeof raw.jtbdProfile === 'object' && !Array.isArray(raw.jtbdProfile) ? raw.jtbdProfile : {};
-  const forcesOfProgress = raw.forcesOfProgress && typeof raw.forcesOfProgress === 'object' && !Array.isArray(raw.forcesOfProgress) ? raw.forcesOfProgress : {};
-  const testedProductContext = raw.testedProductContext && typeof raw.testedProductContext === 'object' && !Array.isArray(raw.testedProductContext) ? raw.testedProductContext : {};
-  const normalized = {
-    summary: {
-      jobToBeDone: cleanString(summary.jobToBeDone || raw.jobToBeDone),
-      generalInsight: cleanString(summary.generalInsight || raw.generalInsight || raw.generalInsights),
-      overallSentiment: normalizeEnum(summary.overallSentiment || raw.overallSentiment, ['positive', 'mixed', 'negative']),
-    },
-    journeyDraft: {
-      jobContext: cleanString(journeyDraft.jobContext),
-      stages: normalizeObjectArray(
-        journeyDraft.stages,
-        (item) => {
-          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-          const stage = cleanString(item.stage);
-          const customerActions = normalizeStringArray(item.customerActions, 6);
-          const drivers = normalizeStringArray(item.drivers, 5);
-          const touchpoints = normalizeTouchpoints(item.touchpoints, 6);
-          const painPoints = normalizeStagePainPoints(item.painPoints, 5);
-          if (!stage && customerActions.length === 0 && drivers.length === 0 && touchpoints.length === 0 && painPoints.length === 0) return null;
-          return { stage, customerActions, drivers, touchpoints, painPoints };
-        },
-        8
-      ),
-    },
-    jtbdProfile: {
-      mainJob: cleanString(jtbdProfile.mainJob),
-      functionalJob: cleanString(jtbdProfile.functionalJob),
-      emotionalJob: cleanString(jtbdProfile.emotionalJob),
-      socialJob: cleanString(jtbdProfile.socialJob),
-      jobContext: cleanString(jtbdProfile.jobContext),
-      desiredOutcome: cleanString(jtbdProfile.desiredOutcome),
-      successCriteria: normalizeStringArray(jtbdProfile.successCriteria, 5),
-    },
-    forcesOfProgress: {
-      pushes: normalizeStringArray(forcesOfProgress.pushes, 5),
-      pulls: normalizeStringArray(forcesOfProgress.pulls, 5),
-      anxieties: normalizeStringArray(forcesOfProgress.anxieties, 5),
-      habits: normalizeStringArray(forcesOfProgress.habits, 5),
-    },
-    painPoints: normalizeObjectArray(
-      raw.painPoints,
-      (item) => {
-        if (typeof item === 'string') {
-          const description = cleanString(item);
-          if (!description) return null;
-          return {
-            title: '',
-            description,
-            rootCause: '',
-            impact: '',
-            severity: '',
-            evidenceQuote: '',
-          };
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const description = cleanString(item.description || item.problem || item.painPoint);
-        const title = cleanString(item.title);
-        if (!title && !description) return null;
-        return {
-          title,
-          description,
-          rootCause: cleanString(item.rootCause),
-          impact: cleanString(item.impact),
-          severity: normalizeEnum(item.severity, ['low', 'medium', 'high']),
-          evidenceQuote: cleanString(item.evidenceQuote || item.quote),
-        };
-      },
-      5
-    ),
-    momentsOfFriction: normalizeObjectArray(
-      raw.momentsOfFriction,
-      (item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const stage = cleanString(item.stage);
-        const situation = cleanString(item.situation);
-        const breakdown = cleanString(item.breakdown);
-        const customerReaction = cleanString(item.customerReaction);
-        if (!stage && !situation && !breakdown && !customerReaction) return null;
-        return { stage, situation, breakdown, customerReaction };
-      },
-      5
-    ),
-    unmetNeeds: normalizeObjectArray(
-      raw.unmetNeeds,
-      (item) => {
-        if (typeof item === 'string') {
-          const need = cleanString(item);
-          return need ? { need, whyItMatters: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const need = cleanString(item.need);
-        const whyItMatters = cleanString(item.whyItMatters);
-        if (!need && !whyItMatters) return null;
-        return { need, whyItMatters };
-      },
-      5
-    ),
-    workarounds: normalizeObjectArray(
-      raw.workarounds,
-      (item) => {
-        if (typeof item === 'string') {
-          const workaround = cleanString(item);
-          return workaround ? { workaround, whatItSignals: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const workaround = cleanString(item.workaround);
-        const whatItSignals = cleanString(item.whatItSignals);
-        if (!workaround && !whatItSignals) return null;
-        return { workaround, whatItSignals };
-      },
-      3
-    ),
-    opportunityAreas: normalizeObjectArray(
-      raw.opportunityAreas,
-      (item) => {
-        if (typeof item === 'string') {
-          const area = cleanString(item);
-          return area ? { area, rationale: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const area = cleanString(item.area);
-        const rationale = cleanString(item.rationale);
-        if (!area && !rationale) return null;
-        return { area, rationale };
-      },
-      5
-    ),
-    strengths: normalizeObjectArray(
-      raw.strengths,
-      (item) => {
-        if (typeof item === 'string') {
-          const title = cleanString(item);
-          return title ? { title, description: '', whyItWorks: '', evidenceQuote: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const title = cleanString(item.title);
-        const description = cleanString(item.description);
-        const whyItWorks = cleanString(item.whyItWorks);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!title && !description && !whyItWorks && !evidenceQuote) return null;
-        return { title, description, whyItWorks, evidenceQuote };
-      },
-      5
-    ),
-    testedProductContext: {
-      productOrPrototype: cleanString(testedProductContext.productOrPrototype || testedProductContext.product || testedProductContext.prototype),
-      testedScenario: cleanString(testedProductContext.testedScenario || testedProductContext.scenario),
-      researchGoal: cleanString(testedProductContext.researchGoal || testedProductContext.goal),
-      targetUser: cleanString(testedProductContext.targetUser || testedProductContext.audience),
-    },
-    taskSuccess: normalizeObjectArray(
-      raw.taskSuccess,
-      (item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const task = cleanString(item.task);
-        const outcome = normalizeEnum(item.outcome, ['completed', 'partial', 'failed', 'not_observed']);
-        const whatHappened = cleanString(item.whatHappened || item.observation);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!task && !outcome && !whatHappened && !evidenceQuote) return null;
-        return { task, outcome, whatHappened, evidenceQuote };
-      },
-      6
-    ),
-    whatWorked: normalizeObjectArray(
-      raw.whatWorked,
-      (item) => {
-        if (typeof item === 'string') {
-          const value = cleanString(item);
-          return value ? { item: value, whyItWorked: '', evidenceQuote: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const itemName = cleanString(item.item || item.title);
-        const whyItWorked = cleanString(item.whyItWorked || item.reason);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!itemName && !whyItWorked && !evidenceQuote) return null;
-        return { item: itemName, whyItWorked, evidenceQuote };
-      },
-      5
-    ),
-    whatDidNotWork: normalizeObjectArray(
-      raw.whatDidNotWork,
-      (item) => {
-        if (typeof item === 'string') {
-          const value = cleanString(item);
-          return value ? { item: value, problem: '', impact: '', evidenceQuote: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const itemName = cleanString(item.item || item.title);
-        const problem = cleanString(item.problem || item.description);
-        const impact = cleanString(item.impact);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!itemName && !problem && !impact && !evidenceQuote) return null;
-        return { item: itemName, problem, impact, evidenceQuote };
-      },
-      5
-    ),
-    confusionsObjections: normalizeObjectArray(
-      raw.confusionsObjections,
-      (item) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const moment = cleanString(item.moment || item.stage);
-        const confusionOrObjection = cleanString(item.confusionOrObjection || item.confusion || item.objection);
-        const likelyCause = cleanString(item.likelyCause || item.cause);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!moment && !confusionOrObjection && !likelyCause && !evidenceQuote) return null;
-        return { moment, confusionOrObjection, likelyCause, evidenceQuote };
-      },
-      5
-    ),
-    featureRequests: normalizeObjectArray(
-      raw.featureRequests,
-      (item) => {
-        if (typeof item === 'string') {
-          const request = cleanString(item);
-          return request ? { request, underlyingNeed: '', evidenceQuote: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const request = cleanString(item.request || item.feature);
-        const underlyingNeed = cleanString(item.underlyingNeed || item.need);
-        const evidenceQuote = cleanString(item.evidenceQuote || item.quote);
-        if (!request && !underlyingNeed && !evidenceQuote) return null;
-        return { request, underlyingNeed, evidenceQuote };
-      },
-      5
-    ),
-    actionableRecommendations: normalizeObjectArray(
-      raw.actionableRecommendations,
-      (item) => {
-        if (typeof item === 'string') {
-          const recommendation = cleanString(item);
-          return recommendation ? { recommendation, rationale: '', priority: '' } : null;
-        }
-        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-        const recommendation = cleanString(item.recommendation || item.action);
-        const rationale = cleanString(item.rationale || item.reason);
-        const priority = normalizeEnum(item.priority, ['low', 'medium', 'high']);
-        if (!recommendation && !rationale && !priority) return null;
-        return { recommendation, rationale, priority };
-      },
-      5
-    ),
-    quotes: normalizeStringArray(raw.quotes, 3),
-  };
-
-  const hasContent =
-    normalized.summary.jobToBeDone ||
-    normalized.summary.generalInsight ||
-    normalized.summary.overallSentiment ||
-    normalized.journeyDraft.jobContext ||
-    normalized.journeyDraft.stages.length > 0 ||
-    normalized.jtbdProfile.mainJob ||
-    normalized.jtbdProfile.functionalJob ||
-    normalized.jtbdProfile.emotionalJob ||
-    normalized.jtbdProfile.socialJob ||
-    normalized.jtbdProfile.jobContext ||
-    normalized.jtbdProfile.desiredOutcome ||
-    normalized.jtbdProfile.successCriteria.length > 0 ||
-    normalized.forcesOfProgress.pushes.length > 0 ||
-    normalized.forcesOfProgress.pulls.length > 0 ||
-    normalized.forcesOfProgress.anxieties.length > 0 ||
-    normalized.forcesOfProgress.habits.length > 0 ||
-    normalized.painPoints.length > 0 ||
-    normalized.momentsOfFriction.length > 0 ||
-    normalized.unmetNeeds.length > 0 ||
-    normalized.workarounds.length > 0 ||
-    normalized.opportunityAreas.length > 0 ||
-    normalized.strengths.length > 0 ||
-    normalized.testedProductContext.productOrPrototype ||
-    normalized.testedProductContext.testedScenario ||
-    normalized.testedProductContext.researchGoal ||
-    normalized.testedProductContext.targetUser ||
-    normalized.taskSuccess.length > 0 ||
-    normalized.whatWorked.length > 0 ||
-    normalized.whatDidNotWork.length > 0 ||
-    normalized.confusionsObjections.length > 0 ||
-    normalized.featureRequests.length > 0 ||
-    normalized.actionableRecommendations.length > 0 ||
-    normalized.quotes.length > 0;
-
-  return hasContent ? normalized : null;
-}
-
 function normalizeInterviewPortraitData(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
 
@@ -5669,23 +4813,7 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
             });
         }
 
-        // 2. Workspaces (Owned & Joined)
-        const { data: ownedWorkspaces } = await supabaseAdmin
-            .from('workspaces')
-            .select('*, workspace_members(count)')
-            .eq('owner_id', id);
-        
-        const { data: joinedWorkspaces } = await supabaseAdmin
-            .from('workspace_members')
-            .select('role, joined_at, workspaces(*)')
-            .eq('user_id', id);
-
-        // 3. Subscriptions (History)
-        const { data: subscriptions } = await supabaseAdmin
-            .from('subscriptions')
-            .select('*, plans(name, price_monthly)')
-            .eq('user_id', id)
-            .order('created_at', { ascending: false });
+        const related = await loadAdminUserDetails(supabaseAdmin, id);
 
         console.log(`✅ Found user: ${userProfile.email}`);
 
@@ -5693,9 +4821,7 @@ app.get(['/api/users-manage/:id', '/api/admin/users/:id'], async (req, res) => {
             status: 'success',
             data: {
                 profile: userProfile,
-                owned_workspaces: ownedWorkspaces || [],
-                joined_workspaces: joinedWorkspaces || [],
-                subscriptions: subscriptions || []
+                ...related
             }
         });
 
@@ -6145,61 +5271,25 @@ app.post('/api/interviews/:id/generate-summary', async (req, res) => {
             return res.status(403).json(aiSummaryLimitCheck.error);
         }
 
-        const summaryRequest = resolveInterviewSummaryRequest(req.body || {});
-        const { preset, analysisMode, selectedSections, mergeMode } = summaryRequest;
-
-        // 1. Initialize Gemini API
         if (!process.env.GEMINI_API_KEY) {
-             throw new Error("GEMINI_API_KEY is not configured on the server.");
+            throw new Error("GEMINI_API_KEY is not configured on the server.");
         }
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // We use gemini-using-pro for complex reasoning and json output
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-
-        // 2. Format the transcript for the prompt
-        const conversationText = existing.transcript_data.map(
-             line => `[${line.timestamp}] ${line.speaker}: ${line.text}`
-        ).join('\n');
-
-        // 3. Construct the prompt
-        const prompt = buildInterviewSummaryPrompt({ conversationText, selectedSections, analysisMode });
-
-        // 4. Call Gemini
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-
-        // 5. Parse the JSON response
-        let aiSummaryData;
-        try {
-            const cleanJsonString = cleanModelJson(responseText);
-            aiSummaryData = normalizeInterviewSummaryData(JSON.parse(cleanJsonString));
-        } catch (parseError) {
-            console.error("Failed to parse Gemini response as JSON:", responseText);
-            throw new Error("AI returned an invalid response format.");
-        }
-
-        if (!aiSummaryData) {
-            throw new Error("AI returned an empty or unsupported summary format.");
-        }
-
-        if (mergeMode === 'merge_selected') {
-            aiSummaryData = mergeInterviewSummarySections(existing.summary_data, aiSummaryData, selectedSections);
-        }
-
-        aiSummaryData = withInterviewSystemState(
-            aiSummaryData,
-            buildInterviewSummarySystemState(
-                getInterviewSystemState(existing.summary_data),
-                {
-                    provider: 'gemini',
-                    model: 'gemini-2.5-pro',
-                    preset,
-                    analysisMode,
-                    selectedSections,
-                    mergeMode,
-                }
-            )
-        );
+        const model = genAI.getGenerativeModel({ model: DEFAULT_SUMMARY_MODEL });
+        const summaryService = new SummaryService({
+            generateText: async (prompt) => {
+                const result = await model.generateContent(prompt);
+                return result.response.text();
+            },
+            onInvalidResponse: (responseText) => {
+                console.error("Failed to parse Gemini response as JSON:", responseText);
+            },
+        });
+        const aiSummaryData = await summaryService.generate({
+            transcriptData: existing.transcript_data,
+            existingSummaryData: existing.summary_data,
+            request: req.body || {},
+        });
 
         await reserveWorkspaceQuotaUsage(existing.workspace_id, 'ai_summaries', {
             entitlements: aiSummaryLimitCheck.entitlements,
@@ -7587,6 +6677,17 @@ app.post('/api/interviews/:id/realtime-token', async (req, res) => {
 
 // Налаштування для роздачі статики в продакшені (Клієнт і Адмінка)
 if (process.env.NODE_ENV === 'production') {
+    const researchStatic = express.static(path.join(__dirname, 'public/research'));
+    app.use((req, res, next) => {
+        if (req.hostname !== RESEARCH_HOST || req.path.startsWith('/api/')) return next();
+        if (!productFlags.researchEnabled) return res.status(404).send('Research is not enabled');
+        if (!['GET', 'HEAD'].includes(req.method)) return next();
+        return researchStatic(req, res, () => {
+            const entry = path.join(__dirname, 'public/research/index.html');
+            if (!fs.existsSync(entry)) return res.status(503).send('Research is not ready');
+            return res.sendFile(entry);
+        });
+    });
     // 1. Статика Клієнта (головний домен)
     app.use(express.static(path.join(__dirname, 'public/client')));
     
@@ -7616,11 +6717,16 @@ app.use((req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    initMetricAutoSyncScheduler({
-        supabaseAdmin,
-        runDailySync: runNightlyMetricAutoSync,
-        logger: console,
+verifyProductScope(rawSupabaseAdmin, productFlags).then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+        initMetricAutoSyncScheduler({
+            supabaseAdmin,
+            runDailySync: runNightlyMetricAutoSync,
+            logger: console,
+        });
     });
+}).catch((error) => {
+    console.error('Server startup refused:', error.message);
+    process.exitCode = 1;
 });
