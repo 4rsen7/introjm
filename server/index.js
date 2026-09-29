@@ -32,7 +32,12 @@ const { createExportToken, verifyExportToken } = require('./exportToken');
 const rawSupabase = require('./supabaseClient');
 const rawSupabaseAdmin = rawSupabase.supabaseAdmin || rawSupabase;
 const { readProductFlags, createLegacyDataClient, verifyProductScope } = require('./productScope');
-const productFlags = readProductFlags();
+const productFlags = readProductFlags({
+    ...process.env,
+    PRODUCT_SCOPE_ENABLED: process.env.PRODUCT_SCOPE_ENABLED ?? 'true',
+    RESEARCH_ENABLED: process.env.RESEARCH_ENABLED ?? 'true',
+});
+const researchJobsEnabled = productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED !== 'false';
 const supabase = createLegacyDataClient(rawSupabase, { enabled: productFlags.productScopeEnabled });
 const supabaseAdmin = createLegacyDataClient(rawSupabaseAdmin, { enabled: productFlags.productScopeEnabled });
 const { createResearchRouter } = require('./modules/research/router');
@@ -1192,12 +1197,12 @@ app.use('/api/research', express.json({ limit: '3mb' }), createResearchTeamRoute
 }), createResearchMediaRouter({
     supabaseAdmin: rawSupabaseAdmin, authenticate: getAuthenticatedUserFromToken,
     storage: createResearchStorage(rawSupabaseAdmin),
-    enabled: productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED === 'true' && process.env.RESEARCH_MEDIA_ENABLED === 'true',
+    enabled: researchJobsEnabled && process.env.RESEARCH_MEDIA_ENABLED === 'true',
     onError: error => console.error('[Research media]', error?.code || 'REQUEST_FAILED'),
 }), createResearchJobsRouter({
     supabaseAdmin: rawSupabaseAdmin,
     authenticate: getAuthenticatedUserFromToken,
-    enabled: productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED === 'true',
+    enabled: researchJobsEnabled,
     onError: (error) => console.error('[Research jobs]', error?.code || 'REQUEST_FAILED'),
 }), createResearchRouter({
     supabaseAdmin: rawSupabaseAdmin,
@@ -5670,7 +5675,7 @@ verifyProductScope(rawSupabaseAdmin, productFlags).then(() => {
             runDailySync: runNightlyMetricAutoSync,
             logger: console,
         });
-        if (productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED === 'true' && process.env.RESEARCH_EMBEDDED_WORKER !== 'false') {
+        if (researchJobsEnabled && process.env.RESEARCH_EMBEDDED_WORKER !== 'false') {
             const { main: startResearchWorker } = require('./workers/research');
             startResearchWorker().catch((err) => {
                 console.error('[Research worker] stopped:', err.message);

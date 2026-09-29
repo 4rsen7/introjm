@@ -155,7 +155,7 @@ export const ResearchAdminPage: React.FC = () => {
   return <div className="research-admin">
     <div className="research-admin-header">
       <div><Typography.Title level={3} style={{ margin: 0 }}>Research operations</Typography.Title>
-        <Typography.Text type="secondary">Manage beta access, usage, processing jobs, and worker health.</Typography.Text></div>
+        <Typography.Text type="secondary">Manage Research access, usage, processing jobs, and worker health.</Typography.Text></div>
       <Button onClick={() => void load()} loading={loading}>Refresh data</Button>
     </div>
     <Tabs items={[

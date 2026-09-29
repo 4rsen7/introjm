@@ -135,7 +135,7 @@ function App() {
                     name: "research",
                     list: "/research",
                     meta: {
-                      label: "Research beta",
+                      label: "Research",
                       icon: <ExperimentOutlined />,
                     },
                   },
