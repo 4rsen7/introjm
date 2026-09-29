@@ -44,7 +44,7 @@ const SettingsPage = ({ initialTab = 'workspace', workspace, onUpdateWorkspace, 
     }
   }, [initialTab, isOwner]);
 
-  // Mock Data
+  // Workspace Name State
   const [workspaceName, setWorkspaceName] = useState(workspace?.name || '');
   
   useEffect(() => {

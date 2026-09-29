@@ -406,6 +406,13 @@ export const DashboardPage: React.FC = () => {
   const summaryTrend = stats.total_ai_summaries > 0
     ? `${stats.gemini_summaries} via Gemini`
     : "No AI summaries yet";
+  const usersTrend = stats.new_users_last_30d > 0
+    ? `+${stats.new_users_last_30d} in last 30d`
+    : "No new users in 30d";
+  const journeysTrend = stats.journeys_created_24h > 0
+    ? `+${stats.journeys_created_24h} in last 24h`
+    : "No new journeys in 24h";
+  const growthTrend = `${stats.activation_rate}% activation (24h)`;
 
   return (
     <div style={{ padding: 24 }}>
@@ -418,7 +425,7 @@ export const DashboardPage: React.FC = () => {
             title="Total Users" 
             value={stats.total_users} 
             icon={<UserOutlined />}
-            trend="+12% this month"
+            trend={usersTrend}
             isDark={isDark}
           />
         </Col>
@@ -427,7 +434,7 @@ export const DashboardPage: React.FC = () => {
             title="Total Journeys" 
             value={stats.total_journeys} 
             icon={<GlobalOutlined />}
-            trend="+5% this week"
+            trend={journeysTrend}
             isDark={isDark}
           />
         </Col>
@@ -436,7 +443,7 @@ export const DashboardPage: React.FC = () => {
             title="New Users (30d)" 
             value={stats.new_users_last_30d} 
             icon={<RiseOutlined />} 
-            trend="Active Growth"
+            trend={growthTrend}
             trendColor="#3E7BFA"
             isDark={isDark}
           />

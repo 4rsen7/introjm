@@ -37,10 +37,6 @@
   .research-header-select-option.is-selected { @apply bg-orange-50 font-semibold text-orange-700; }
   .research-header-select-option.is-active { @apply ring-2 ring-inset ring-orange-300; }
   .research-header-select-option:not(.is-selected):hover { @apply bg-slate-50; }
-  .research-preview-dot { @apply mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400; }
-  .research-preview-copy { @apply min-w-0 flex-1 text-xs leading-5; overflow-wrap: anywhere; }
-  .research-preview-copy strong { @apply font-medium; }
-  .research-preview-status { @apply mb-7 flex items-start gap-2 text-slate-500; }
   .research-app-header .research-header-select-trigger,
   .research-app-header .research-header-workspace-static,
   .research-app-header .research-secondary { @apply text-sm font-medium shadow-none; }

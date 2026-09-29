@@ -191,17 +191,14 @@ test('long labels and compact context stay readable without horizontal overflow'
       const box = selector => document.querySelector(selector).getBoundingClientRect();
       const workspaceBox = box('[data-testid="research-workspace"]');
       const languageBox = box('[data-testid="research-language"]');
-      const dot = box('[data-testid="research-preview-indicator"]');
-      const label = box('[data-testid="research-preview-notice"] strong');
       const number = box('[data-testid="research-task-number"]');
       const title = box('[data-testid="research-task-heading"] span:last-child');
-      return { workspace: workspaceBox.toJSON(), language: languageBox.toJSON(), dot: dot.toJSON(), label: label.toJSON(), number: number.toJSON(), title: title.toJSON() };
+      return { workspace: workspaceBox.toJSON(), language: languageBox.toJSON(), number: number.toJSON(), title: title.toJSON() };
     });
     expect(geometry.workspace.right).toBeGreaterThan(geometry.language.right);
     expect(geometry.workspace.bottom).toBeLessThanOrEqual(geometry.language.top);
     expect(geometry.workspace.height).toBeGreaterThanOrEqual(44);
     expect(geometry.language.height).toBeGreaterThanOrEqual(44);
-    expect(Math.abs(geometry.dot.y + geometry.dot.height / 2 - (geometry.label.y + geometry.label.height / 2))).toBeLessThanOrEqual(3);
     expect(Math.abs(geometry.number.y - geometry.title.y)).toBeLessThanOrEqual(2);
     expect(geometry.title.height).toBeGreaterThan(24);
     await page.locator('.research-section-nav a[href="#plan"]').click();

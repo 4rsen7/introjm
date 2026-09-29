@@ -3780,7 +3780,7 @@ app.post('/api/workspace/invite', async (req, res) => {
                 .select()
                 .single();
             if (updateErr) throw updateErr;
-            console.log(`📧 [MOCK EMAIL] Re-sending invite to ${email} for workspace ${workspace.id}`);
+            console.log(`[WORKSPACE INVITE] Re-invited ${email} to workspace ${workspace.id}`);
             return res.json({ status: 'success', message: 'Invite sent successfully.', data: updated });
         }
 
@@ -3792,7 +3792,7 @@ app.post('/api/workspace/invite', async (req, res) => {
 
         if (error) throw error;
 
-        console.log(`📧 [MOCK EMAIL] Sending invite to ${email} for workspace ${workspace.id}`);
+        console.log(`[WORKSPACE INVITE] Invited ${email} to workspace ${workspace.id}`);
 
         res.json({ status: 'success', message: 'Invite sent successfully.', data });
     } catch (err) {
@@ -5187,7 +5187,7 @@ app.delete('/api/interviews/:id', async (req, res) => {
     }
 });
 
-// 6. Згенерувати AI Саммарі (Заглушка/Mock)
+// 6. Згенерувати AI Саммарі
 app.post('/api/interviews/:id/generate-summary', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     const { id } = req.params;
