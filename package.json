@@ -18,7 +18,7 @@
     "deploy:hostinger": "bash ./scripts/deploy-hostinger.sh",
     "deploy:hostinger:ssh": "bash ./scripts/deploy-hostinger-over-ssh.sh",
     "install:playwright:chromium": "PLAYWRIGHT_BROWSERS_PATH=0 npm exec playwright install chromium",
-    "build": "npm install --include=dev && npm run install:playwright:chromium && rm -rf server/public/client server/public/admin && npm run build --workspace=client && npm run build --workspace=admin",
+    "build": "npm install --include=dev && npm run install:playwright:chromium && rm -rf server/public/client server/public/admin server/public/research && npm run build --workspace=client && npm run build --workspace=admin && npm run build --workspace=research",
     "install:all": "npm install",
     "seed:e2e": "node scripts/seed-e2e.js",
     "seed:e2e:local": "bash ./scripts/run-e2e-local.sh seed",

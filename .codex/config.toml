@@ -1,0 +1,10 @@
+# Manual orchestra; load from the actual repository root in a new session.
+model = "gpt-6-astra"
+model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "low"

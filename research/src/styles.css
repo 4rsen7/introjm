@@ -2,18 +2,89 @@
 
 @layer base {
   body { @apply m-0 font-sans antialiased; }
+  html { scroll-padding-top: calc(var(--research-header-height, 6rem) + 1rem); }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), summary { cursor: pointer; }
+  input[type='checkbox'] { @apply mt-0.5 h-4 w-4 shrink-0 accent-orange-600; }
   button:disabled { @apply cursor-not-allowed; }
   :focus-visible { @apply outline-none ring-4 ring-blue-200; }
   ::selection { @apply bg-orange-100 text-slate-900; }
 }
 
 @layer components {
-  .research-primary { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-orange-600/15 transition hover:bg-orange-700 disabled:opacity-50; }
-  .research-secondary { @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-white disabled:opacity-50; }
-  .research-field { @apply app-input w-full rounded-xl px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400; }
+  .research-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-orange-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-600/15 transition hover:bg-orange-700 disabled:opacity-50; }
+  .research-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-white disabled:opacity-50; }
+  .research-field { @apply app-input min-w-0 w-full rounded-xl px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500; }
+  .research-select { @apply app-select min-w-0 rounded-xl border border-slate-200/70 bg-white/70 py-2 pl-3 pr-9 text-sm font-semibold text-slate-700 shadow-sm; }
+  .research-select, select.research-field {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+  select.research-field { @apply pr-10; }
+  .research-header-select { @apply relative min-w-0; }
+  .research-header-select-workspace { @apply w-full; }
+  .research-header-select-compact { @apply shrink-0; }
+  .research-header-select-trigger, .research-header-workspace-static { @apply flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-white/70 px-3 py-2 text-left text-sm font-semibold text-slate-700 shadow-sm; }
+  .research-header-select-trigger { @apply w-full transition hover:border-slate-300 hover:bg-white; }
+  .research-header-select-compact .research-header-select-trigger { @apply text-xs font-bold; }
+  .research-header-workspace-static { @apply w-full; }
+  .research-header-select-list { @apply absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-1 shadow-xl; max-width: calc(100vw - 2.5rem); }
+  .research-header-select-compact .research-header-select-list { @apply right-0 left-auto w-40; }
+  .research-header-select-option { @apply flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700; cursor: pointer; overflow-wrap: anywhere; }
+  .research-header-select-option.is-selected { @apply bg-orange-50 font-semibold text-orange-700; }
+  .research-header-select-option.is-active { @apply ring-2 ring-inset ring-orange-300; }
+  .research-header-select-option:not(.is-selected):hover { @apply bg-slate-50; }
+  .research-preview-dot { @apply mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400; }
+  .research-preview-copy { @apply min-w-0 flex-1 text-xs leading-5; overflow-wrap: anywhere; }
+  .research-preview-copy strong { @apply font-medium; }
+  .research-preview-status { @apply mb-7 flex items-start gap-2 text-slate-500; }
+  .research-app-header .research-header-select-trigger,
+  .research-app-header .research-header-workspace-static,
+  .research-app-header .research-secondary { @apply text-sm font-medium shadow-none; }
+  .research-app-header button[title] { @apply shadow-none; }
+  .research-studies-intro { @apply mb-10 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center lg:gap-10; }
+  .research-studies-title { @apply text-3xl font-semibold leading-tight tracking-tight text-slate-950; }
+  .research-studies-description { @apply mt-4 text-sm leading-6 text-slate-600; text-wrap: pretty; }
+  .research-studies-create { @apply shrink-0 font-semibold shadow-sm; }
+  .research-task-heading { @apply flex min-w-0 items-start gap-2 font-bold leading-6; }
+  .research-task-heading > span:first-child { @apply shrink-0; }
+  .research-task-heading > span:last-child { @apply min-w-0; overflow-wrap: anywhere; }
+  .research-primary svg, .research-secondary svg { @apply shrink-0; }
+  .research-card { @apply app-surface min-w-0 rounded-3xl p-5 sm:p-7; }
+  .research-back { @apply mb-6 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-slate-950; }
+  .research-back svg { @apply shrink-0; }
+  .research-back span { @apply truncate; }
+  .research-form-actions { @apply flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 pt-5; }
+  .research-disclosure { @apply flex min-h-11 w-full items-center justify-between gap-3 rounded-xl text-left font-bold text-slate-800; }
+  .research-tab { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition; }
+  .research-tab[aria-selected='true'] { @apply bg-slate-950 text-white shadow-sm; }
+  .research-tab[aria-selected='false'] { @apply text-slate-600 hover:bg-white; }
+  .research-notice { @apply rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm leading-6 text-blue-900; }
+  .research-section-nav { @apply flex flex-wrap gap-2 rounded-2xl border border-slate-200/80 bg-white/70 p-2; }
+  .research-section-nav a { @apply inline-flex min-h-10 items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-slate-950 hover:shadow-sm; }
   .research-label { @apply mb-2 block text-sm font-semibold text-slate-700; }
-  .research-eyebrow { @apply text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500; }
-  .research-heading { @apply text-3xl font-black tracking-tight text-slate-950 sm:text-4xl; }
+  .research-eyebrow { @apply text-sm font-medium text-slate-600; }
+  .research-heading, .research-page-heading { @apply text-3xl font-semibold leading-tight tracking-tight text-slate-950; }
+  .research-section-heading { @apply text-xl font-semibold leading-7 tracking-tight text-slate-900; }
+  .research-subheading { @apply text-sm font-semibold leading-6 text-slate-800; }
+  .research-description { @apply text-sm leading-6 text-slate-600; }
   .research-summary { @apply app-surface rounded-3xl p-6 sm:p-8; }
-  .research-summary > div { @apply space-y-8; }
+  .research-summary { overflow-wrap: anywhere; }
+  .research-modal-body { scrollbar-gutter: stable; }
+  .research-modal-body:has(> .research-modal-form) { @apply flex min-h-0 flex-col overflow-hidden p-0; scrollbar-gutter: auto; }
+  .research-modal-form { @apply flex min-h-0 flex-1 flex-col; }
+  .research-modal-fields { @apply min-h-0 overflow-y-auto overscroll-contain px-5 py-6 sm:px-8 sm:py-7; scrollbar-gutter: stable; }
+  .research-modal-actions { @apply flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-slate-200/70 px-5 pb-5 pt-5 sm:px-8 sm:pb-6 sm:pt-6; }
+  .research-text-button { @apply inline-flex min-h-11 items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:text-slate-950 disabled:opacity-50; }
+  @media (max-width: 639px) {
+    .research-field { font-size: 16px; }
+    .research-form-actions > button, .research-modal-actions > button { @apply flex-1; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }

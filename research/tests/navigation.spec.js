@@ -67,11 +67,36 @@ test('unsaved transcript blocks home, workspace switch, logout, and browser back
   page.on('dialog', async (dialog) => { prompts += 1; await dialog.dismiss(); });
   await page.getByRole('link', { name: 'Research home' }).click();
   await expect(page).toHaveURL(new RegExp(`/interviews/${ids.interview}$`));
-  await page.getByTestId('research-workspace').selectOption(ids.otherWorkspace);
-  await expect(page.getByTestId('research-workspace')).toHaveValue(ids.workspace);
+  await page.getByTestId('research-workspace').click();
+  await page.getByTestId('research-workspace-option').filter({ hasText: 'Another team' }).click();
+  await expect(page.getByTestId('research-workspace')).toHaveAttribute('title', 'Product team');
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByLabel('What was said')).toHaveValue('Unsaved words');
   await page.evaluate(() => window.history.back());
   await expect(page).toHaveURL(new RegExp(`/interviews/${ids.interview}$`));
   expect(prompts).toBe(4);
+});
+
+test('new pages start at the top while study result links still reach their section', async ({ page }) => {
+  await mockResearch(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByTestId('research-load-more').click();
+  await page.getByRole('link', { name: /Last study/ }).scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+  await page.getByRole('link', { name: /Last study/ }).click();
+  await expect(page.getByRole('heading', { name: 'Last study', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.getByRole('link', { name: /Session 01/ }).scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page.getByRole('link', { name: /Session 01/ }).click();
+  await expect(page.getByRole('heading', { name: 'Session 01', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.locator(`a[href="/studies/${ids.study}#results"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#results$`));
+  await expect.poll(() => page.locator('#results').evaluate(element => {
+    const header = document.querySelector('header').getBoundingClientRect();
+    return Math.round(element.getBoundingClientRect().top - header.bottom);
+  })).toBeGreaterThanOrEqual(0);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 });

@@ -81,6 +81,7 @@ fi
 
 APP_STATIC_DIR="${APP_STATIC_DIR:-$PUBLIC_HTML_DIR/app}"
 ADMIN_STATIC_DIR="${ADMIN_STATIC_DIR:-$PUBLIC_HTML_DIR/admin}"
+RESEARCH_STATIC_DIR="${RESEARCH_STATIC_DIR:-$PUBLIC_HTML_DIR/research}"
 
 VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-${SUPABASE_URL:-}}"
 VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}"
@@ -96,7 +97,7 @@ require_env VITE_API_BASE_URL
 require_env VITE_LANDING_ORIGIN
 require_env VITE_APP_ORIGIN
 
-log "Writing client/admin local production env overrides"
+log "Writing client/admin/research local production env overrides"
 write_env_file "$REPO_DIR/client/.env.production.local" \
   "VITE_SUPABASE_URL=${VITE_SUPABASE_URL}" \
   "VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}" \
@@ -107,6 +108,11 @@ write_env_file "$REPO_DIR/client/.env.production.local" \
   "VITE_PADDLE_ENV=${VITE_PADDLE_ENV}"
 
 write_env_file "$REPO_DIR/admin/.env.production.local" \
+  "VITE_SUPABASE_URL=${VITE_SUPABASE_URL}" \
+  "VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}" \
+  "VITE_API_BASE_URL=${VITE_API_BASE_URL}"
+
+write_env_file "$REPO_DIR/research/.env.production.local" \
   "VITE_SUPABASE_URL=${VITE_SUPABASE_URL}" \
   "VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}" \
   "VITE_API_BASE_URL=${VITE_API_BASE_URL}"
@@ -125,16 +131,20 @@ if [[ -d "$PLAYWRIGHT_LOCAL_BROWSERS_DIR" ]]; then
   done < <(find "$PLAYWRIGHT_LOCAL_BROWSERS_DIR" -type f \( -name 'chrome-headless-shell' -o -name 'chrome' -o -name 'headless_shell' \))
 fi
 
-log "Building client and admin bundles"
-rm -rf "$REPO_DIR/server/public/client" "$REPO_DIR/server/public/admin"
+log "Building client, admin, and research bundles"
+rm -rf "$REPO_DIR/server/public/client" "$REPO_DIR/server/public/admin" "$REPO_DIR/server/public/research"
 npm run build --workspace=client
 npm run build --workspace=admin
+npm run build --workspace=research
 
 log "Syncing client build to ${APP_STATIC_DIR}"
 sync_dir "$REPO_DIR/server/public/client" "$APP_STATIC_DIR"
 
 log "Syncing admin build to ${ADMIN_STATIC_DIR}"
 sync_dir "$REPO_DIR/server/public/admin" "$ADMIN_STATIC_DIR"
+
+log "Syncing research build to ${RESEARCH_STATIC_DIR}"
+sync_dir "$REPO_DIR/server/public/research" "$RESEARCH_STATIC_DIR"
 
 if [[ -n "${SERVER_RESTART_COMMAND:-}" ]]; then
   log "Running server restart command"

@@ -35,6 +35,7 @@ function fakeDatabase() {
             let columns = '*';
             const query = {
                 select(value) { columns = value; return query; },
+                update(patch) { rows.forEach((row) => Object.assign(row, patch)); return query; },
                 eq(key, value) { rows = rows.filter((row) => row[key] === value); return query; },
                 is(key, value) { rows = rows.filter((row) => row[key] === value); return query; },
                 in(key, values) { rows = rows.filter((row) => values.includes(row[key])); return query; },
@@ -203,7 +204,8 @@ test('all job endpoints require authenticated scope, and enqueue never exposes a
 
 test('synthesis reads compare manifest structure and hide findings after source changes', async () => {
     await withApi(async (request, db) => {
-        db.tables.research_analysis_jobs = [{ id: ids.interview, workspace_id: ids.research, study_id: ids.study, kind: 'study_synthesis', status: 'completed', study_revision: 0,
+        db.tables.research_studies[0].context_revision = 0; db.tables.research_studies[0].current_version_id = ids.study;
+        db.tables.research_analysis_jobs = [{ id: ids.interview, workspace_id: ids.research, study_id: ids.study, kind: 'study_synthesis', status: 'completed', study_revision: 0, context_revision: 0, study_version_id: ids.study,
             source_manifest: [{ id: ids.interview, transcript_revision: 1, summary_revision: 1 }], output: { findings: [{ text: 'Finding', source_ids: [ids.interview] }] } }];
         db.rpc = async () => ({ data: [{ summary_revision: 1, transcript_revision: 1, id: ids.interview }] });
         assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data.output.findings.length, 1);
@@ -211,3 +213,23 @@ test('synthesis reads compare manifest structure and hide findings after source 
         assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data, null);
     });
 });
+
+test('job cancellation cancels queued or running workspace jobs and rejects completed or foreign jobs', async () => {
+    await withApi(async (request, db) => {
+        const runningId = '00000000-0000-4000-8000-000000000011';
+        const doneId = '00000000-0000-4000-8000-000000000012';
+        const foreignId = '00000000-0000-4000-8000-000000000013';
+        db.tables.research_analysis_jobs = [
+            { id: runningId, workspace_id: ids.research, study_id: ids.study, interview_id: ids.interview, kind: 'interview_summary', status: 'running', claim_token: 'lease-1' },
+            { id: doneId, workspace_id: ids.research, study_id: ids.study, interview_id: ids.interview, kind: 'interview_summary', status: 'completed', output: { summary: {} } },
+            { id: foreignId, workspace_id: ids.foreign, study_id: ids.study, interview_id: ids.interview, kind: 'interview_summary', status: 'queued' },
+        ];
+        assert.equal((await request(`/jobs/${foreignId}/cancel`, { method: 'POST' })).status, 404);
+        assert.equal((await request(`/jobs/${doneId}/cancel`, { method: 'POST' })).status, 409);
+        const canceled = await request(`/jobs/${runningId}/cancel`, { method: 'POST' });
+        assert.equal(canceled.status, 200);
+        assert.equal(canceled.body.data.status, 'canceled');
+        assert.equal(canceled.body.data.claim_token, undefined);
+    });
+});
+

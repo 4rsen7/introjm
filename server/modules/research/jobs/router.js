@@ -3,6 +3,7 @@ const { isDeepStrictEqual } = require('node:util');
 const { ResearchError, assertDatabaseResult, requireProductWorkspace } = require('../../access/productScope');
 const validate = require('../validation');
 const { publicError } = require('../router');
+const { studyResults } = require('../analytics');
 
 const JOB_COLUMNS = 'id,workspace_id,study_id,interview_id,kind,status,attempts,error_code,created_at,updated_at';
 const publicJob = job => Object.fromEntries(JOB_COLUMNS.split(',').map(key => [key, job[key]]));
@@ -24,11 +25,68 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
         } catch (error) { next(error); }
     };
     async function studyAccess(req, id) {
-        const study = assertDatabaseResult(await db.from('research_studies').select('id,workspace_id,revision,archived_at').eq('id', validate.uuid(id)).maybeSingle());
+        const study = assertDatabaseResult(await db.from('research_studies').select('id,workspace_id,revision,context_revision,current_version_id,archived_at').eq('id', validate.uuid(id)).maybeSingle());
         if (!study || study.archived_at) throw new ResearchError(404, 'NOT_FOUND', 'Study not found');
         await requireProductWorkspace(db, req.researchUser.id, study.workspace_id);
         return study;
     }
+    async function interviewAccess(req) {
+        const interview = assertDatabaseResult(await db.from('interviews').select('*').eq('id', validate.uuid(req.params.id)).maybeSingle());
+        if (!interview || !interview.study_id || interview.research_archived_at) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
+        const study = await studyAccess(req, interview.study_id);
+        if (study.workspace_id !== interview.workspace_id) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
+        return { interview, study };
+    }
+    for (const [path, kind] of [['brief', 'brief_preparation'], ['guide', 'guide_preparation']]) {
+        router.post(`/studies/:id/${path}-jobs`, authenticateRoute, route(async (req, res) => {
+            const study = await studyAccess(req, req.params.id);
+            send(res, publicJob(await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
+                p_study_id: study.id, p_interview_id: null, p_settings: {
+                    description: validate.text(req.body?.description, 'description', 8000, true) || '',
+                    answers: validate.text(req.body?.answers, 'answers', 8000, true) || '',
+                } })), 202);
+        }));
+    }
+    for (const [path, kind] of [['impact', 'transcript_impact'], ['evidence', 'interview_evidence']]) {
+        router.post(`/interviews/:id/${path}-jobs`, authenticateRoute, route(async (req, res) => {
+            const { study, interview } = await interviewAccess(req);
+            send(res, publicJob(await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
+                p_study_id: study.id, p_interview_id: interview.id, p_settings: {} })), 202);
+        }));
+    }
+    router.get('/studies/:id/preparation-job', authenticateRoute, route(async (req, res) => {
+        const study = await studyAccess(req, req.params.id);
+        send(res, assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,study_version_id,study_revision`)
+            .eq('study_id', study.id).in('kind', ['brief_preparation', 'guide_preparation']).order('created_at', { ascending: false }).limit(1).maybeSingle()));
+    }));
+    router.get('/interviews/:id/impact', authenticateRoute, route(async (req, res) => {
+        const { interview } = await interviewAccess(req);
+        const job = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,transcript_version_id,study_version_id,summary_revision`)
+            .eq('interview_id', interview.id).eq('kind', 'transcript_impact').order('created_at', { ascending: false }).limit(1).maybeSingle());
+        const validation = job ? assertDatabaseResult(await db.from('research_summary_validations').select('id,decision,accepted_at')
+            .eq('job_id', job.id).maybeSingle()) : null;
+        send(res, job ? { ...job, validation } : null);
+    }));
+    router.get('/interviews/:id/evidence-job', authenticateRoute, route(async (req, res) => {
+        const { interview } = await interviewAccess(req);
+        send(res, assertDatabaseResult(await db.from('research_analysis_jobs').select(JOB_COLUMNS).eq('interview_id', interview.id)
+            .eq('kind', 'interview_evidence').order('created_at', { ascending: false }).limit(1).maybeSingle()));
+    }));
+    router.post('/interviews/:id/summary-validations/:validationId/accept', authenticateRoute, route(async (req, res) => {
+        const { interview } = await interviewAccess(req);
+        send(res, await rpc('research_accept_summary_validation', { p_user_id: req.researchUser.id, p_interview_id: interview.id,
+            p_validation_id: validate.uuid(req.params.validationId), p_revision: validate.revision(req.body?.research_revision) }));
+    }));
+    router.get('/studies/:id/results', authenticateRoute, route(async (req, res) => {
+        const study = await studyAccess(req, req.params.id);
+        send(res, studyResults(await rpc('research_results_snapshot', { p_user_id: req.researchUser.id, p_study_id: study.id })));
+    }));
+    router.patch('/outcomes/:id', authenticateRoute, route(async (req, res) => {
+        const outcome = req.body?.outcome;
+        if (!outcome || typeof outcome !== 'object') validate.invalid('Missing outcome');
+        send(res, await rpc('research_correct_outcome', { p_user_id: req.researchUser.id, p_outcome_id: validate.uuid(req.params.id),
+            p_revision: validate.revision(req.body?.evidence_revision), p_outcome: outcome }));
+    }));
     router.post('/interviews/:id/summary-jobs', authenticateRoute, route(async (req, res) => {
         const interview = assertDatabaseResult(await db.from('interviews').select('id,study_id,workspace_id,research_archived_at').eq('id', validate.uuid(req.params.id)).maybeSingle());
         if (!interview || !interview.study_id || interview.research_archived_at) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
@@ -56,16 +114,28 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
         send(res, latest || null);
     }));
     router.get('/jobs/:id', authenticateRoute, route(async (req, res) => {
-        const job = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,source_manifest`).eq('id', validate.uuid(req.params.id)).maybeSingle());
+        const job = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,source_manifest,study_version_id,transcript_version_id,context_revision,pipeline_version`).eq('id', validate.uuid(req.params.id)).maybeSingle());
         if (!job) throw new ResearchError(404, 'NOT_FOUND', 'Job not found');
         await requireProductWorkspace(db, req.researchUser.id, job.workspace_id);
         send(res, job);
     }));
+    router.post('/jobs/:id/cancel', authenticateRoute, route(async (req, res) => {
+        const job = assertDatabaseResult(await db.from('research_analysis_jobs').select(JOB_COLUMNS).eq('id', validate.uuid(req.params.id)).maybeSingle());
+        if (!job) throw new ResearchError(404, 'NOT_FOUND', 'Job not found');
+        await requireProductWorkspace(db, req.researchUser.id, job.workspace_id);
+        if (job.status === 'canceled') return send(res, publicJob(job));
+        if (!['queued', 'running'].includes(job.status)) throw new ResearchError(409, 'RESEARCH_CONFLICT', 'Job is no longer active');
+        const now = new Date().toISOString();
+        const updated = assertDatabaseResult(await db.from('research_analysis_jobs')
+            .update({ status: 'canceled', claim_token: null, lease_until: null, updated_at: now })
+            .eq('id', job.id).in('status', ['queued', 'running']).select(JOB_COLUMNS).maybeSingle());
+        send(res, publicJob(updated || { ...job, status: 'canceled', updated_at: now }));
+    }));
     router.get('/studies/:id/synthesis', authenticateRoute, route(async (req, res) => {
         const study = await studyAccess(req, req.params.id);
-        const latest = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,source_manifest,study_revision`)
+        const latest = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,source_manifest,context_revision,study_version_id`)
             .eq('study_id', study.id).eq('kind', 'study_synthesis').eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle());
-        if (!latest || latest.study_revision !== study.revision) return send(res, null);
+        if (!latest || !latest.study_version_id || latest.study_version_id !== study.current_version_id || latest.context_revision !== study.context_revision) return send(res, null);
         const manifest = await rpc('research_synthesis_sources', { p_study_id: study.id });
         send(res, isDeepStrictEqual(manifest, latest.source_manifest) ? latest : null);
     }));
@@ -75,6 +145,7 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
             ? new ResearchError(409, 'RESEARCH_NO_SOURCES', 'Complete a current interview summary first')
             : publicError(error);
         if (safe.status >= 500) { try { Promise.resolve(onError(error)).catch(() => {}); } catch (_) { /* safe response */ } }
+        if (safe.status === 429) res.set('Retry-After', '30');
         res.status(safe.status).json({ status: 'error', code: safe.code, message: safe.message });
     });
     return router;

@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'research/**'
+      - 'admin/**'
+      - 'scripts/test-research-postgres.cjs'
       - 'client/src/components/interviews/**'
       - 'client/src/pages/InterviewRoom.jsx'
       - 'server/**'
@@ -20,8 +22,23 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: research-test-only
+          POSTGRES_DB: research_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       PLAYWRIGHT_BROWSERS_PATH: '0'
+      RESEARCH_TEST_DATABASE_URL: postgresql://postgres:research-test-only@127.0.0.1:5432/research_ci_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,8 +48,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:server
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: node scripts/test-research-postgres.cjs
       - run: npm run test:research-ui
       - run: npm run build:research
+      - run: npm exec --workspace=admin vite build
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

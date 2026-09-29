@@ -8,7 +8,11 @@ const RPC_ERRORS = {
     RESEARCH_LIMIT_REACHED: [403, 'Research beta limit reached'],
     RESEARCH_NOT_FOUND: [404, 'Resource not found'],
     RESEARCH_CONFLICT: [409, 'This record changed. Reload before saving'],
+    RESEARCH_QUEUE_FULL: [429, 'Research processing queue is full; retry later'],
     RESEARCH_INVALID_INPUT: [400, 'Invalid research data'],
+    RESEARCH_NO_TASKS: [409, 'Define shared tasks before analyzing task outcomes'],
+    RESEARCH_CONTEXT_CHANGED: [409, 'Regenerate the summary for the current study context first'],
+    RESEARCH_REPORT_TOO_LARGE: [422, 'This study exceeds the current report limit'],
 };
 
 function publicError(error) {
@@ -87,6 +91,45 @@ function createResearchRouter({ supabaseAdmin: db, authenticate, enabled = false
         }), 201);
     }));
     router.get('/studies/:id', route(async (req, res) => send(res, await studyAccess(req.researchUser.id, req.params.id))));
+    router.post('/studies/:id/versions', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        if (req.body?.preparation_job_id) {
+            return send(res, await rpc('research_accept_preparation', { p_user_id: req.researchUser.id, p_study_id: study.id,
+                p_job_id: validate.uuid(req.body.preparation_job_id), p_revision: validate.revision(req.body.revision),
+                p_goal: validate.text(req.body.goal, 'goal', 12000), p_brief: validate.text(req.body.brief, 'brief', 30000, true),
+                p_plan: validate.studyPlan(req.body.plan) }));
+        }
+        send(res, await rpc('research_save_study_version', {
+            p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_revision: validate.revision(req.body?.revision), p_plan: validate.studyPlan(req.body?.plan),
+        }));
+    }));
+    router.get('/studies/:id/versions', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        let query = db.from('research_study_versions').select('id,study_id,context_revision,goal,created_at').eq('study_id', study.id)
+            .order('context_revision', { ascending: false }).limit(validate.pageLimit(req.query.limit));
+        if (req.query.before != null) query = query.lt('context_revision', validate.revision(Number(req.query.before)));
+        send(res, assertDatabaseResult(await query) || []);
+    }));
+    router.get('/studies/:id/versions/:versionId', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        const version = assertDatabaseResult(await db.from('research_study_versions').select('*')
+            .eq('study_id', study.id).eq('id', validate.uuid(req.params.versionId)).maybeSingle());
+        if (!version) throw new ResearchError(404, 'NOT_FOUND', 'Version not found');
+        send(res, version);
+    }));
+    router.get('/studies/:id/participants', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        let query = db.from('research_study_participants').select('id,study_id,pseudonym')
+            .eq('study_id', study.id).order('id', { ascending: false }).limit(validate.pageLimit(req.query.limit));
+        if (req.query.before) query = query.lt('id', validate.uuid(req.query.before, 'before'));
+        send(res, assertDatabaseResult(await query) || []);
+    }));
+    router.post('/studies/:id/participants', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        send(res, await rpc('research_create_participant', { p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_pseudonym: validate.text(req.body?.pseudonym, 'pseudonym', 120) }), 201);
+    }));
     router.patch('/studies/:id', route(async (req, res) => {
         const study = await studyAccess(req.researchUser.id, req.params.id);
         const body = req.body || {};
@@ -121,6 +164,26 @@ function createResearchRouter({ supabaseAdmin: db, authenticate, enabled = false
         }), 201);
     }));
     router.get('/interviews/:id', route(async (req, res) => send(res, await interviewAccess(req.researchUser.id, req.params.id))));
+    router.patch('/interviews/:id/participant', route(async (req, res) => {
+        const interview = await interviewAccess(req.researchUser.id, req.params.id);
+        send(res, await rpc('research_assign_participant', { p_user_id: req.researchUser.id, p_interview_id: interview.id,
+            p_participant_id: req.body?.participant_id === null ? null : validate.uuid(req.body?.participant_id, 'participant_id'),
+            p_revision: validate.revision(req.body?.research_revision, 'research_revision') }));
+    }));
+    router.get('/interviews/:id/transcript-versions', route(async (req, res) => {
+        const interview = await interviewAccess(req.researchUser.id, req.params.id);
+        let query = db.from('research_transcript_versions').select('id,interview_id,transcript_revision,origin,author_id,created_at')
+            .eq('interview_id', interview.id).order('transcript_revision', { ascending: false }).limit(validate.pageLimit(req.query.limit));
+        if (req.query.before != null) query = query.lt('transcript_revision', validate.revision(Number(req.query.before)));
+        send(res, assertDatabaseResult(await query) || []);
+    }));
+    router.get('/interviews/:id/transcript-versions/:versionId', route(async (req, res) => {
+        const interview = await interviewAccess(req.researchUser.id, req.params.id);
+        const version = assertDatabaseResult(await db.from('research_transcript_versions').select('*')
+            .eq('interview_id', interview.id).eq('id', validate.uuid(req.params.versionId)).maybeSingle());
+        if (!version) throw new ResearchError(404, 'NOT_FOUND', 'Version not found');
+        send(res, version);
+    }));
     async function updateInterview(req, res, archive) {
         const interview = await interviewAccess(req.researchUser.id, req.params.id);
         const body = req.body || {};
@@ -142,6 +205,7 @@ function createResearchRouter({ supabaseAdmin: db, authenticate, enabled = false
         if (safe.status >= 500) {
             try { Promise.resolve(onError(error)).catch(() => {}); } catch (_) { /* logging cannot expose a raw error */ }
         }
+        if (safe.status === 429) res.set('Retry-After', '30');
         res.status(safe.status).json({ status: 'error', code: safe.code, message: safe.message });
     });
     return router;

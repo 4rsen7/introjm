@@ -17,6 +17,10 @@ export function useAnalysisJob({ userId, workspaceId, studyId, interviewId }) {
     mutationFn: () => researchRequest(`${resource}s`, { method: 'POST' }),
     onSuccess: (data) => client.setQueryData(key, data),
   });
+  const cancel = useMutation({
+    mutationFn: () => researchRequest(`/jobs/${job.data.id}/cancel`, { method: 'POST' }),
+    onSuccess: (data) => client.setQueryData(key, data),
+  });
   useEffect(() => {
     const marker = `${job.data?.id}:${job.data?.status}`;
     if (job.data?.status !== 'completed' || refreshed.current === marker) return;
@@ -26,7 +30,9 @@ export function useAnalysisJob({ userId, workspaceId, studyId, interviewId }) {
     client.invalidateQueries({ queryKey: researchKey(userId, workspaceId, 'interviews', studyId) });
     if (interviewId) client.invalidateQueries({ queryKey: researchKey(userId, workspaceId, 'synthesis', studyId) });
   }, [job.data?.id, job.data?.status, client, userId, workspaceId, studyId, interviewId]);
-  return { job: job.data, loading: job.isPending, error: enqueue.error || job.error,
+  return { job: job.data, loading: job.isPending, error: enqueue.error || cancel.error || job.error,
     busy: enqueue.isPending || ['queued', 'running'].includes(job.data?.status),
-    enqueue: () => enqueue.mutate() };
+    canceling: cancel.isPending,
+    enqueue: () => enqueue.mutate(),
+    cancel: () => job.data?.id && cancel.mutate() };
 }

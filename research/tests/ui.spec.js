@@ -74,6 +74,24 @@ test('sign-in is available without contacting production services', async ({ pag
     await expect(page.getByText('Sign in with your IteroJM account.')).toBeVisible();
 });
 
+test('account and recovery forms have matching headings and an accessible password reveal', async ({ page }) => {
+    await mockResearch(page, { signedIn: false });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Create a new account', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+    await page.getByTestId('research-password').fill('synthetic-password');
+    await page.getByRole('button', { name: 'Show password', exact: true }).click();
+    await expect(page.getByTestId('research-password')).toHaveAttribute('type', 'text');
+    await page.getByRole('button', { name: 'Back to sign in' }).click();
+    await expect(page.getByTestId('research-password')).toHaveAttribute('type', 'password');
+    await page.getByRole('button', { name: 'Forgot password?', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Forgot password?', exact: true })).toBeVisible();
+    await expect(page.getByTestId('research-password')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: 'test-results/research-auth-mobile.png', fullPage: true });
+});
+
 test('disabled Research shows an availability state instead of an empty database', async ({ page }) => {
     await mockResearch(page, { disabled: true });
     await page.goto('/');

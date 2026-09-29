@@ -10,7 +10,7 @@ import {
 } from "@refinedev/antd";
 import "@refinedev/antd/dist/reset.css";
 import "./global.css";
-import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined, ReadOutlined, NotificationOutlined } from "@ant-design/icons";
+import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined, ReadOutlined, NotificationOutlined, ExperimentOutlined } from "@ant-design/icons";
 
 import routerProvider, {
   CatchAllNavigate,
@@ -38,6 +38,7 @@ import { LearningMaterialList } from "./pages/learning-materials/list";
 import { LearningMaterialCreate } from "./pages/learning-materials/create";
 import { LearningMaterialEdit } from "./pages/learning-materials/edit";
 import { NewsPage } from "./pages/news";
+import { ResearchAdminPage } from "./pages/research";
 import { Header } from "./components/header";
 import { Sider } from "./components/sider";
 
@@ -130,6 +131,14 @@ function App() {
                       icon: <CustomerServiceOutlined />,
                     },
                   },
+                  {
+                    name: "research",
+                    list: "/research",
+                    meta: {
+                      label: "Research beta",
+                      icon: <ExperimentOutlined />,
+                    },
+                  },
                 ]}
               >
                 <Routes>
@@ -183,6 +192,7 @@ function App() {
                     <Route path="/plans/create" element={<PlanCreate />} />
                     <Route path="/plans/edit/:id" element={<PlanEdit />} />
                     <Route path="/support" element={<SupportList />} />
+                    <Route path="/research" element={<ResearchAdminPage />} />
                     <Route path="/news" element={<NewsPage />} />
                     <Route path="/learning-materials" element={<LearningMaterialList />} />
                     <Route path="/learning-materials/create" element={<LearningMaterialCreate />} />
