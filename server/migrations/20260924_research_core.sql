@@ -27,7 +27,7 @@ CREATE INDEX research_workspace_product_owner ON public.workspaces(product_key, 
 CREATE INDEX research_subscription_product_user ON public.subscriptions(product_key, user_id, status);
 CREATE INDEX research_plan_product ON public.plans(product_key);
 
-CREATE FUNCTION public.research_immutable_product() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION public.research_immutable_product() RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN
   IF NEW.product_key IS DISTINCT FROM OLD.product_key THEN
     RAISE EXCEPTION 'Product scope cannot be changed';
