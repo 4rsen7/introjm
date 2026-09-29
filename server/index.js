@@ -5670,6 +5670,12 @@ verifyProductScope(rawSupabaseAdmin, productFlags).then(() => {
             runDailySync: runNightlyMetricAutoSync,
             logger: console,
         });
+        if (productFlags.researchEnabled && process.env.RESEARCH_JOBS_ENABLED === 'true' && process.env.RESEARCH_EMBEDDED_WORKER !== 'false') {
+            const { main: startResearchWorker } = require('./workers/research');
+            startResearchWorker().catch((err) => {
+                console.error('[Research worker] stopped:', err.message);
+            });
+        }
     });
 }).catch((error) => {
     console.error('Server startup refused:', error.message);
