@@ -392,5 +392,11 @@
   "planOptionalAtStartTitle": "You don’t need to fill out the plan manually at the start",
   "planOptionalAtStartBody": "Your goal and brief are enough for the first interview. As soon as you upload and analyze the first conversation, AI will propose a draft plan and test tasks for consistent cross-interview statistics.",
   "proposePlanFromInterviewTitle": "Turn this interview into your study’s baseline plan?",
-  "proposePlanFromInterviewBody": "AI has analyzed this conversation and can extract its key tasks, success criteria, and questions into a shared plan so all subsequent interviews are compared in unified statistics."
+  "proposePlanFromInterviewBody": "AI has analyzed this conversation and can extract its key tasks, success criteria, and questions into a shared plan so all subsequent interviews are compared in unified statistics.",
+  "toggleSpeaker": "Click to toggle speaker (Interviewer ↔ Respondent)",
+  "copySegment": "Copy line",
+  "generatingSummaryTitle": "Generating AI interview summary...",
+  "summaryStage1": "Analyzing conversation context...",
+  "summaryStage2": "Extracting key insights and behavior patterns...",
+  "summaryStage3": "Structuring final findings and recommendations..."
 }

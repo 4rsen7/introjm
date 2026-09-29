@@ -23,11 +23,30 @@ export async function researchRequest(path, options = {}) {
   return result.data;
 }
 
+export function decodeUploadFileName(rawName = '') {
+  const str = String(rawName || '').trim();
+  if (!str) return '';
+  if (/[\u0080-\u00ff]/.test(str) && !/[\u0100-\uffff]/.test(str)) {
+    try {
+      const bytes = Uint8Array.from(str, (ch) => ch.charCodeAt(0) & 0xff);
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (decoded) return decoded.normalize('NFC');
+    } catch {
+      // Not valid UTF-8 bytes stored as Latin-1
+    }
+  }
+  return str.normalize('NFC');
+}
+
 export async function uploadInterviewAudio(interviewId, file, { autoSummary = true } = {}) {
   const token = await getAuthToken();
   if (!token) throw Object.assign(new Error('Authentication required'), { code: 'UNAUTHENTICATED', status: 401 });
+  const normalizedFileName = decodeUploadFileName(file?.name || '');
   const formData = new FormData();
-  formData.append('audio', file);
+  formData.append('audio', file, normalizedFileName || file.name);
+  if (normalizedFileName) {
+    formData.append('original_filename', normalizedFileName);
+  }
   formData.append('auto_summary', autoSummary ? 'true' : 'false');
   const response = await fetch(`${API_BASE_URL}/research/interviews/${interviewId}/upload-audio`, {
     method: 'POST',

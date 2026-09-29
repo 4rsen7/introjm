@@ -4,6 +4,7 @@ const { ResearchError, assertDatabaseResult, requireProductWorkspace } = require
 const validate = require('../validation');
 const { publicError } = require('../router');
 const { studyResults } = require('../analytics');
+const { wakeResearchWorker } = require('./worker');
 
 const JOB_COLUMNS = 'id,workspace_id,study_id,interview_id,kind,status,attempts,error_code,created_at,updated_at';
 const publicJob = job => Object.fromEntries(JOB_COLUMNS.split(',').map(key => [key, job[key]]));
@@ -40,18 +41,22 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
     for (const [path, kind] of [['brief', 'brief_preparation'], ['guide', 'guide_preparation']]) {
         router.post(`/studies/:id/${path}-jobs`, authenticateRoute, route(async (req, res) => {
             const study = await studyAccess(req, req.params.id);
-            send(res, publicJob(await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
+            const job = await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
                 p_study_id: study.id, p_interview_id: null, p_settings: {
                     description: validate.text(req.body?.description, 'description', 8000, true) || '',
                     answers: validate.text(req.body?.answers, 'answers', 8000, true) || '',
-                } })), 202);
+                } });
+            wakeResearchWorker();
+            send(res, publicJob(job), 202);
         }));
     }
     for (const [path, kind] of [['impact', 'transcript_impact'], ['evidence', 'interview_evidence']]) {
         router.post(`/interviews/:id/${path}-jobs`, authenticateRoute, route(async (req, res) => {
             const { study, interview } = await interviewAccess(req);
-            send(res, publicJob(await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
-                p_study_id: study.id, p_interview_id: interview.id, p_settings: {} })), 202);
+            const job = await rpc('research_enqueue_intelligence', { p_user_id: req.researchUser.id, p_kind: kind,
+                p_study_id: study.id, p_interview_id: interview.id, p_settings: {} });
+            wakeResearchWorker();
+            send(res, publicJob(job), 202);
         }));
     }
     router.get('/studies/:id/preparation-job', authenticateRoute, route(async (req, res) => {
@@ -92,11 +97,15 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
         if (!interview || !interview.study_id || interview.research_archived_at) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
         const study = await studyAccess(req, interview.study_id);
         if (study.workspace_id !== interview.workspace_id) throw new ResearchError(404, 'NOT_FOUND', 'Interview not found');
-        send(res, publicJob(await rpc('research_enqueue_analysis', { p_user_id: req.researchUser.id, p_kind: 'interview_summary', p_study_id: study.id, p_interview_id: interview.id })), 202);
+        const job = await rpc('research_enqueue_analysis', { p_user_id: req.researchUser.id, p_kind: 'interview_summary', p_study_id: study.id, p_interview_id: interview.id });
+        wakeResearchWorker();
+        send(res, publicJob(job), 202);
     }));
     router.post('/studies/:id/synthesis-jobs', authenticateRoute, route(async (req, res) => {
         const study = await studyAccess(req, req.params.id);
-        send(res, publicJob(await rpc('research_enqueue_analysis', { p_user_id: req.researchUser.id, p_kind: 'study_synthesis', p_study_id: study.id, p_interview_id: null })), 202);
+        const job = await rpc('research_enqueue_analysis', { p_user_id: req.researchUser.id, p_kind: 'study_synthesis', p_study_id: study.id, p_interview_id: null });
+        wakeResearchWorker();
+        send(res, publicJob(job), 202);
     }));
     router.get('/interviews/:id/summary-job', authenticateRoute, route(async (req, res) => {
         const interview = assertDatabaseResult(await db.from('interviews').select('id,study_id,workspace_id,research_archived_at').eq('id', validate.uuid(req.params.id)).maybeSingle());

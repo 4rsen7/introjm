@@ -4,6 +4,7 @@ const ids = { user: '00000000-0000-4000-8000-000000000001', workspace: '00000000
 async function mockResearch(page, { signedIn = true, disabled = false, conflict = false } = {}) {
     const study = { id: ids.study, workspace_id: ids.workspace, title: 'Checkout prototype', goal: 'Can users find the delivery time?', brief: 'Evaluate the new delivery screen.', revision: 0 };
     let interview = {
+  await page.getByRole('tab', { name: 'Interviews', exact: true }).click();
         id: ids.interview, workspace_id: ids.workspace, study_id: ids.study, title: 'Session 01', status: 'completed', research_revision: 2, transcript_revision: 1, summary_revision: 1,
         transcript_data: [{ id: 'line-1', timestamp: '00:10', speaker: 'Participant', text: 'I found the delivery time.' }],
         summary_data: { summary: { generalInsight: 'The delivery time is easy to find.' }, quotes: ['I found the delivery time.'] },
@@ -105,6 +106,7 @@ test('study context leads to the existing summary renderer and revision-checked 
     await page.goto('/');
     await page.getByTestId('research-study-card').click();
     await expect(page.getByText('Can users find the delivery time?', { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Interviews' }).click();
     await page.getByRole('link', { name: /Session 01/ }).click();
     await expect(page.getByText('The delivery time is easy to find.', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Transcript' }).click();
@@ -149,9 +151,11 @@ test('background summary resumes polling after reload and refreshes saved output
 test('study synthesis displays only returned findings with links to source interviews', async ({ page }) => {
     await mockResearch(page);
     await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
     await page.getByRole('button', { name: 'Compile overall findings' }).click();
     await expect(page.getByText('Delivery information needs a clearer place in the flow.')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Based on 1 interview summaries')).toBeVisible();
+  await page.getByRole('tab', { name: 'Interviews', exact: true }).click();
     await expect(page.getByRole('link', { name: 'Session 01', exact: true })).toHaveAttribute('href', `/studies/${ids.study}/interviews/${ids.interview}`);
 });
 

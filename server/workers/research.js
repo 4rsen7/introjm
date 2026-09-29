@@ -1,16 +1,26 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { processNext, DEFAULT_SUMMARY_MODEL } = require('../modules/research/jobs/worker');
+const { processNext, DEFAULT_SUMMARY_MODEL, registerWorkerWake, wakeResearchWorker } = require('../modules/research/jobs/worker');
 const { randomUUID } = require('node:crypto');
 const { createResearchStorage } = require('../modules/research/media/storage');
 const { runMediaTranscriptionJob, cleanupExpiredMedia } = require('../modules/research/media');
 
+let wakeSleep = null;
+registerWorkerWake(() => {
+    if (typeof wakeSleep === 'function') {
+        const wake = wakeSleep;
+        wakeSleep = null;
+        wake();
+    }
+});
+
 async function main() {
     if (process.env.RESEARCH_JOBS_ENABLED === 'false') throw new Error('Research jobs worker is disabled');
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.GEMINI_API_KEY)
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    if (!process.env.SUPABASE_URL || !serviceKey || !process.env.GEMINI_API_KEY)
         throw new Error('Research worker credentials are missing');
-    const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    const db = createClient(process.env.SUPABASE_URL, serviceKey, { auth: { persistSession: false } });
     const model = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: DEFAULT_SUMMARY_MODEL });
     const generateText = async (prompt, { signal } = {}) => (await model.generateContent(prompt, { signal, timeout: 90000 })).response.text();
     const storage = createResearchStorage(db);
@@ -26,7 +36,7 @@ async function main() {
     const heartbeat = setInterval(() => report().catch(() => {}), 30000);
     heartbeat.unref();
     let stopping = false;
-    const stop = () => { stopping = true; active.abort(); };
+    const stop = () => { stopping = true; active.abort(); wakeResearchWorker(); };
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
     let cleanedAt = 0;
@@ -53,11 +63,20 @@ async function main() {
             }
             if (mediaEnabled && Date.now() - cleanedAt > 60000) { await cleanupExpiredMedia({ db, storage }); cleanedAt = Date.now(); }
         }
-        catch (error) { console.error('Research worker iteration failed:', error?.code || 'ITERATION_FAILED'); }
-        if (!result) await new Promise(resolve => setTimeout(resolve, 5000));
+        catch (error) { console.error('Research worker iteration failed:', error?.code || error?.message || 'ITERATION_FAILED'); }
+        if (!result && !stopping) {
+            await new Promise((resolve) => {
+                wakeSleep = resolve;
+                const timer = setTimeout(() => {
+                    if (wakeSleep === resolve) wakeSleep = null;
+                    resolve();
+                }, 1500);
+                timer.unref?.();
+            });
+        }
     }
     } finally { clearInterval(heartbeat); await db.from('research_worker_heartbeats').delete().eq('id', workerId); }
 }
 
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
-module.exports = { main };
+module.exports = { main, wakeResearchWorker };

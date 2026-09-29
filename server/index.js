@@ -5271,8 +5271,23 @@ const formatFileSizeLabel = (bytes) => {
 
 
 
+const decodeUploadedFileName = (rawName = '') => {
+    const str = String(rawName || '').trim();
+    if (!str) return '';
+    if (/[\u0080-\u00ff]/.test(str) && !/[\u0100-\uffff]/.test(str)) {
+        try {
+            const bytes = Uint8Array.from(str, (ch) => ch.charCodeAt(0) & 0xff);
+            const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            if (decoded) return decoded.normalize('NFC');
+        } catch {
+            // Fall through if not UTF-8 bytes stored as Latin-1
+        }
+    }
+    return str.normalize('NFC');
+};
+
 const isAllowedInterviewUploadFile = (file = {}) => {
-    const extension = getInterviewUploadExtension(file.originalname);
+    const extension = getInterviewUploadExtension(decodeUploadedFileName(file.originalname));
     const mimeType = String(file.mimetype || '').toLowerCase();
     return ALLOWED_INTERVIEW_UPLOAD_EXTENSIONS.has(extension) || ALLOWED_INTERVIEW_UPLOAD_MIME_TYPES.has(mimeType);
 };
@@ -5310,30 +5325,12 @@ const safeDeleteFile = (filePath) => {
     }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const interviewUploadMiddleware = (req, res, next) => {
     upload.single('audio')(req, res, (err) => {
         if (!err) {
+            if (req.file) {
+                req.file.originalname = decodeUploadedFileName(req.body?.original_filename || req.file.originalname);
+            }
             next();
             return;
         }
@@ -5670,6 +5667,9 @@ const processResearchInterviewAudioUpload = async ({ interviewId, userId, file, 
             });
             if (jobErr) {
                 console.warn('[research-interview-upload] auto-summary enqueue warning:', jobErr.message);
+            } else {
+                const { wakeResearchWorker } = require('./modules/research/jobs/worker');
+                wakeResearchWorker();
             }
         }
     } catch (err) {

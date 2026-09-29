@@ -98,4 +98,14 @@ async function processNext({ db, generateText, timeoutMs, runMedia, signal, onEv
     } finally { controller.abort(); clearTimeout(timeout); clearInterval(heartbeat); signal?.removeEventListener('abort', abort); }
 }
 
-module.exports = { processNext, runAnalysisJob, parseSynthesis, DEFAULT_SUMMARY_MODEL };
+let wakeCallback = null;
+function registerWorkerWake(fn) {
+    wakeCallback = typeof fn === 'function' ? fn : null;
+}
+function wakeResearchWorker() {
+    if (typeof wakeCallback === 'function') {
+        try { wakeCallback(); } catch (_) { /* ignore wake error */ }
+    }
+}
+
+module.exports = { processNext, runAnalysisJob, parseSynthesis, DEFAULT_SUMMARY_MODEL, registerWorkerWake, wakeResearchWorker };

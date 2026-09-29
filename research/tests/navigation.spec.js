@@ -60,6 +60,7 @@ test('unsaved transcript blocks home, workspace switch, logout, and browser back
   await page.goto('/');
   await page.getByTestId('research-load-more').click();
   await page.getByRole('link', { name: /Last study/ }).click();
+  await page.getByRole('tab', { name: 'Interviews' }).click();
   await page.getByRole('link', { name: /Session 01/ }).click();
   await page.getByRole('tab', { name: 'Transcript' }).click();
   await page.getByLabel('What was said').fill('Unsaved words');
@@ -87,14 +88,20 @@ test('new pages start at the top while study result links still reach their sect
   await page.getByRole('link', { name: /Last study/ }).click();
   await expect(page.getByRole('heading', { name: 'Last study', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  
+  await page.getByRole('tab', { name: 'Interviews' }).click();
+  
   await page.getByRole('link', { name: /Session 01/ }).scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   await page.getByRole('link', { name: /Session 01/ }).click();
   await expect(page.getByRole('heading', { name: 'Session 01', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-  await page.locator(`a[href="/studies/${ids.study}#results"]`).click();
+  
+  await page.getByRole('tab', { name: 'Results' }).click();
+  
   await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#results$`));
   await expect.poll(() => page.locator('#results').evaluate(element => {
+    if (!element) return 0;
     const header = document.querySelector('header').getBoundingClientRect();
     return Math.round(element.getBoundingClientRect().top - header.bottom);
   })).toBeGreaterThanOrEqual(0);

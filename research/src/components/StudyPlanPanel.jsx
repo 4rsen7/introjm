@@ -124,7 +124,6 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
     {['questions', 'hypotheses'].map(key => plan[key].length > 0 && <details key={key} className="mt-5 rounded-xl bg-slate-50 p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-700">{t(`research.plan_${key}`)}</summary><ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6">{plan[key].map((line, index) => <li key={index}>{line}</li>)}</ul></details>)}
     {plan.tasks.length > 0 ? <ol className="mt-6 space-y-4">{plan.tasks.map((task, index) => <li key={task.id} className="rounded-2xl border border-slate-200/70 bg-white/50 p-5 [overflow-wrap:anywhere]"><h3 className="research-task-heading" data-testid="research-task-heading"><span data-testid="research-task-number">{index + 1}.</span><span>{task.title}</span></h3><p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-500">{task.instruction}</p><p className="mt-3 text-sm leading-6 text-emerald-800"><strong>{t('research.task_success_criteria')}: </strong>{task.success_criteria}</p></li>)}</ol> : (
       <div className="mt-5 space-y-4">
-        <p className="text-sm text-slate-400">{t('research.noTasks')}</p>
         {hasCompletedInterview || hasAnyInterview ? (
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-orange-200/80 bg-gradient-to-br from-orange-50/70 via-white to-amber-50/40 p-5" data-testid="research-plan-ai-draft-banner">
             <div className="min-w-0 flex-1">
@@ -151,15 +150,18 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
             </button>
           </div>
         ) : (
-          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 text-sm leading-6 text-slate-600">
-            <p className="font-semibold text-slate-800">{t('research.planOptionalAtStartTitle')}</p>
-            <p className="mt-1 text-slate-500">{t('research.planOptionalAtStartBody')}</p>
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+            <div className="text-sm leading-6 text-slate-600">
+              <p className="font-semibold text-slate-800">{t('research.planOptionalAtStartTitle')}</p>
+              <p className="mt-0.5 text-slate-500">{t('research.planOptionalAtStartBody')}</p>
+            </div>
+            <button className="research-secondary shrink-0" onClick={() => { setDraftStudy(study); setError(null); setSaved(false); }}>{t('research.editPlanManually') || 'Створити вручну'}</button>
           </div>
         )}
       </div>
     )}
     {plan.guide.length > 0 && <details className="mt-6 rounded-2xl bg-slate-50 p-5"><summary className="cursor-pointer text-sm font-semibold text-slate-700">{t('research.interviewGuide')}</summary><ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-slate-600">{plan.guide.map((line, index) => <li key={index}>{line}</li>)}</ol></details>}
-    <div className="mt-6 flex flex-wrap gap-3"><button className="research-secondary" onClick={() => { setDraftStudy(study); setError(null); setSaved(false); }}>{t('research.editPlan')}</button>{onDuplicate && <button type="button" className="research-secondary" onClick={onDuplicate} data-testid="research-duplicate-plan"><Copy size={16} />{t('research.duplicateStudy')}</button>}<button aria-expanded={showHistory} className="research-secondary" onClick={() => setShowHistory(value => !value)}><History size={16} />{t('research.versionHistory')}</button></div>
+    <div className="mt-6 flex flex-wrap gap-3">{plan.tasks.length > 0 && <button className="research-secondary" onClick={() => { setDraftStudy(study); setError(null); setSaved(false); }}>{t('research.editPlan')}</button>}{onDuplicate && <button type="button" className="research-secondary" onClick={onDuplicate} data-testid="research-duplicate-plan"><Copy size={16} />{t('research.duplicateStudy')}</button>}<button aria-expanded={showHistory} className="research-secondary" onClick={() => setShowHistory(value => !value)}><History size={16} />{t('research.versionHistory')}</button></div>
     {showHistory && <div className="mt-5">{history.isPending ? <Loading /> : history.isError ? <ErrorState error={history.error} onRetry={() => history.refetch()} /> : history.data.pages.flat().length === 0 ? <p className="text-sm text-slate-500">{t('research.noHistory')}</p> : <ol className="space-y-2">{history.data.pages.flat().map(row => <li key={row.id}><button className="research-secondary w-full justify-between text-left" onClick={() => setHistoryVersion(row.id)}>{t('research.contextVersion', { version: row.context_revision })} · {new Date(row.created_at).toLocaleDateString()}</button></li>)}</ol>}</div>}
     {showHistory && history.hasNextPage && <button className="research-secondary mt-4" disabled={history.isFetchingNextPage} onClick={() => history.fetchNextPage()}>{t('research.loadMore')}</button>}
     {draftStudy && <Modal guardChanges title={t('research.editPlan')} onClose={() => !busy && setDraftStudy(null)} busy={busy}><StudyPlanForm plan={draftStudy.plan} onSave={save} onClose={() => setDraftStudy(null)} busy={busy} error={error} /></Modal>}

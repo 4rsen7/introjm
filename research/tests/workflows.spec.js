@@ -163,6 +163,7 @@ async function fixture(page, {
 test('shared criteria keep task IDs and save the exact version opened for editing', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
   await page.getByRole('button', { name: 'Edit plan', exact: true }).click();
   await page.getByRole('textbox', { name: 'Success criterion', exact: true }).fill('A delivery date and price are visible');
   await page.getByRole('textbox', { name: 'Success criterion', exact: true }).pressSequentially('.');
@@ -251,10 +252,13 @@ test('failed interview loading leaves the compact count unknown', async ({ page 
 test('impact confirmation is explicit and never regenerates a summary', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await page.getByRole('button', { name: 'Check impact' }).click();
   await expect(page.getByText('No material impact found')).toBeVisible();
   await expect(page.getByText('The source has changed', { exact: true }).first()).toBeVisible();
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await page.getByRole('button', { name: 'Confirm summary is current' }).click();
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Check impact' })).toHaveCount(0);
   expect(writes.map(write => write.path).some(path => path.endsWith('/summary-jobs'))).toBe(false);
   expect(writes.at(-1).body.research_revision).toBe(3);
@@ -264,6 +268,7 @@ test('results expose denominators and evidence; corrections preserve source and 
   const writes = await fixture(page);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await page.getByRole('button', { name: 'Show results' }).click();
   await expect(page.getByText('Full success: 1 / 1 attempts (100%)')).toBeVisible();
   await expect(page.getByText('Unknown: 1 · Not attempted: 0 · Analyzed: 1 / 2 sessions')).toBeVisible();
@@ -294,6 +299,7 @@ test('long plan modal stays usable on mobile and protects unsaved edits on close
   const writes = await fixture(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
   await page.getByRole('button', { name: 'Edit plan', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Success criterion', exact: true }).fill('Updated but not saved');
@@ -336,8 +342,8 @@ test('summary tabs support keyboard navigation and narrow layouts keep tools rea
   await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Home');
   await expect(page.getByText('Delivery was found.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Sources and participant' }).click();
-  await expect(page.getByRole('combobox', { name: 'Participant', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Version history' }).click();
+  await expect(page.getByText('History will appear after the first save.')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/research-interview-tools-mobile.png', fullPage: true });
 });
@@ -390,11 +396,17 @@ test('results and synthesis findings can be copied, and interviews or studies ar
     },
   });
   await page.goto(`/studies/${ids.study}#results`);
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await expect(page.getByTestId('research-copy-results')).toBeVisible();
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await page.getByTestId('research-copy-results').click();
+  await page.getByRole('tab', { name: 'Results', exact: true }).click();
   await expect(page.getByTestId('research-copy-results')).toContainText('Copied');
+  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
   await expect(page.getByTestId('research-copy-synthesis')).toBeVisible();
+  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
   await page.getByTestId('research-copy-synthesis').click();
+  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
   await expect(page.getByTestId('research-copy-synthesis')).toContainText('Copied');
   const copied = await page.evaluate(() => window.__copiedTexts);
   expect(copied[0]).toContain('Delivery test — Task comparison');
@@ -467,7 +479,7 @@ test('bulk transcript paste imports structured segments and version history rest
     ],
   });
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-  await page.getByRole('button', { name: 'Sources and participant' }).click();
+  await page.getByRole('button', { name: 'Version history' }).click();
   await page.getByRole('button', { name: /Transcript · version 1/ }).click();
   await page.getByTestId('research-restore-transcript-version').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -568,6 +580,7 @@ test('results CSV, study synthesis Markdown, interview Markdown, and transcript 
 test('duplicating a study plan creates a new study with cloned tasks and no previous interviews', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
   await page.getByTestId('research-duplicate-plan').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByTestId('research-study-title')).toHaveValue('Delivery test (copy)');
@@ -585,18 +598,18 @@ test('duplicating a study plan creates a new study with cloned tasks and no prev
 
 test('creating an interview with a recording auto-fills the title, uploads audio immediately, and opens transcription progress', async ({ page }) => {
   const writes = await fixture(page);
-  await page.goto(`/studies/${ids.study}`);
+  await page.goto(`/studies/${ids.study}#interviews`);
   await page.getByTestId('research-new-interview').click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await page.getByTestId('research-create-file-input').setInputFiles({
+  await page.getByTestId('research-interview-title').fill('checkout session 01');
+  await page.getByRole('button', { name: 'Create interview' }).click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}/interviews/${ids.interview}$`));
+  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByTestId('research-interview-audio-input').setInputFiles({
     name: 'checkout_session_01.m4a',
     mimeType: 'audio/mp4',
     buffer: Buffer.from('fake-audio-content'),
   });
-  await expect(page.getByTestId('research-interview-title')).toHaveValue('checkout session 01');
-  await page.getByRole('button', { name: 'Upload and transcribe' }).click();
-  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}/interviews/${ids.interview}$`));
-  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('research-transcription-progress')).toBeVisible();
   expect(writes.some(write => write.path === `/studies/${ids.study}/interviews` && write.method === 'POST')).toBe(true);
   expect(writes.some(write => write.path === `/interviews/${ids.interview}/upload-audio` && write.method === 'POST')).toBe(true);

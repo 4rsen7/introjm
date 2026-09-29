@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ArrowLeft, Check, Copy, Download, FileAudio, FileText, Loader2, Plus, RotateCcw, Sparkles, Trash2, UploadCloud } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, Copy, Download, FileAudio, FileText, Loader2, Mic, Plus, RotateCcw, Sparkles, Trash2, UploadCloud, Volume2 } from 'lucide-react';
 import { useResearchContext } from '../app/App';
-import { researchKey, researchRequest, uploadInterviewAudio, useResearchQuery } from '../hooks/useResearch';
+import { decodeUploadFileName, researchKey, researchRequest, uploadInterviewAudio, useResearchQuery } from '../hooks/useResearch';
+import { useAnalysisJob } from '../hooks/useAnalysisJob';
 import { buildInterviewMarkdown, buildTranscriptCsv, downloadFile, slugifyTitle } from '../utils/exportReport';
 import { EmptyState, ErrorState, Loading, Modal, ModalForm, Status } from '../components/UI';
 import InterviewSummary from '../../../client/src/components/interviews/InterviewSummary';
@@ -15,12 +16,19 @@ import { EvidenceAction } from '../components/ResultsPanel';
 import InterviewSources from '../components/InterviewSources';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 
-const entry = () => ({ id: crypto.randomUUID(), speaker: '', timestamp: '', text: '' });
-const parseBulkTranscript = (raw) => String(raw || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => {
+const INTERVIEWER_SPEAKERS = new Set(['interviewer', 'moderator', 'researcher', 'дослідник', 'інтервʼюер', 'інтерв’юер', 'модератор']);
+const isInterviewerSpeaker = (speaker = '') => INTERVIEWER_SPEAKERS.has(String(speaker || '').trim().toLowerCase());
+const entry = (nextSpeaker = 'Interviewer') => ({ id: crypto.randomUUID(), speaker: nextSpeaker, timestamp: '00:00', text: '' });
+const parseBulkTranscript = (raw) => String(raw || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line, idx) => {
   const match = /^(?:\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*)?(?:([^:—–-]{1,60})\s*[:—–-]\s+)?(.+)$/.exec(line);
-  if (!match) return { id: crypto.randomUUID(), speaker: '', timestamp: '', text: line };
+  if (!match) return { id: crypto.randomUUID(), speaker: idx % 2 === 0 ? 'Interviewer' : 'Respondent', timestamp: '00:00', text: line };
   const [, timestamp = '', speaker = '', text = ''] = match;
-  return { id: crypto.randomUUID(), speaker: speaker.trim().slice(0, 200), timestamp: timestamp.trim(), text: text.trim().slice(0, 50000) };
+  return {
+    id: crypto.randomUUID(),
+    speaker: speaker.trim().slice(0, 200) || (idx % 2 === 0 ? 'Interviewer' : 'Respondent'),
+    timestamp: timestamp.trim() || '00:00',
+    text: text.trim().slice(0, 50000),
+  };
 }).filter((item) => item.text);
 
 export default function InterviewPage() {
@@ -41,6 +49,7 @@ export default function InterviewPage() {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedSegmentIndex, setCopiedSegmentIndex] = useState(null);
   const [copyError, setCopyError] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [archiveError, setArchiveError] = useState(null);
@@ -50,6 +59,7 @@ export default function InterviewPage() {
   const [uploadError, setUploadError] = useState('');
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const [processingStageIndex, setProcessingStageIndex] = useState(1);
+  const [summaryStageIndex, setSummaryStageIndex] = useState(0);
   const audioInputRef = useRef(null);
   const parsedBulk = useMemo(() => parseBulkTranscript(bulkText), [bulkText]);
   const summaryRef = useRef(null);
@@ -57,15 +67,40 @@ export default function InterviewPage() {
     try { await navigator.clipboard.writeText(`${title}\n\n${summaryRef.current?.innerText || ''}`); setCopied(true); setCopyError(false); }
     catch { setCopyError(true); }
   };
+  const copySegmentLine = async (text, index) => {
+    try {
+      await navigator.clipboard.writeText(String(text || ''));
+      setCopiedSegmentIndex(index);
+      setTimeout(() => setCopiedSegmentIndex((prev) => (prev === index ? null : prev)), 2000);
+    } catch {
+      // ignore clipboard errors on line copy
+    }
+  };
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 2500); return () => clearTimeout(timer); }, [copied]);
   const study = useResearchQuery(user.id, workspace.id, ['study', studyId], `/studies/${studyId}`);
   const interview = useResearchQuery(user.id, workspace.id, ['interview', interviewId], `/interviews/${interviewId}`);
+  const summaryAnalysis = useAnalysisJob({ userId: user.id, workspaceId: workspace.id, studyId, interviewId });
   const record = interview.data;
   const summary = useMemo(() => normalizeInterviewSummary(record?.summary_data), [record?.summary_data]);
   const systemState = record?.summary_data?._system || {};
+  const sourceUploadFileName = useMemo(() => decodeUploadFileName(systemState.sourceUploadFileName), [systemState.sourceUploadFileName]);
   const isProcessingUpload = record?.status === 'processing' || systemState.uploadStatus === 'processing';
   const isFailedUpload = record?.status === 'failed' || systemState.uploadStatus === 'failed';
   const serverUploadError = systemState.uploadError || '';
+
+  useEffect(() => {
+    if (!summaryAnalysis.busy) {
+      setSummaryStageIndex(0);
+      return undefined;
+    }
+    setSummaryStageIndex(0);
+    const t1 = setTimeout(() => setSummaryStageIndex(1), 3500);
+    const t2 = setTimeout(() => setSummaryStageIndex(2), 9000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [summaryAnalysis.busy]);
 
   useEffect(() => {
     if (!record || dirty) return;
@@ -99,7 +134,7 @@ export default function InterviewPage() {
       const stillProcessing = latestData?.status === 'processing' || latestData?.summary_data?._system?.uploadStatus === 'processing';
       if (latestData && !stillProcessing) {
         queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'interviews', studyId) });
-        queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'summary-job', interviewId) });
+        queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'analysis-job', `/interviews/${interviewId}/summary-job`) });
       }
     }, 2500);
     return () => {
@@ -124,6 +159,7 @@ export default function InterviewPage() {
         await interview.refetch();
       }
       await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'interviews', studyId) });
+      await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'analysis-job', `/interviews/${interviewId}/summary-job`) });
     } catch (err) {
       setUploadError(err?.message || t('research.uploadFailed'));
     } finally {
@@ -133,6 +169,15 @@ export default function InterviewPage() {
   };
 
   const changeSegment = (index, key, value) => { setSegments((previous) => previous.map((row, i) => i === index ? { ...row, [key]: value } : row)); setDirty(true); setSaved(false); };
+  const toggleSegmentSpeaker = (index) => {
+    setSegments((previous) => previous.map((row, i) => {
+      if (i !== index) return row;
+      const nextSpeaker = isInterviewerSpeaker(row.speaker) ? 'Respondent' : 'Interviewer';
+      return { ...row, speaker: nextSpeaker };
+    }));
+    setDirty(true);
+    setSaved(false);
+  };
   const save = async (event) => {
     event.preventDefault(); setError(null); setSaved(false);
     if (segments.some((row) => !row.text?.trim())) { setError({ code: 'INVALID_TRANSCRIPT' }); return; }
@@ -180,6 +225,11 @@ export default function InterviewPage() {
     t('research.uploadStagePreparing'),
     t('research.uploadStageTranscribing'),
     t('research.uploadStageSaving'),
+  ];
+  const summaryStages = [
+    t('research.summaryStage1'),
+    t('research.summaryStage2'),
+    t('research.summaryStage3'),
   ];
   const activeUploadError = uploadError || (isFailedUpload ? (serverUploadError || t('research.uploadFailed')) : '');
 
@@ -253,25 +303,65 @@ export default function InterviewPage() {
             </div>
             {copyError && <p role="alert" className="mb-5 text-sm text-amber-800">{t('research.copyFailed')}</p>}
             <div ref={summaryRef}><InterviewSummary normalizedSummary={summary} /></div>
-          </div> : <EmptyState title={t('research.summaryEmptyTitle')} description={t('research.summaryEmptyBody')} action={t('research.addTranscript')} onAction={() => { setTabTouched(true); setTab('transcript'); }} />}
+          </div> : summaryAnalysis.busy ? (
+            <div className="flex flex-col items-center justify-center rounded-3xl border border-blue-200/80 bg-gradient-to-b from-blue-50/50 to-white p-10 text-center shadow-sm" data-testid="research-summary-progress">
+              <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-md ring-1 ring-blue-100">
+                <Loader2 size={30} className="animate-spin" />
+                <Sparkles size={14} className="absolute -right-1 -top-1 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">{t('research.generatingSummaryTitle')}</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
+                {summaryStages[summaryStageIndex] || summaryStages[0]}
+              </p>
+              <div className="mt-6 w-full max-w-md space-y-2.5 text-left">
+                {summaryStages.map((label, idx) => {
+                  const isDone = idx < summaryStageIndex;
+                  const isActive = idx === summaryStageIndex;
+                  return (
+                    <div
+                      key={label}
+                      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
+                        isActive
+                          ? 'border-blue-200 bg-blue-50/80 text-blue-950 shadow-xs'
+                          : isDone
+                            ? 'border-emerald-200/70 bg-emerald-50/50 text-emerald-900'
+                            : 'border-slate-200/70 bg-white/70 text-slate-400'
+                      }`}
+                    >
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : isDone
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-400'
+                      }`}>
+                        {isDone ? <Check size={13} /> : isActive ? <Loader2 size={13} className="animate-spin" /> : idx + 1}
+                      </span>
+                      <span className="flex-1">{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : <EmptyState title={t('research.summaryEmptyTitle')} description={t('research.summaryEmptyBody')} action={t('research.addTranscript')} onAction={() => { setTabTouched(true); setTab('transcript'); }} />}
         </section> : <section role="tabpanel" id="interview-panel-transcript" aria-labelledby="interview-tab-transcript">
           <form onSubmit={save} className="research-card" data-testid="research-transcript-form">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
+              <div className="flex items-center gap-2.5">
+                <Volume2 size={20} className="text-emerald-600" />
                 <h2 className="research-section-heading">{t('research.transcript')}</h2>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                {systemState.sourceUploadFileName && (
+                {sourceUploadFileName && (
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                     <FileAudio size={13} className="text-orange-600" />
-                    {systemState.sourceUploadFileName}
+                    {sourceUploadFileName}
                   </span>
                 )}
                 <span className="text-xs text-slate-500">{t('research.transcriptRevision', { version: record.transcript_revision })}</span>
               </div>
             </div>
-            <p className="research-description mt-4">{t('research.transcriptHint')}</p>
-            <label className="mt-7 block"><span className="research-label">{t('research.interviewTitle')}</span><input required maxLength={240} value={title} onChange={event => { setTitle(event.target.value); setDirty(true); setSaved(false); }} className="research-field" /></label>
+            <label className="mt-5 block"><span className="research-label">{t('research.interviewTitle')}</span><input required maxLength={240} value={title} onChange={event => { setTitle(event.target.value); setDirty(true); setSaved(false); }} className="research-field" /></label>
 
             {activeUploadError && !isUploadingAudio && !isProcessingUpload && (
               <div role="alert" className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-800">
@@ -289,7 +379,7 @@ export default function InterviewPage() {
               </div>
             )}
 
-            <div className="mt-7 space-y-5">
+            <div className="mt-6">
               {(isUploadingAudio || isProcessingUpload) ? (
                 <div className="flex flex-col items-center justify-center rounded-3xl border border-orange-200/80 bg-gradient-to-b from-orange-50/60 to-white p-8 text-center shadow-sm" data-testid="research-transcription-progress">
                   <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-orange-600 shadow-md ring-1 ring-orange-100">
@@ -300,8 +390,8 @@ export default function InterviewPage() {
                   <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
                     {t('research.transcribingBody')}
                   </p>
-                  {systemState.sourceUploadFileName && (
-                    <p className="mt-2 text-xs font-medium text-slate-500">{systemState.sourceUploadFileName}</p>
+                  {sourceUploadFileName && (
+                    <p className="mt-2 text-xs font-medium text-slate-500">{sourceUploadFileName}</p>
                   )}
                   <div className="mt-6 w-full max-w-md space-y-2.5 text-left">
                     {uploadStages.map((label, idx) => {
@@ -371,17 +461,115 @@ export default function InterviewPage() {
                   </div>
                   <p className="mt-3 text-xs text-slate-400">{t('research.supportedFormatsHint')}</p>
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-5 sm:p-6 space-y-5" data-testid="research-transcript-stream">
+                  {segments.map((row, index) => {
+                    const isInterviewer = isInterviewerSpeaker(row.speaker);
+                    const speakerLabel = row.speaker?.trim() || (isInterviewer ? 'Interviewer' : 'Respondent');
+                    const timestampLabel = row.timestamp?.trim() || '00:00';
+                    const bubbleRowClass = isInterviewer ? 'mr-auto' : 'ml-auto flex-row-reverse';
+                    const bubbleGroupClass = isInterviewer ? 'items-start' : 'items-end';
+                    const bubbleClass = isInterviewer
+                      ? 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
+                      : 'bg-emerald-50 border border-emerald-100 text-emerald-900 rounded-tr-none';
+                    const estimatedRows = Math.max(
+                      1,
+                      Math.min(
+                        10,
+                        Math.max(
+                          String(row.text || '').split('\n').length,
+                          Math.ceil(String(row.text || '').length / 68)
+                        )
+                      )
+                    );
 
-              {segments.map((row, index) => <fieldset key={row.id || index} className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/65 p-4 sm:p-5">
-                <legend className="px-2 text-xs font-semibold text-slate-500">{t('research.transcriptSegment', { number: index + 1 })}</legend>
-                <div className="mb-3 flex justify-end"><button type="button" aria-label={`${t('research.removeSegment')} ${index + 1}`} title={t('research.removeSegment')} onClick={() => { setSegments(previous => previous.filter((_, i) => i !== index)); setDirty(true); setSaved(false); }} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={17} /></button></div>
-                <div className="grid gap-4 sm:grid-cols-2"><label><span className="research-label">{t('research.speaker')}</span><input maxLength={200} value={row.speaker || ''} placeholder={t('research.speakerPlaceholder')} onChange={event => changeSegment(index, 'speaker', event.target.value)} className="research-field" /></label><label><span className="research-label">{t('research.timestamp')}</span><input value={row.timestamp || ''} placeholder="00:00" onChange={event => changeSegment(index, 'timestamp', event.target.value)} className="research-field" /></label></div>
-                <label className="mt-4 block"><span className="research-label">{t('research.segmentText')}</span><textarea required rows={4} maxLength={50000} value={row.text || ''} onChange={event => changeSegment(index, 'text', event.target.value)} className="research-field resize-y" placeholder={t('research.segmentPlaceholder')} /></label>
-              </fieldset>)}
+                    return (
+                      <div key={row.id || index} className={`flex gap-3.5 max-w-3xl ${bubbleRowClass}`}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSegmentSpeaker(index)}
+                          title={t('research.toggleSpeaker')}
+                          className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center shadow-sm transition-transform hover:scale-105 ${
+                            isInterviewer ? 'bg-blue-600 text-white' : 'bg-emerald-100 text-emerald-600'
+                          }`}
+                        >
+                          {isInterviewer ? <Mic size={18} /> : <Volume2 size={18} />}
+                        </button>
+
+                        <div className={`group flex min-w-0 flex-1 flex-col gap-1 ${bubbleGroupClass}`}>
+                          <div className="flex items-center gap-2 px-1 text-xs text-gray-500">
+                            <button
+                              type="button"
+                              onClick={() => toggleSegmentSpeaker(index)}
+                              title={t('research.toggleSpeaker')}
+                              className="font-semibold text-gray-700 hover:text-blue-600 transition-colors"
+                            >
+                              {speakerLabel}
+                            </button>
+                            <span>{timestampLabel}</span>
+                          </div>
+
+                          <div className={`w-full px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed transition-shadow focus-within:ring-2 focus-within:ring-blue-500/25 ${bubbleClass}`}>
+                            <div className="flex items-start gap-2.5">
+                              <textarea
+                                required
+                                rows={estimatedRows}
+                                maxLength={50000}
+                                aria-label={t('research.segmentText')}
+                                value={row.text || ''}
+                                onChange={(event) => changeSegment(index, 'text', event.target.value)}
+                                placeholder={t('research.segmentPlaceholder')}
+                                className="min-w-[200px] sm:min-w-[280px] w-full flex-1 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-inherit placeholder:text-gray-400 focus:outline-none focus:ring-0"
+                              />
+                              <div className="flex flex-shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={() => copySegmentLine(row.text, index)}
+                                  title={copiedSegmentIndex === index ? t('research.copied') : t('research.copySegment')}
+                                  className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-100/60 rounded-lg transition-colors"
+                                >
+                                  {copiedSegmentIndex === index ? <Check size={14} /> : <Copy size={14} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`${t('research.removeSegment')} ${index + 1}`}
+                                  title={t('research.removeSegment')}
+                                  onClick={() => {
+                                    setSegments((previous) => previous.filter((_, i) => i !== index));
+                                    setDirty(true);
+                                    setSaved(false);
+                                  }}
+                                  className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <button type="button" className="research-secondary" onClick={() => { setSegments(previous => [...previous, entry()]); setDirty(true); setSaved(false); }}><Plus size={16} />{t('research.addParagraph')}</button>
+              <button
+                type="button"
+                className="research-secondary"
+                onClick={() => {
+                  setSegments((previous) => {
+                    const last = previous.at(-1);
+                    const nextSpeaker = last && isInterviewerSpeaker(last.speaker) ? 'Respondent' : 'Interviewer';
+                    return [...previous, entry(nextSpeaker)];
+                  });
+                  setDirty(true);
+                  setSaved(false);
+                }}
+              >
+                <Plus size={16} />
+                {t('research.addParagraph')}
+              </button>
               <button type="button" className="research-secondary" onClick={() => { setBulkText(''); setBulkOpen(true); }} data-testid="research-paste-transcript"><FileText size={16} />{t('research.pasteTranscript')}</button>
               <button type="button" className="research-secondary" disabled={dirty || busy || isUploadingAudio || isProcessingUpload} onClick={() => audioInputRef.current?.click()}><UploadCloud size={16} />{t('research.uploadAudioVideo')}</button>
               {segments.length > 0 && <button type="button" className="research-secondary" onClick={() => downloadFile({ filename: `${slugifyTitle(title || record.title, 'interview')}-transcript.csv`, content: buildTranscriptCsv({ segments, t }), mimeType: 'text/csv;charset=utf-8' })} data-testid="research-export-transcript-csv"><Download size={16} />{t('research.exportTranscriptCsv')}</button>}
