@@ -51,7 +51,9 @@ async function fixture(page, {
     if (!url.pathname.startsWith('/api/research')) return route.continue();
     const path = url.pathname.slice('/api/research'.length);
     const send = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ status: 'success', data }) });
-    if (request.method() !== 'GET') writes.push({ path, method: request.method(), body: request.postData() ? request.postDataJSON() : null });
+    let parsedBody = null;
+    try { parsedBody = request.postData() ? request.postDataJSON() : null; } catch { parsedBody = request.postData(); }
+    if (request.method() !== 'GET') writes.push({ path, method: request.method(), body: parsedBody });
     if (path.startsWith('/invites/') && path.endsWith('/accept')) { if (slowInitialWorkspaces) await initialWorkspaceRead; joined = true; return send({ workspace_id: ids.workspace }); }
     if (path === '/workspaces') {
       const data = joined ? [{ id: ids.workspace, name: workspaceName, role: 'owner' }] : [];
@@ -78,7 +80,25 @@ async function fixture(page, {
       const targetId = path.split('/').at(-1);
       return send(studiesList.find(item => item.id === targetId) || study);
     }
-    if (path === `/studies/${ids.study}/interviews`) return interviewsError ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', code: 'TEMPORARY_FAILURE' }) }) : send(interviewsList);
+    if (path === `/studies/${ids.study}/interviews`) {
+      if (request.method() === 'POST') {
+        record = {
+          id: ids.interview,
+          study_id: ids.study,
+          workspace_id: ids.workspace,
+          title: parsedBody?.title || 'Uploaded interview',
+          status: 'draft',
+          research_revision: 0,
+          transcript_revision: 0,
+          summary_revision: 0,
+          summary_data: null,
+          transcript_data: [],
+        };
+        interviewsList = [record, ...interviewsList.filter(item => item.id !== ids.interview)];
+        return send(record, 201);
+      }
+      return interviewsError ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ status: 'error', code: 'TEMPORARY_FAILURE' }) }) : send(interviewsList);
+    }
     if (/^\/studies\/[^/]+\/interviews$/.test(path) && request.method() === 'GET') return send([]);
     if (path === `/studies/${ids.study}/versions` && request.method() === 'POST') {
       const body = request.postDataJSON(); study = { ...study, ...body, revision: 2, context_revision: 2, current_version_id: 'context-v2' }; return send(study);
@@ -98,6 +118,14 @@ async function fixture(page, {
       proposal = { id: 'proposal', status: 'completed', study_version_id: study.current_version_id, study_revision: study.revision, output: { goal: 'Observe delivery selection', brief: 'Proposed brief', plan: study.plan, assumptions: ['Prototype matches the planned flow'], questions: ['Which delivery options are in scope?'] } }; return send(proposal, 202);
     }
     if (path.endsWith('/preparation-job')) return send(proposal);
+    if (path === `/interviews/${ids.interview}/upload-audio` && request.method() === 'POST') {
+      record = {
+        ...record,
+        status: 'processing',
+        summary_data: { _system: { uploadStatus: 'processing', sourceUploadFileName: 'checkout_session_01.m4a' } },
+      };
+      return send(record, 202);
+    }
     if (path === `/interviews/${ids.interview}`) {
       if (request.method() === 'DELETE') { interviewsList = interviewsList.filter(item => item.id !== ids.interview); return send({ id: ids.interview }); }
       return send(record);
@@ -553,6 +581,25 @@ test('duplicating a study plan creates a new study with cloned tasks and no prev
   expect(planWrite.body.plan.tasks).toHaveLength(1);
   expect(planWrite.body.plan.tasks[0].title).toBe('Choose delivery');
   expect(planWrite.body.plan.tasks[0].id).not.toBe(ids.task);
+});
+
+test('creating an interview with a recording auto-fills the title, uploads audio immediately, and opens transcription progress', async ({ page }) => {
+  const writes = await fixture(page);
+  await page.goto(`/studies/${ids.study}`);
+  await page.getByTestId('research-new-interview').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByTestId('research-create-file-input').setInputFiles({
+    name: 'checkout_session_01.m4a',
+    mimeType: 'audio/mp4',
+    buffer: Buffer.from('fake-audio-content'),
+  });
+  await expect(page.getByTestId('research-interview-title')).toHaveValue('checkout session 01');
+  await page.getByRole('button', { name: 'Upload and transcribe' }).click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}/interviews/${ids.interview}$`));
+  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('research-transcription-progress')).toBeVisible();
+  expect(writes.some(write => write.path === `/studies/${ids.study}/interviews` && write.method === 'POST')).toBe(true);
+  expect(writes.some(write => write.path === `/interviews/${ids.interview}/upload-audio` && write.method === 'POST')).toBe(true);
 });
 
 

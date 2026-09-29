@@ -7,7 +7,7 @@ const { createResearchStorage } = require('../modules/research/media/storage');
 const { runMediaTranscriptionJob, cleanupExpiredMedia } = require('../modules/research/media');
 
 async function main() {
-    if (process.env.RESEARCH_JOBS_ENABLED !== 'true') throw new Error('Research jobs worker is disabled');
+    if (process.env.RESEARCH_JOBS_ENABLED === 'false') throw new Error('Research jobs worker is disabled');
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.GEMINI_API_KEY)
         throw new Error('Research worker credentials are missing');
     const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -37,6 +37,20 @@ async function main() {
             result = await processNext({ db, generateText, signal: active.signal,
                 runMedia: mediaEnabled ? (job, options) => runMediaTranscriptionJob({ db, storage, job, ...options }) : undefined,
                 onEvent: event => console.info('[Research worker]', event) });
+            if (result?.kind === 'interview_summary' && result?.status === 'completed' && result?.study_id && result?.requested_by) {
+                try {
+                    const { data: studyRow } = await db.from('research_studies').select('id,plan,archived_at').eq('id', result.study_id).maybeSingle();
+                    if (studyRow && !studyRow.archived_at && (!Array.isArray(studyRow.plan?.tasks) || studyRow.plan.tasks.length === 0)) {
+                        await db.rpc('research_enqueue_intelligence', {
+                            p_user_id: result.requested_by,
+                            p_kind: 'brief_preparation',
+                            p_study_id: result.study_id,
+                            p_interview_id: null,
+                            p_settings: { description: 'Auto-draft plan from first analyzed interview', answers: '' },
+                        });
+                    }
+                } catch (_) { /* non-fatal auto-draft enqueue */ }
+            }
             if (mediaEnabled && Date.now() - cleanedAt > 60000) { await cleanupExpiredMedia({ db, storage }); cleanedAt = Date.now(); }
         }
         catch (error) { console.error('Research worker iteration failed:', error?.code || 'ITERATION_FAILED'); }

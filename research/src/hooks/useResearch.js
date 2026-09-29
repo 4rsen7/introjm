@@ -23,6 +23,25 @@ export async function researchRequest(path, options = {}) {
   return result.data;
 }
 
+export async function uploadInterviewAudio(interviewId, file, { autoSummary = true } = {}) {
+  const token = await getAuthToken();
+  if (!token) throw Object.assign(new Error('Authentication required'), { code: 'UNAUTHENTICATED', status: 401 });
+  const formData = new FormData();
+  formData.append('audio', file);
+  formData.append('auto_summary', autoSummary ? 'true' : 'false');
+  const response = await fetch(`${API_BASE_URL}/research/interviews/${interviewId}/upload-audio`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  let result;
+  try { result = await response.json(); } catch { result = {}; }
+  if (!response.ok || result.status === 'error') {
+    throw Object.assign(new Error(result.message || result.error || 'Upload failed'), { code: result.code, status: response.status });
+  }
+  return result.data;
+}
+
 export function useResearchQuery(userId, workspaceId, parts, path, enabled = true) {
   return useQuery({
     queryKey: researchKey(userId, workspaceId, ...parts),

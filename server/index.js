@@ -46,6 +46,7 @@ const { createResearchMediaRouter } = require('./modules/research/media');
 const { createResearchStorage } = require('./modules/research/media/storage');
 const { createResearchAdminRouter } = require('./modules/research/admin/router');
 const { createResearchTeamRouter } = require('./modules/research/team/router');
+const { requireProductWorkspace } = require('./modules/access/productScope');
 const { loadAdminUserDetails } = require('./modules/access/adminDetails');
 const rateLimit = require('express-rate-limit');
 const {
@@ -827,7 +828,7 @@ function isInterviewStatusConstraintError(error) {
     return error.constraint === 'interviews_status_check' || String(error.message || '').includes('interviews_status_check');
 }
 
-async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates = {}, existingSummaryData = null) {
+async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates = {}, existingSummaryData = null, dbClient = supabaseAdmin) {
     const basePayload = {
         ...extraUpdates,
         updated_at: new Date().toISOString(),
@@ -854,7 +855,7 @@ async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates
         status: nextStatus,
     };
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbClient
         .from('interviews')
         .update(directStatusPayload)
         .eq('id', interviewId)
@@ -894,7 +895,7 @@ async function updateInterviewStatusCompat(interviewId, nextStatus, extraUpdates
         summary_data: fallbackSummaryData,
     };
 
-    const fallbackResult = await supabaseAdmin
+    const fallbackResult = await dbClient
         .from('interviews')
         .update(fallbackPayload)
         .eq('id', interviewId)
@@ -1192,6 +1193,11 @@ app.use('/api/admin/research', express.json({ limit: '100kb' }), createResearchA
     supabaseAdmin: rawSupabaseAdmin, authenticate: getAuthenticatedUserFromToken, enabled: productFlags.researchEnabled,
     onError: error => console.error('[Research admin]', error?.code || 'REQUEST_FAILED'),
 }));
+app.post('/api/research/interviews/:id/upload-audio', (req, res, next) => {
+    interviewUploadMiddleware(req, res, () => {
+        handleResearchInterviewUploadAudio(req, res).catch(next);
+    });
+});
 app.use('/api/research', express.json({ limit: '3mb' }), createResearchTeamRouter({
     supabaseAdmin: rawSupabaseAdmin, authenticate: getAuthenticatedUserFromToken, enabled: productFlags.researchEnabled,
 }), createResearchMediaRouter({
@@ -5588,6 +5594,223 @@ app.post('/api/interviews/:id/upload-audio', interviewUploadMiddleware, async (r
         res.status(500).json({ status: 'error', error: err.message });
     }
 });
+
+const processResearchInterviewAudioUpload = async ({ interviewId, userId, file, autoSummary = false }) => {
+    let transcriptionSystemState = null;
+    let transcriptionInputFile = file;
+
+    try {
+        if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) {
+            throw new Error('No transcription provider API key is configured on the server.');
+        }
+
+        transcriptionInputFile = await prepareInterviewUploadForTranscription(file);
+        const transcriptionResult = await transcribeAudioWithProviderFallback(transcriptionInputFile, { interviewId });
+        const rawTranscriptData = transcriptionResult.transcript;
+        transcriptionSystemState = {
+            ...transcriptionResult.systemState,
+            uploadStatus: 'completed',
+        };
+        console.info('[research-interview-upload] completed transcription', {
+            interviewId,
+            model: transcriptionSystemState.model,
+            provider: transcriptionSystemState.provider,
+            responseFormat: transcriptionSystemState.responseFormat,
+            transcriptTurns: Array.isArray(rawTranscriptData) ? rawTranscriptData.length : 0,
+        });
+
+        if (!Array.isArray(rawTranscriptData) || rawTranscriptData.length === 0) {
+            throw new Error('The transcription provider returned an empty transcript.');
+        }
+
+        const normalizedSegments = rawTranscriptData
+            .map((seg) => ({
+                id: seg?.id || crypto.randomUUID(),
+                speaker: String(seg?.speaker || 'Speaker').slice(0, 200),
+                timestamp: String(seg?.timestamp || '00:00').slice(0, 80),
+                text: String(seg?.text || '').trim(),
+            }))
+            .filter((seg) => seg.text.length > 0);
+
+        if (normalizedSegments.length === 0) {
+            throw new Error('The transcription provider returned an empty transcript.');
+        }
+
+        const { data: latestInterview } = await rawSupabaseAdmin
+            .from('interviews')
+            .select('id, study_id, summary_data, research_revision')
+            .eq('id', interviewId)
+            .maybeSingle();
+
+        const nextSummaryData = withInterviewSystemState(latestInterview?.summary_data ?? null, transcriptionSystemState);
+        if (nextSummaryData?.[INTERVIEW_SYSTEM_KEY]) {
+            delete nextSummaryData[INTERVIEW_SYSTEM_KEY].uploadError;
+            delete nextSummaryData[INTERVIEW_SYSTEM_KEY].failedAt;
+        }
+
+        const { error } = await rawSupabaseAdmin
+            .from('interviews')
+            .update({
+                transcript_data: normalizedSegments,
+                summary_data: nextSummaryData,
+                status: 'completed',
+                research_revision: (latestInterview?.research_revision || 0) + 1,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', interviewId);
+
+        if (error) throw error;
+
+        if (autoSummary && latestInterview?.study_id && userId) {
+            const { error: jobErr } = await rawSupabaseAdmin.rpc('research_enqueue_analysis', {
+                p_user_id: userId,
+                p_kind: 'interview_summary',
+                p_study_id: latestInterview.study_id,
+                p_interview_id: interviewId,
+            });
+            if (jobErr) {
+                console.warn('[research-interview-upload] auto-summary enqueue warning:', jobErr.message);
+            }
+        }
+    } catch (err) {
+        logSystemError(err, `ASYNC research interview upload ${interviewId}`);
+        const { data: latestInterview } = await rawSupabaseAdmin
+            .from('interviews')
+            .select('summary_data')
+            .eq('id', interviewId)
+            .maybeSingle();
+
+        const failureSummaryData = transcriptionSystemState
+            ? withInterviewSystemState(latestInterview?.summary_data ?? null, transcriptionSystemState)
+            : (latestInterview?.summary_data ?? null);
+
+        await updateInterviewStatusCompat(
+            interviewId,
+            'failed',
+            {
+                upload_error_message: err.message || INTERVIEW_UPLOAD_ERROR_FALLBACK,
+                summary_data: failureSummaryData,
+            },
+            latestInterview?.summary_data ?? null,
+            rawSupabaseAdmin
+        );
+    } finally {
+        safeDeleteFile(file.path);
+        if (transcriptionInputFile?.path && transcriptionInputFile.path !== file.path) {
+            safeDeleteFile(transcriptionInputFile.path);
+        }
+    }
+};
+
+async function handleResearchInterviewUploadAudio(req, res) {
+    if (!productFlags.researchEnabled) {
+        safeDeleteFile(req.file?.path);
+        return res.status(404).json({ status: 'error', message: 'Research is not enabled' });
+    }
+
+    const token = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')?.[1];
+    const { id } = req.params;
+
+    if (!token) {
+        safeDeleteFile(req.file?.path);
+        return res.status(401).json({ status: 'error', message: 'Unauthorized' });
+    }
+    if (!req.file) {
+        return res.status(400).json({ status: 'error', message: 'No audio or video file uploaded.' });
+    }
+
+    try {
+        const { user, error: authError } = await getAuthenticatedUserFromToken(token);
+        if (authError || !user) {
+            safeDeleteFile(req.file.path);
+            return res.status(401).json({ status: 'error', message: 'Invalid token' });
+        }
+
+        const { data: existing, error: fetchErr } = await rawSupabaseAdmin
+            .from('interviews')
+            .select('*')
+            .eq('id', id)
+            .is('research_archived_at', null)
+            .maybeSingle();
+
+        if (fetchErr || !existing || !existing.study_id) {
+            safeDeleteFile(req.file.path);
+            return res.status(404).json({ status: 'error', message: 'Interview not found' });
+        }
+
+        const { data: study } = await rawSupabaseAdmin
+            .from('research_studies')
+            .select('id, workspace_id, archived_at')
+            .eq('id', existing.study_id)
+            .is('archived_at', null)
+            .maybeSingle();
+
+        if (!study || study.workspace_id !== existing.workspace_id) {
+            safeDeleteFile(req.file.path);
+            return res.status(404).json({ status: 'error', message: 'Study not found' });
+        }
+
+        const workspace = await requireProductWorkspace(rawSupabaseAdmin, user.id, existing.workspace_id);
+        if (workspace.role === 'viewer') {
+            safeDeleteFile(req.file.path);
+            return res.status(403).json({ status: 'error', message: 'Write access required' });
+        }
+
+        if (getEffectiveInterviewStatus(existing) === 'processing') {
+            safeDeleteFile(req.file.path);
+            return res.status(409).json({ status: 'error', message: 'Transcription is already in progress for this interview.' });
+        }
+
+        const uploadFile = {
+            path: req.file.path,
+            mimetype: req.file.mimetype,
+            originalname: req.file.originalname,
+            size: req.file.size,
+        };
+        const processingSystemState = {
+            uploadStatus: 'processing',
+            startedAt: new Date().toISOString(),
+            sourceUploadFileName: uploadFile.originalname || '',
+            sourceUploadFileSizeBytes: Number.isFinite(uploadFile.size) ? uploadFile.size : null,
+            sourceUploadMimeType: uploadFile.mimetype || '',
+        };
+        const nextSummaryData = withInterviewSystemState(existing.summary_data ?? null, processingSystemState);
+        if (nextSummaryData?.[INTERVIEW_SYSTEM_KEY]) {
+            delete nextSummaryData[INTERVIEW_SYSTEM_KEY].uploadError;
+            delete nextSummaryData[INTERVIEW_SYSTEM_KEY].failedAt;
+        }
+
+        const { data: updatedInterview } = await updateInterviewStatusCompat(
+            existing.id,
+            'processing',
+            {
+                summary_data: nextSummaryData,
+            },
+            existing.summary_data ?? null,
+            rawSupabaseAdmin
+        );
+
+        const autoSummary = String(req.body?.auto_summary || '').toLowerCase() === 'true';
+
+        setImmediate(() => {
+            processResearchInterviewAudioUpload({
+                interviewId: existing.id,
+                userId: user.id,
+                file: uploadFile,
+                autoSummary,
+            }).catch((backgroundErr) => {
+                logSystemError(backgroundErr, `ASYNC research interview upload dispatch ${existing.id}`);
+            });
+        });
+
+        return res.status(202).json({ status: 'success', data: updatedInterview });
+    } catch (err) {
+        logSystemError(err, `POST /api/research/interviews/${id}/upload-audio`);
+        safeDeleteFile(req.file?.path);
+        const status = Number.isInteger(err?.status) ? err.status : 500;
+        return res.status(status).json({ status: 'error', message: err.message || 'Failed to upload file' });
+    }
+}
 
 app.post('/api/interviews/:id/realtime-token', async (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
