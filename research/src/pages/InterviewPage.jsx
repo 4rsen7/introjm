@@ -112,7 +112,9 @@ export default function InterviewPage() {
   useEffect(() => {
     if (!record || tabTouched) return;
     const hasTranscript = Array.isArray(record.transcript_data) && record.transcript_data.length > 0;
-    if (isProcessingUpload || (!summary && !hasTranscript)) {
+    if (isProcessingUpload || summaryAnalysis?.busy) {
+      setTab('summary');
+    } else if (!summary && !hasTranscript) {
       setTab('transcript');
     }
   }, [record, summary, isProcessingUpload, tabTouched]);
@@ -205,7 +207,7 @@ export default function InterviewPage() {
     } catch (err) { setArchiveError(err); } finally { setBusy(false); }
   };
   const reset = async () => { setDirty(false); setError(null); setSaved(false); const latest = await interview.refetch(); if (latest.data) { setTitle(latest.data.title || ''); setSegments(Array.isArray(latest.data.transcript_data) ? latest.data.transcript_data : []); } };
-  const back = <Link to={`/studies/${studyId}`} className="research-back"><ArrowLeft size={16} /><span>{study.data?.title || t('research.returnStudy')}</span></Link>;
+  const back = <Link to={`/studies/${studyId}#interviews`} className="research-back"><ArrowLeft size={16} /><span>{study.data?.title || t('research.returnStudy')}</span></Link>;
   if (study.isPending || interview.isPending) return <Loading />;
   if (study.isError || interview.isError) return <>{back}<ErrorState error={study.error || interview.error} onRetry={() => { study.refetch(); interview.refetch(); }} /></>;
   if (study.data.workspace_id !== workspace.id || record.workspace_id !== workspace.id || record.study_id !== studyId) return <>{back}<ErrorState error={{ status: 404 }} /></>;
@@ -287,7 +289,52 @@ export default function InterviewPage() {
               </button>
             </div>
           )}
-          {summary ? <div className="research-summary">
+          {(isUploadingAudio || isProcessingUpload) ? (
+            <div className="flex flex-col items-center gap-4 py-16" data-testid="research-transcription-progress">
+              <div className="relative flex items-center justify-center py-4">
+                <div className="absolute inset-0 bg-emerald-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                <Loader2 size={64} strokeWidth={2.5} className="animate-spin text-emerald-500 relative z-10 mx-auto" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-gray-900 animate-pulse">
+                  {isUploadingAudio ? (
+                    <>
+                      {processingStageIndex === 0 && t('interviews.uploadStage1', 'Завантаження у захищену хмару...')}
+                      {processingStageIndex === 1 && t('interviews.uploadStage2', 'Аналіз аудіо...')}
+                      {processingStageIndex === 2 && t('interviews.uploadStage3', 'Генерація структурованого тексту...')}
+                    </>
+                  ) : (
+                    t('interviews.transcribing', 'Обробляємо транскрипт...')
+                  )}
+                </h3>
+                <p className="text-gray-500 mt-2 transition-opacity duration-300">
+                  {isUploadingAudio ? (
+                    <>
+                      {processingStageIndex === 0 && t('interviews.uploadStage1Desc', 'Безпечно передаємо ваш медіафайл на наші сервери для обробки.')}
+                      {processingStageIndex === 1 && t('interviews.uploadStage2Desc', 'ШІ обробляє запис і готує структуру транскрипту.')}
+                      {processingStageIndex === 2 && t('interviews.uploadStage3Desc', 'Завершуємо форматування тексту та часових міток. Майже готово!')}
+                    </>
+                  ) : (
+                    t('interviews.transcribingDesc', 'Наш ШІ розпізнає мовлення та структурує текст. Це займе кілька хвилин.')
+                  )}
+                </p>
+                {sourceUploadFileName && (
+                  <p className="mt-4 text-xs font-medium text-slate-400">{sourceUploadFileName}</p>
+                )}
+              </div>
+            </div>
+          ) : summaryAnalysis?.busy ? (
+            <div className="flex flex-col items-center justify-center rounded-3xl border border-blue-200/80 bg-gradient-to-b from-blue-50/50 to-white p-10 text-center shadow-sm my-8" data-testid="research-summary-progress">
+              <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-md ring-1 ring-blue-100">
+                <Loader2 size={30} className="animate-spin" />
+                <Sparkles size={14} className="absolute -right-1 -top-1 text-amber-500" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900">{t('research.generatingSummaryTitle')}</h3>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
+                {summaryStages[summaryStageIndex] || summaryStages[0]}
+              </p>
+            </div>
+          ) : summary ? <div className="research-summary">
             <div className="mb-7 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200/70 pb-6">
               <div><h2 className="research-section-heading">{t('research.summary')}</h2><p className="mt-2 text-xs text-slate-500">{t('research.revision', { version: record.summary_revision })}</p></div>
               <div className="flex flex-wrap items-center gap-2">
@@ -297,47 +344,7 @@ export default function InterviewPage() {
             </div>
             {copyError && <p role="alert" className="mb-5 text-sm text-amber-800">{t('research.copyFailed')}</p>}
             <div ref={summaryRef}><InterviewSummary normalizedSummary={summary} /></div>
-          </div> : summaryAnalysis.busy ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-blue-200/80 bg-gradient-to-b from-blue-50/50 to-white p-10 text-center shadow-sm" data-testid="research-summary-progress">
-              <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-md ring-1 ring-blue-100">
-                <Loader2 size={30} className="animate-spin" />
-                <Sparkles size={14} className="absolute -right-1 -top-1 text-amber-500" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900">{t('research.generatingSummaryTitle')}</h3>
-              <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-                {summaryStages[summaryStageIndex] || summaryStages[0]}
-              </p>
-              <div className="mt-6 w-full max-w-md space-y-2.5 text-left">
-                {summaryStages.map((label, idx) => {
-                  const isDone = idx < summaryStageIndex;
-                  const isActive = idx === summaryStageIndex;
-                  return (
-                    <div
-                      key={label}
-                      className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs font-semibold transition ${
-                        isActive
-                          ? 'border-blue-200 bg-blue-50/80 text-blue-950 shadow-xs'
-                          : isDone
-                            ? 'border-emerald-200/70 bg-emerald-50/50 text-emerald-900'
-                            : 'border-slate-200/70 bg-white/70 text-slate-400'
-                      }`}
-                    >
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                        isActive
-                          ? 'bg-blue-600 text-white'
-                          : isDone
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-100 text-slate-400'
-                      }`}>
-                        {isDone ? <Check size={13} /> : isActive ? <Loader2 size={13} className="animate-spin" /> : idx + 1}
-                      </span>
-                      <span className="flex-1">{label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : <EmptyState title={t('research.summaryEmptyTitle')} description={t('research.summaryEmptyBody')} action={t('research.addTranscript')} onAction={() => { setTabTouched(true); setTab('transcript'); }} />}
+          </div> : <EmptyState title={t('research.summaryEmptyTitle')} description={t('research.summaryEmptyBody')} action={t('research.addTranscript')} onAction={() => { setTabTouched(true); setTab('transcript'); }} />}
         </section> : <section role="tabpanel" id="interview-panel-transcript" aria-labelledby="interview-tab-transcript">
           <form onSubmit={save} className="research-card" data-testid="research-transcript-form">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -374,41 +381,7 @@ export default function InterviewPage() {
             )}
 
             <div className="mt-6">
-              {(isUploadingAudio || isProcessingUpload) ? (
-                <div className="flex flex-col items-center gap-4 py-8" data-testid="research-transcription-progress">
-                  <div className="relative flex items-center justify-center py-4">
-                    <div className="absolute inset-0 bg-emerald-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                    <Loader2 size={64} strokeWidth={2.5} className="animate-spin text-emerald-500 relative z-10 mx-auto" />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-xl font-bold text-gray-900 animate-pulse">
-                      {isUploadingAudio ? (
-                        <>
-                          {processingStageIndex === 0 && t('interviews.uploadStage1', 'Завантаження у захищену хмару...')}
-                          {processingStageIndex === 1 && t('interviews.uploadStage2', 'Аналіз аудіо...')}
-                          {processingStageIndex === 2 && t('interviews.uploadStage3', 'Генерація структурованого тексту...')}
-                        </>
-                      ) : (
-                        t('interviews.transcribing', 'Обробляємо транскрипт...')
-                      )}
-                    </h3>
-                    <p className="text-gray-500 mt-2 transition-opacity duration-300">
-                      {isUploadingAudio ? (
-                        <>
-                          {processingStageIndex === 0 && t('interviews.uploadStage1Desc', 'Безпечно передаємо ваш медіафайл на наші сервери для обробки.')}
-                          {processingStageIndex === 1 && t('interviews.uploadStage2Desc', 'ШІ обробляє запис і готує структуру транскрипту.')}
-                          {processingStageIndex === 2 && t('interviews.uploadStage3Desc', 'Завершуємо форматування тексту та часових міток. Майже готово!')}
-                        </>
-                      ) : (
-                        t('interviews.transcribingDesc', 'Наш ШІ розпізнає мовлення та структурує текст. Це займе кілька хвилин.')
-                      )}
-                    </p>
-                    {sourceUploadFileName && (
-                      <p className="mt-4 text-xs font-medium text-slate-400">{sourceUploadFileName}</p>
-                    )}
-                  </div>
-                </div>
-              ) : segments.length === 0 ? (
+              {segments.length === 0 ? (
                 <div
                   onDragOver={(event) => {
                     event.preventDefault();
