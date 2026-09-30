@@ -28,6 +28,18 @@ function createResearchTeamRouter({ supabaseAdmin: db, authenticate, enabled = f
         if (workspace.role !== 'owner') throw new ResearchError(404, 'NOT_FOUND', 'Workspace not found');
         return workspace;
     }
+    router.put('/workspaces/:id', auth, route(async (req, res) => {
+        const { id } = req.params;
+        const { name } = req.body;
+        if (!name || typeof name !== 'string') throw new ResearchError(400, 'VALIDATION_FAILED', 'Invalid workspace name');
+        const { data: member } = await db.from('workspace_members').select('role').eq('workspace_id', id).eq('user_id', req.researchUser.id).maybeSingle();
+        if (member?.role !== 'owner') throw new ResearchError(403, 'RESEARCH_ACCESS_DENIED', 'Only workspace owners can rename workspaces');
+        
+        const { error } = await db.from('workspaces').update({ name: name.trim() }).eq('id', id);
+        if (error) throw error;
+        
+        return send(res, { status: 'success' }, 200);
+    }));
     router.get('/workspaces/:id/invites', auth, route(async (req, res) => {
         const workspace = await owner(req, req.params.id);
         send(res, assertDatabaseResult(await db.from('research_team_invites').select(INVITE_FIELDS).eq('workspace_id', workspace.id)

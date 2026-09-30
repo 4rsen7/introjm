@@ -4,7 +4,6 @@ const ids = { user: '00000000-0000-4000-8000-000000000001', workspace: '00000000
 async function mockResearch(page, { signedIn = true, disabled = false, conflict = false } = {}) {
     const study = { id: ids.study, workspace_id: ids.workspace, title: 'Checkout prototype', goal: 'Can users find the delivery time?', brief: 'Evaluate the new delivery screen.', revision: 0 };
     let interview = {
-  await page.getByRole('tab', { name: 'Interviews', exact: true }).click();
         id: ids.interview, workspace_id: ids.workspace, study_id: ids.study, title: 'Session 01', status: 'completed', research_revision: 2, transcript_revision: 1, summary_revision: 1,
         transcript_data: [{ id: 'line-1', timestamp: '00:10', speaker: 'Participant', text: 'I found the delivery time.' }],
         summary_data: { summary: { generalInsight: 'The delivery time is easy to find.' }, quotes: ['I found the delivery time.'] },

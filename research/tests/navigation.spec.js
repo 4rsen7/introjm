@@ -97,6 +97,7 @@ test('new pages start at the top while study result links still reach their sect
   await expect(page.getByRole('heading', { name: 'Session 01', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   
+  await page.goBack();
   await page.getByRole('tab', { name: 'Results' }).click();
   
   await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#results$`));

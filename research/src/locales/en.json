@@ -398,5 +398,11 @@
   "generatingSummaryTitle": "Generating AI interview summary...",
   "summaryStage1": "Analyzing conversation context...",
   "summaryStage2": "Extracting key insights and behavior patterns...",
-  "summaryStage3": "Structuring final findings and recommendations..."
+  "summaryStage3": "Structuring final findings and recommendations...",
+  "settingsTitle": "Settings",
+  "saveChanges": "Save changes",
+  "renameWorkspace": "Rename workspace",
+  "general": "General",
+  "teamTab": "Team",
+  "workspaceRenamed": "Workspace renamed"
 }
