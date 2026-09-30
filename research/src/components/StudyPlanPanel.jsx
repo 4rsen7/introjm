@@ -131,8 +131,12 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
                 <Sparkles size={14} />
                 {t('research.planDraftBadge')}
               </div>
-              <h3 className="mt-1.5 text-base font-bold text-slate-900">{t('research.planDraftFromInterviewTitle')}</h3>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{t('research.planDraftFromInterviewBody')}</p>
+              <h3 className="mt-1.5 text-base font-bold text-slate-900">
+                {proposal && proposalIsCurrent ? t('research.planDraftReadyTitle') : t('research.planDraftFromInterviewTitle')}
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                {proposal && proposalIsCurrent ? t('research.planDraftReadyBody') : t('research.planDraftFromInterviewBody')}
+              </p>
             </div>
             <button
               type="button"
