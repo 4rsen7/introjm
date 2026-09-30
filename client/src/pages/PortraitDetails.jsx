@@ -76,12 +76,12 @@ export default function PortraitDetails({ portraits = [], currentUserId, isWorks
         <section className="rounded-[2rem] overflow-hidden border border-slate-200 shadow-sm bg-white">
           <div className="px-8 py-8 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.14),_transparent_35%),linear-gradient(135deg,_#f8fafc_0%,_#eef2ff_42%,_#f8fafc_100%)] border-b border-slate-200">
             <div className="flex flex-wrap items-center gap-2 mb-4">
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 text-blue-700 border border-blue-100 text-xs font-semibold uppercase tracking-[0.18em]">
+              <span className="inline-flex items-center whitespace-nowrap gap-2 px-3 py-1 rounded-full bg-white/80 text-blue-700 border border-blue-100 text-xs font-semibold uppercase tracking-[0.18em]">
                 <Sparkles size={12} />
                 {portraitData.archetype || t('personas.portraits.generatedLabel')}
               </span>
               {portraitData.dominantForce ? (
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-medium">
+                <span className="inline-flex items-center whitespace-nowrap px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-medium">
                   {t('personas.portraits.dominantForce')}: {dominantForceLabel(portraitData.dominantForce, t)}
                 </span>
               ) : null}

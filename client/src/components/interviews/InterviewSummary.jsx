@@ -26,7 +26,7 @@ export default function InterviewSummary({ normalizedSummary }) {
                     )}
                     {normalizedSummary.summary.overallSentiment && (
                       <div className="pt-1">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${sentimentBadgeClass(normalizedSummary.summary.overallSentiment)}`}>
+                        <span className={`inline-flex items-center whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${sentimentBadgeClass(normalizedSummary.summary.overallSentiment)}`}>
                           {t('interviews.overallSentiment')}: {sentimentLabel(normalizedSummary.summary.overallSentiment, t)}
                         </span>
                       </div>
@@ -69,7 +69,7 @@ export default function InterviewSummary({ normalizedSummary }) {
                           <div className="flex items-start justify-between gap-3">
                             <div className="text-sm font-semibold text-gray-900">{item.task || item.whatHappened}</div>
                             {item.outcome && (
-                              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                              <span className="inline-flex items-center whitespace-nowrap rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
                                 {taskOutcomeLabel(item.outcome, t)}
                               </span>
                             )}
@@ -179,7 +179,7 @@ export default function InterviewSummary({ normalizedSummary }) {
                           <div className="flex items-start justify-between gap-3">
                             <div className="text-sm font-semibold text-gray-900">{item.recommendation || item.rationale}</div>
                             {item.priority && (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(item.priority === 'high' ? 'negative' : item.priority === 'medium' ? 'mixed' : 'positive')}`}>
+                              <span className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(item.priority === 'high' ? 'negative' : item.priority === 'medium' ? 'mixed' : 'positive')}`}>
                                 {priorityLabel(item.priority, t)}
                               </span>
                             )}
@@ -400,7 +400,7 @@ export default function InterviewSummary({ normalizedSummary }) {
                           <div className="flex items-start justify-between gap-3">
                             <div className="text-sm font-semibold text-gray-900">{point.title || point.description}</div>
                             {point.severity && (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(point.severity === 'high' ? 'negative' : point.severity === 'medium' ? 'mixed' : 'positive')}`}>
+                              <span className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${sentimentBadgeClass(point.severity === 'high' ? 'negative' : point.severity === 'medium' ? 'mixed' : 'positive')}`}>
                                 {point.severity}
                               </span>
                             )}

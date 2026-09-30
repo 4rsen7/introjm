@@ -78,5 +78,5 @@ export function Status({ status }) {
   const { t } = useTranslation();
   const key = ['draft', 'completed', 'processing', 'failed', 'recording', 'ready', 'archived'].includes(status) ? status : 'unknownStatus';
   const color = ['completed', 'ready'].includes(status) ? 'bg-emerald-50 text-emerald-700' : status === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500';
-  return <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${color}`}>{t(`research.${key}`)}</span>;
+  return <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${color}`}>{t(`research.${key}`)}</span>;
 }
