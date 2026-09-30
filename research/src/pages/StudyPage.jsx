@@ -131,25 +131,27 @@ export default function StudyPage() {
     return true;
   });
   const interviewCount = interviews.isPending || interviews.isError ? '—' : `${rows.length}${hasMore && rows.length > 0 && rows.length % 50 === 0 ? '+' : ''}`;
-  return <div className="mx-auto max-w-5xl min-w-0">
+  return <div className="mx-auto max-w-[80rem] min-w-0">
     <Link to="/" className="research-back"><ArrowLeft size={16} />{t('research.studies')}</Link>
     {notice && <p role="status" className="mb-5 flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check size={16} />{t(`research.${notice}`)}</p>}
-    <div role="tablist" aria-label={t('research.studyNavigation')} className="flex max-w-full gap-1 mb-7 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white/70 p-1.5 scrollbar-none">
-      {[["overview", BookOpen, 'studyContext'], ["interviews", ListChecks, 'interviews'], ["plan", ClipboardList, 'researchPlan'], ["results", Sparkles, 'taskComparison'], ["synthesis", Check, 'studyResults']].map(([id, Icon, label]) => (
-        <button 
-          key={id} 
-          role="tab"
-          aria-selected={activeTab === id}
-          onClick={() => navigate(`#${id}`, { replace: true })}
-          className={`research-tab ${activeTab === id ? 'active' : ''}`}
-        >
-          <Icon size={16} className={activeTab === id ? 'text-orange-600' : 'text-slate-400'} />
-          {t(`research.${label}`)}
-        </button>
-      ))}
-    </div>
     
-    <div className="space-y-7">
+    <div className="grid lg:grid-cols-[220px_1fr] xl:grid-cols-[240px_1fr] gap-8 xl:gap-12 items-start">
+      <nav role="tablist" aria-label={t('research.studyNavigation')} className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-4 lg:pb-0 lg:sticky lg:top-8 scrollbar-none">
+        {[["overview", BookOpen, 'studyContext'], ["interviews", ListChecks, 'interviews'], ["plan", ClipboardList, 'researchPlan'], ["results", Sparkles, 'taskComparison'], ["synthesis", Check, 'studyResults']].map(([id, Icon, label]) => (
+          <button 
+            key={id} 
+            role="tab"
+            aria-selected={activeTab === id}
+            onClick={() => navigate(`#${id}`, { replace: true })}
+            className={`flex shrink-0 items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition whitespace-nowrap ${activeTab === id ? 'bg-white shadow-sm text-slate-900 border border-slate-200/50' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+          >
+            <Icon size={18} className={activeTab === id ? 'text-orange-600' : 'text-slate-400'} />
+            {t(`research.${label}`)}
+          </button>
+        ))}
+      </nav>
+      
+      <div className="space-y-7 min-w-0">
       {activeTab === 'overview' && (
         <section className="app-surface-soft p-6 sm:p-8 rounded-3xl" data-testid="research-overview-tab">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -185,6 +187,7 @@ export default function StudyPage() {
       {activeTab === 'synthesis' && (
         <div id="synthesis" data-testid="research-synthesis-tab"><SynthesisPanel study={item} userId={user.id} workspaceId={workspace.id} studyId={studyId} interviews={rows} /></div>
       )}
+    </div>
     </div>
     {dialog === 'edit' && <Modal guardChanges title={t('research.editBrief')} onClose={close} busy={busy}><StudyForm key={editingStudy.revision} study={editingStudy} onSave={save} onCancel={close} busy={busy} error={error} onReload={async () => { const latest = await study.refetch(); if (latest.data) { setEditingStudy(latest.data); setError(null); } }} /></Modal>}
     {dialog === 'duplicate' && <Modal guardChanges title={t('research.duplicateStudy')} onClose={close} busy={busy}><p className="research-description mb-5">{t('research.duplicateStudyHint')}</p><StudyForm study={{ title: `${item.title} (${t('research.copySuffix')})`, goal: item.goal, brief: item.brief }} submitLabel="research.createDuplicate" onSave={duplicate} onCancel={close} busy={busy} error={error} /></Modal>}
