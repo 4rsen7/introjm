@@ -4,7 +4,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { processNext, DEFAULT_SUMMARY_MODEL, registerWorkerWake, wakeResearchWorker } = require('../modules/research/jobs/worker');
 const { randomUUID } = require('node:crypto');
 const { createResearchStorage } = require('../modules/research/media/storage');
-const { runMediaTranscriptionJob, cleanupExpiredMedia } = require('../modules/research/media');
+const { runMediaTranscriptionJob, cleanupExpiredMedia, createResearchTranscriptionService } = require('../modules/research/media');
 
 let wakeSleep = null;
 registerWorkerWake(() => {
@@ -25,6 +25,10 @@ async function main() {
     const generateText = async (prompt, { signal } = {}) => (await model.generateContent(prompt, { signal, timeout: 90000 })).response.text();
     const storage = createResearchStorage(db);
     const mediaEnabled = process.env.RESEARCH_MEDIA_ENABLED === 'true';
+    let transcriptionService;
+    if (mediaEnabled) {
+        transcriptionService = createResearchTranscriptionService({ env: process.env, logger: console });
+    }
     const workerId = randomUUID();
     const capabilities = ['interview_summary', 'study_synthesis', 'brief_preparation', 'guide_preparation', 'transcript_impact', 'interview_evidence', ...(mediaEnabled ? ['media_transcription'] : [])];
     const active = new AbortController();
@@ -45,7 +49,7 @@ async function main() {
         let result;
         try {
             result = await processNext({ db, generateText, signal: active.signal,
-                runMedia: mediaEnabled ? (job, options) => runMediaTranscriptionJob({ db, storage, job, ...options }) : undefined,
+                runMedia: mediaEnabled ? (job, options) => runMediaTranscriptionJob({ db, storage, job, transcriptionService, ...options }) : undefined,
                 onEvent: event => console.info('[Research worker]', event) });
             if (result?.kind === 'interview_summary' && result?.status === 'completed' && result?.study_id && result?.requested_by) {
                 try {
