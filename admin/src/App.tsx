@@ -10,7 +10,7 @@ import {
 } from "@refinedev/antd";
 import "@refinedev/antd/dist/reset.css";
 import "./global.css";
-import { DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined, ReadOutlined, NotificationOutlined, ExperimentOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, DashboardOutlined, UserOutlined, GlobalOutlined, CreditCardOutlined, CustomerServiceOutlined, ReadOutlined, NotificationOutlined, ExperimentOutlined } from "@ant-design/icons";
 
 import routerProvider, {
   CatchAllNavigate,
@@ -27,6 +27,8 @@ import { dataProvider } from "./providers/data";
 import { supabaseClient } from "./providers/supabase-client";
 
 // Імпорт нашої сторінки (переконайся, що файл існує за цим шляхом)
+import { WorkspaceList } from "./pages/workspaces/list";
+import { WorkspaceEdit } from "./pages/workspaces/edit";
 import { JourneyList } from "./pages/journeys/list";
 import { DashboardPage } from "./pages/dashboard";
 import { UserList } from "./pages/users/list";
@@ -63,6 +65,15 @@ function App() {
                 }}
                 // 1. ОПИСУЄМО РЕСУРСИ (Меню зліва)
                 resources={[
+                  {
+                    name: "workspaces",
+                    list: "/workspaces",
+                    edit: "/workspaces/edit/:id",
+                    meta: {
+                      label: "Workspaces",
+                      icon: <AppstoreOutlined />,
+                    },
+                  },
                   {
                     name: "dashboard",
                     list: "/dashboard",
@@ -184,6 +195,9 @@ function App() {
                     
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/users" element={<UserList />} />
+                                        {/* Workspaces */}
+                    <Route path="/workspaces" element={<WorkspaceList />} />
+                    <Route path="/workspaces/edit/:id" element={<WorkspaceEdit />} />
                     {/* Список мап */}
                     <Route path="/journeys" element={<JourneyList />} />
 
