@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { researchKey, researchRequest } from './useResearch';
 
-export function useAnalysisJob({ userId, workspaceId, studyId, interviewId }) {
+export function useAnalysisJob({ userId, workspaceId, studyId, interviewId, watch = false, watchSince }) {
   const client = useQueryClient();
   const refreshed = useRef(null);
   const resource = interviewId ? `/interviews/${interviewId}/summary-job` : `/studies/${studyId}/synthesis-job`;
@@ -11,7 +11,11 @@ export function useAnalysisJob({ userId, workspaceId, studyId, interviewId }) {
     queryKey: key,
     queryFn: ({ signal }) => researchRequest(resource, { signal }),
     retry: false,
-    refetchInterval: (query) => ['queued', 'running'].includes(query.state.data?.status) ? 2000 : false,
+    refetchInterval: (query) => {
+      const latest = query.state.data;
+      const stopped = ['failed', 'stale', 'canceled'].includes(latest?.status) && (!watchSince || new Date(latest.created_at) >= new Date(watchSince));
+      return (watch && !stopped) || ['queued', 'running'].includes(latest?.status) ? 2000 : false;
+    },
   });
   const enqueue = useMutation({
     mutationFn: () => researchRequest(`${resource}s`, { method: 'POST' }),
@@ -34,5 +38,6 @@ export function useAnalysisJob({ userId, workspaceId, studyId, interviewId }) {
     busy: enqueue.isPending || ['queued', 'running'].includes(job.data?.status),
     canceling: cancel.isPending,
     enqueue: () => enqueue.mutate(),
+    enqueueAsync: () => enqueue.mutateAsync(),
     cancel: () => job.data?.id && cancel.mutate() };
 }

@@ -6,7 +6,9 @@ const { synthesize } = require('../synthesis');
 const rpc = async (db, name, args = {}) => assertDatabaseResult(await db.rpc(name, args));
 const row = async (query) => assertDatabaseResult(await query.maybeSingle());
 
-function parseSynthesis(text, sourceIds) {
+const CATEGORIES = new Set(['insights', 'pain_points', 'what_worked', 'what_did_not_work']);
+const normalizeQuote = value => String(value || '').replace(/[“”«»]/g, '"').replace(/\s+/g, ' ').trim();
+function parseSynthesis(text, sourceIds, proofMap = new Map(), requireCategory = false) {
     let value;
     try { value = JSON.parse(String(text).replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (_) { throw new Error('Invalid synthesis JSON'); }
     if (!value || typeof value !== 'object' || !Array.isArray(value.findings)) throw new Error('Invalid synthesis structure');
@@ -15,12 +17,24 @@ function parseSynthesis(text, sourceIds) {
         if (!finding || typeof finding.text !== 'string' || !Array.isArray(finding.source_ids) || !finding.source_ids.length
             || finding.text.length > 4000 || finding.source_ids.some(id => !sourceIds.has(id))) throw new Error('Synthesis finding lacks valid source IDs');
     }
-    return { findings: value.findings.map(finding => ({ text: finding.text, source_ids: [...new Set(finding.source_ids)] })), source_ids: [...sourceIds] };
+    return { findings: value.findings.map(finding => {
+        if ((requireCategory || finding.category != null) && !CATEGORIES.has(finding.category)) throw new Error('Invalid finding category');
+        if (finding.evidence != null && (!Array.isArray(finding.evidence) || finding.evidence.length > 20)) throw new Error('Invalid finding evidence');
+        const citations = (finding.evidence || []).map(citation => {
+            const segment = proofMap.get(`${citation.interview_id}:${citation.segment_id}`);
+            if (!finding.source_ids.includes(citation.interview_id) || !segment || typeof citation.quote !== 'string'
+                || !normalizeQuote(citation.quote) || !normalizeQuote(segment).includes(normalizeQuote(citation.quote)))
+                throw new Error('Finding quote does not match its source transcript');
+            return { interview_id: citation.interview_id, segment_id: citation.segment_id, quote: citation.quote };
+        });
+        return { text: finding.text.trim(), ...(finding.category ? { category: finding.category } : {}),
+            source_ids: [...new Set(finding.source_ids)], evidence: citations };
+    }), source_ids: [...sourceIds] };
 }
 
 async function runAnalysisJob(db, job, generateText) {
-    const study = await row(db.from('research_studies').select('id,context_revision,current_version_id,archived_at').eq('id', job.study_id));
-    if (!study || study.archived_at || !job.study_version_id || study.context_revision !== job.context_revision
+    const study = await row(db.from('research_studies').select('id,context_revision,current_version_id,brief_status,archived_at').eq('id', job.study_id));
+    if (!study || study.archived_at || study.brief_status === 'draft' || !job.study_version_id || study.context_revision !== job.context_revision
         || study.current_version_id !== job.study_version_id) return { stale: true };
     const context = await row(db.from('research_study_versions').select('*').eq('id', job.study_version_id).eq('study_id', study.id));
     if (!context) return { stale: true };
@@ -49,8 +63,35 @@ async function runAnalysisJob(db, job, generateText) {
             || item.summary_revision !== source.summary_revision
             || item.summary_source_job_id !== source.summary_source_job_id || item.summary_validation_id !== source.validation_id;
     })) return { stale: true };
-    const evidence = job.source_manifest.map(source => ({ id: source.id, summary: byId.get(source.id).summary_data }));
-    return { output: await synthesize({ db, job, context, evidence, generateText, parseSynthesis }) };
+    const originals = assertDatabaseResult(await db.from('research_analysis_jobs').select('id,transcript_version_id,interview_id')
+        .in('id', job.source_manifest.map(source => source.summary_source_job_id)));
+    const byOriginal = new Map(originals.map(item => [item.id, item]));
+    if (job.source_manifest.some(source => byOriginal.get(source.summary_source_job_id)?.interview_id !== source.id)) return { stale: true };
+    const versions = assertDatabaseResult(await db.from('research_transcript_versions').select('id,interview_id,transcript_data')
+        .in('id', originals.map(item => item.transcript_version_id)));
+    const byVersion = new Map(versions.map(item => [item.id, item]));
+    const proofMap = new Map();
+    const evidence = job.source_manifest.map(source => {
+        const original = byOriginal.get(source.summary_source_job_id);
+        const version = byVersion.get(original.transcript_version_id);
+        if (!version || version.interview_id !== source.id || !Array.isArray(version.transcript_data)) return null;
+        for (const segment of version.transcript_data) proofMap.set(`${source.id}:${segment.id}`, segment.text);
+        const { _system, ...summary } = byId.get(source.id).summary_data || {};
+        // Prefer the original segments supporting summary quotes, including later
+        // interview answers, then supplement with a small introductory sample.
+        const quotedText = JSON.stringify(summary.quotes || []);
+        const supported = version.transcript_data.filter(segment => {
+            const normalized = normalizeQuote(segment.text);
+            return normalized.length > 12 && normalizeQuote(quotedText).includes(normalized);
+        });
+        const sampled = [...supported, ...version.transcript_data].filter((segment, index, all) => all.findIndex(item => item.id === segment.id) === index);
+        const transcriptSamples = sampled.slice(0, 20).map(segment => ({ id: segment.id,
+            text: String(segment.text || '').slice(0, 500) }));
+        return { id: source.id, summary, transcriptSamples };
+    });
+    if (evidence.some(source => !source)) return { stale: true };
+    return { output: await synthesize({ db, job, context, evidence, generateText,
+        parseSynthesis: (text, ids) => parseSynthesis(text, ids, proofMap, true) }) };
 }
 
 const INTELLIGENCE_KINDS = ['brief_preparation', 'guide_preparation', 'transcript_impact', 'interview_evidence'];

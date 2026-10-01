@@ -202,7 +202,7 @@ test('all job endpoints require authenticated scope, and enqueue never exposes a
     });
 });
 
-test('synthesis reads compare manifest structure and hide findings after source changes', async () => {
+test('synthesis retains prior findings and exposes freshness after source or brief changes', async () => {
     await withApi(async (request, db) => {
         db.tables.research_studies[0].context_revision = 0; db.tables.research_studies[0].current_version_id = ids.study;
         db.tables.research_analysis_jobs = [{ id: ids.interview, workspace_id: ids.research, study_id: ids.study, kind: 'study_synthesis', status: 'completed', study_revision: 0, context_revision: 0, study_version_id: ids.study,
@@ -210,7 +210,12 @@ test('synthesis reads compare manifest structure and hide findings after source 
         db.rpc = async () => ({ data: [{ summary_revision: 1, transcript_revision: 1, id: ids.interview }] });
         assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data.output.findings.length, 1);
         db.rpc = async () => ({ data: [{ id: ids.interview, transcript_revision: 2, summary_revision: 1 }] });
-        assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data, null);
+        const changed = (await request(`/studies/${ids.study}/synthesis`)).body.data;
+        assert.equal(changed.is_current, false);
+        assert.equal(changed.stale_reason, 'sources_changed');
+        assert.equal(changed.output.findings[0].text, 'Finding');
+        db.tables.research_studies[0].context_revision = 1;
+        assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data.stale_reason, 'brief_changed');
     });
 });
 
@@ -233,3 +238,37 @@ test('job cancellation cancels queued or running workspace jobs and rejects comp
     });
 });
 
+
+
+test('draft creation and confirmation preserve server-authenticated identity and normalized shared plan', async () => {
+    await withApi(async (request, db) => {
+        const draft = await request('/studies', { method: 'POST', body: JSON.stringify({ workspace_id: ids.research,
+            title: 'Search', goal: '', brief_status: 'draft', p_user_id: ids.other }) });
+        assert.equal(draft.status, 201);
+        const created = db.calls.find(call => call[1] === 'research_create_study_flow');
+        assert.equal(created[2].p_user_id, ids.user);
+        assert.equal(created[2].p_goal, '');
+        assert.deepEqual(created[2].p_plan.tasks, []);
+        const confirmed = await request(`/studies/${ids.study}/brief-confirm`, { method: 'POST', body: JSON.stringify({
+            revision: 0, title: 'Search', goal: 'Evaluate navigation', brief: 'Shared criteria', plan: { tasks: [] } }) });
+        assert.equal(confirmed.status, 200);
+        assert.equal(db.calls.find(call => call[1] === 'research_save_brief')[2].p_confirm, true);
+        const before = db.calls.filter(call => call[0] === 'rpc').length;
+        assert.equal((await request(`/studies/${ids.study}/refresh-results`, { method: 'POST', body: '{}' })).status, 400);
+        assert.equal(db.calls.filter(call => call[0] === 'rpc').length, before);
+    });
+});
+
+test('no aggregate still exposes manual refresh after a changed confirmed brief', async () => {
+    await withApi(async (request, db) => {
+        Object.assign(db.tables.research_studies[0], { brief_status: 'confirmed', context_revision: 2, auto_context_revision: 1 });
+        db.tables.interviews[0].transcript_revision = 1;
+        db.rpc = async () => ({ data: [] });
+        const result = (await request(`/studies/${ids.study}/synthesis`)).body.data;
+        assert.equal(result.output, null);
+        assert.equal(result.stale_reason, 'brief_changed');
+        assert.equal(result.refresh_available, true);
+        db.tables.research_studies[0].flow_pending = true;
+        assert.equal((await request(`/studies/${ids.study}/synthesis`)).body.data.refresh_available, false);
+    });
+});

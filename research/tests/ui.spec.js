@@ -1,16 +1,20 @@
 import { test, expect } from '@playwright/test';
 
 const ids = { user: '00000000-0000-4000-8000-000000000001', workspace: '00000000-0000-4000-8000-000000000002', study: '00000000-0000-4000-8000-000000000003', interview: '00000000-0000-4000-8000-000000000004' };
-async function mockResearch(page, { signedIn = true, disabled = false, conflict = false } = {}) {
-    const study = { id: ids.study, workspace_id: ids.workspace, title: 'Checkout prototype', goal: 'Can users find the delivery time?', brief: 'Evaluate the new delivery screen.', revision: 0 };
+async function mockResearch(page, { signedIn = true, disabled = false, conflict = false, withSynthesis = false } = {}) {
+    const study = { id: ids.study, workspace_id: ids.workspace, title: 'Checkout prototype', goal: 'Can users find the delivery time?', brief: 'Evaluate the new delivery screen.', brief_status: 'confirmed', revision: 0,
+        plan: { questions: [], hypotheses: [], prototype: { name: '', url: '', version: '' }, tasks: [], guide: [] } };
     let interview = {
-        id: ids.interview, workspace_id: ids.workspace, study_id: ids.study, title: 'Session 01', status: 'completed', research_revision: 2, transcript_revision: 1, summary_revision: 1,
+        id: ids.interview, workspace_id: ids.workspace, study_id: ids.study, title: 'Session 01', status: 'completed', research_revision: 2, transcript_revision: 1, summary_revision: 1, summary_source_job_id: 'summary-original', summary_stale: false,
         transcript_data: [{ id: 'line-1', timestamp: '00:10', speaker: 'Participant', text: 'I found the delivery time.' }],
         summary_data: { summary: { generalInsight: 'The delivery time is easy to find.' }, quotes: ['I found the delivery time.'] },
     };
     const patches = [];
-    let summaryJob = null, synthesisJob = null, summaryPolls = 0, synthesisPolls = 0;
-    let synthesis = null;
+    let summaryJob = null, summaryPolls = 0;
+    const synthesis = withSynthesis ? { id: 'synthesis-job', source_manifest: [{ id: ids.interview }], is_current: true, refresh_available: false, stale_reason: null,
+        output: { findings: [{ text: 'Delivery information needs a clearer place in the flow.', category: 'insights', source_ids: [ids.interview],
+            evidence: [{ interview_id: ids.interview, segment_id: 'line-1', quote: 'I found the delivery time.' }] }] } }
+        : { id: null, source_manifest: [], output: null, is_current: false, refresh_available: false, stale_reason: null };
     await page.addInitScript(({ signedIn, userId }) => {
         localStorage.setItem('research.locale', 'en');
         if (signedIn) localStorage.setItem('sb-127-auth-token', JSON.stringify({
@@ -37,17 +41,6 @@ async function mockResearch(page, { signedIn = true, disabled = false, conflict 
                     summary_data: { summary: { generalInsight: 'The prototype needs clearer delivery information.' } } };
             }
             return send(summaryJob);
-        }
-        if (path === `/studies/${ids.study}/synthesis-jobs`) {
-            synthesisJob = { id: 'synthesis-job', status: 'queued' }; synthesisPolls = 0;
-            return send(synthesisJob, 202);
-        }
-        if (path === `/studies/${ids.study}/synthesis-job`) {
-            if (synthesisJob && ++synthesisPolls >= 2) {
-                synthesisJob.status = 'completed';
-                synthesis = { source_manifest: [{ id: ids.interview }], output: { findings: [{ text: 'Delivery information needs a clearer place in the flow.', source_ids: [ids.interview] }] } };
-            }
-            return send(synthesisJob);
         }
         if (path === `/studies/${ids.study}/synthesis`) return send(synthesis);
         if (path === '/workspaces') return send([{ id: ids.workspace, name: 'Product team', product_key: 'research', role: 'owner' }]);
@@ -89,7 +82,7 @@ test('account and recovery forms have matching headings and an accessible passwo
     await expect(page.getByRole('heading', { name: 'Forgot password?', exact: true })).toBeVisible();
     await expect(page.getByTestId('research-password')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: 'test-results/research-auth-mobile.png', fullPage: true });
+    await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-auth-mobile.png', fullPage: true });
 });
 
 test('disabled Research shows an availability state instead of an empty database', async ({ page }) => {
@@ -104,7 +97,8 @@ test('study context leads to the existing summary renderer and revision-checked 
     const errors = []; page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
     await page.getByTestId('research-study-card').click();
-    await expect(page.getByText('Can users find the delivery time?', { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Brief' }).click();
+    await expect(page.getByTestId('research-shared-brief').getByText('Can users find the delivery time?', { exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Interviews' }).click();
     await page.getByRole('link', { name: /Session 01/ }).click();
     await expect(page.getByText('The delivery time is easy to find.', { exact: true })).toBeVisible();
@@ -118,11 +112,11 @@ test('study context leads to the existing summary renderer and revision-checked 
     expect(errors).toEqual([]);
     await page.getByRole('tab', { name: 'Summary', exact: true }).click();
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: 'test-results/research-summary-desktop.png', fullPage: true, animations: 'disabled' });
+    await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-summary-desktop.png', fullPage: true, animations: 'disabled' });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: 'test-results/research-summary-mobile.png', fullPage: true, animations: 'disabled' });
+    await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-summary-mobile.png', fullPage: true, animations: 'disabled' });
 });
 
 test('conflicting saves preserve the user edit and explain how to reload', async ({ page }) => {
@@ -140,32 +134,34 @@ test('conflicting saves preserve the user edit and explain how to reload', async
 test('background summary resumes polling after reload and refreshes saved output', async ({ page }) => {
     await mockResearch(page);
     await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-    await page.getByRole('button', { name: 'Generate summary', exact: true }).click();
+    await page.getByRole('button', { name: 'Regenerate summary', exact: true }).click();
     await expect(page.getByText('Queued. You can leave this page; the result will be saved here.')).toBeVisible();
     await page.reload();
     await expect(page.getByText('The prototype needs clearer delivery information.', { exact: true })).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: 'Generate summary', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Regenerate summary', exact: true })).toBeEnabled();
 });
 
-test('study synthesis displays only returned findings with links to source interviews', async ({ page }) => {
-    await mockResearch(page);
+test('study synthesis displays categorized findings and verified quote links', async ({ page }) => {
+    await mockResearch(page, { withSynthesis: true });
     await page.goto(`/studies/${ids.study}`);
-  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
-    await page.getByRole('button', { name: 'Compile overall findings' }).click();
+    await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByText('Delivery information needs a clearer place in the flow.')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Based on 1 interview summaries')).toBeVisible();
-  await page.getByRole('tab', { name: 'Interviews', exact: true }).click();
-    await expect(page.getByRole('link', { name: 'Session 01', exact: true })).toHaveAttribute('href', `/studies/${ids.study}/interviews/${ids.interview}`);
+    await expect(page.getByTestId('research-findings-insights')).toBeVisible();
+    await page.getByTestId('research-finding').first().click();
+    await expect(page.getByText('I found the delivery time.', { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: /^Interviews\b/ }).click();
+    await expect(page.getByTestId('research-interview-card')).toHaveAttribute('href', `/studies/${ids.study}/interviews/${ids.interview}`);
 });
 
 
 test('background completion cannot advance the revision attached to unsaved transcript edits', async ({ page }) => {
     const { patches } = await mockResearch(page);
     await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-    await page.getByRole('button', { name: 'Generate summary', exact: true }).click();
+    await page.getByRole('button', { name: 'Regenerate summary', exact: true }).click();
     await page.getByRole('tab', { name: 'Transcript' }).click();
     await page.getByLabel('What was said').fill('A correction made while analysis is running');
-    await expect(page.getByRole('button', { name: 'Generate summary', exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Regenerate summary', exact: true })).toBeVisible({ timeout: 10000 });
     await page.getByTestId('research-save-transcript').click();
     await expect(page.getByText('A newer version was saved')).toBeVisible();
     expect(patches[0]).toMatchObject({ research_revision: 2, transcript_revision: 1, summary_revision: 1 });

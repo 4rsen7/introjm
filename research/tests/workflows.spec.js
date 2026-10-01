@@ -1,5 +1,15 @@
 import { test, expect } from '@playwright/test';
 const ids = { user: '00000000-0000-4000-8000-000000000701', workspace: '00000000-0000-4000-8000-000000000702', study: '00000000-0000-4000-8000-000000000703', interview: '00000000-0000-4000-8000-000000000704', task: '00000000-0000-4000-8000-000000000705' };
+async function openAdditionalTools(page) {
+  await page.getByRole('tab', { name: 'Brief', exact: true }).click();
+  const tools = page.getByTestId('research-additional-tools');
+  if (await tools.getAttribute('open') === null) await tools.locator('summary').click();
+}
+async function openComparison(page) {
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
+  const tools = page.getByTestId('research-comparison-tools');
+  if (await tools.getAttribute('open') === null) await tools.locator('summary').click();
+}
 async function fixture(page, {
   invite = false,
   workspaceName = 'Research team',
@@ -11,7 +21,12 @@ async function fixture(page, {
   studyVersions = [],
   transcriptVersions = [],
   synthesis = null,
+  synthesisMeta = {},
   summaryJob = null,
+  recordOverrides = {},
+  finishUpload = false,
+  missingOutcome = false,
+  summaryEnqueueFailures = 0,
   usage = {
     studies_used: 2,
     max_studies: 5,
@@ -32,13 +47,18 @@ async function fixture(page, {
   let markInitialWorkspaceRead;
   const initialWorkspaceRead = new Promise(resolve => { markInitialWorkspaceRead = resolve; });
   let proposal = null, impact = null, activeSummaryJob = summaryJob;
+  let uploadReads = 0;
+  let participants = [];
+  let evidenceJob = null;
+  let evidencePolls = 0;
+  let summaryEnqueueAttempts = 0;
   const task = { id: ids.task, title: taskTitle, instruction: 'Choose a delivery option', success_criteria: 'Delivery date is visible' };
-  let study = { id: ids.study, workspace_id: ids.workspace, title: 'Delivery test', goal: 'Can people choose delivery?', revision: 1, context_revision: 1, current_version_id: 'context-v1',
+  let study = { id: ids.study, workspace_id: ids.workspace, title: 'Delivery test', goal: 'Can people choose delivery?', brief_status: 'confirmed', revision: 1, context_revision: 1, current_version_id: 'context-v1',
     plan: { prototype: { name: 'Checkout', version: 'v1', url: '' }, questions: [], hypotheses: [], tasks: [task], guide: [] } };
   let studiesList = [study, ...extraStudies];
   let record = { id: ids.interview, study_id: ids.study, workspace_id: ids.workspace, title: 'Interview 1', status: 'completed', research_revision: 3, transcript_revision: 2, summary_revision: 1,
-    current_transcript_version_id: 'transcript-v2', summary_source_job_id: 'summary-1', summary_stale: true,
-    summary_data: { summary: { generalInsight: 'Delivery was found.' } }, transcript_data: [{ id: 'segment-1', speaker: 'Participant', timestamp: '00:02', text: 'I found the delivery date.' }] };
+    current_transcript_version_id: 'transcript-v2', summary_source_job_id: 'summary-1', summary_source_study_revision: 1, summary_stale: true,
+    summary_data: { summary: { generalInsight: 'Delivery was found.' } }, transcript_data: [{ id: 'segment-1', speaker: 'Participant', timestamp: '00:02', text: 'I found the delivery date.' }], ...recordOverrides };
   let interviewsList = [record, ...extraInterviews];
   await page.addInitScript(user => {
     localStorage.setItem('research.locale', 'en');
@@ -66,7 +86,7 @@ async function fixture(page, {
     if (path === '/studies') {
       if (request.method() === 'POST') {
         const body = request.postDataJSON();
-        const created = { id: '00000000-0000-4000-8000-000000000799', workspace_id: ids.workspace, title: body.title, goal: body.goal, brief: body.brief || null, revision: 0, context_revision: 0, plan: { prototype: { name: '', version: '', url: '' }, questions: [], hypotheses: [], tasks: [], guide: [] } };
+        const created = { id: '00000000-0000-4000-8000-000000000799', workspace_id: ids.workspace, title: body.title, goal: body.goal, brief: body.brief || null, brief_status: body.brief_status || 'confirmed', revision: 0, context_revision: 0, plan: body.plan || { prototype: { name: '', version: '', url: '' }, questions: [], hypotheses: [], tasks: [], guide: [] } };
         studiesList = [created, ...studiesList];
         return send(created, 201);
       }
@@ -76,6 +96,19 @@ async function fixture(page, {
       if (request.method() === 'DELETE') { studiesList = studiesList.filter(item => item.id !== ids.study); return send({ id: ids.study }); }
       return send(study);
     }
+    if (path === `/studies/${ids.study}/brief` && request.method() === 'PATCH') {
+      study = { ...study, ...parsedBody, brief: parsedBody.brief || null, revision: study.revision + 1,
+        context_revision: study.context_revision + 1, current_version_id: 'context-v2' };
+      return send(study);
+    }
+    if (path === `/studies/${ids.study}/brief-confirm` && request.method() === 'POST') {
+      study = { ...study, ...parsedBody, brief_status: 'confirmed', revision: study.revision + 1,
+        context_revision: study.context_revision + 1, current_version_id: 'context-v2' };
+      return send(study);
+    }
+    if (path === `/studies/${ids.study}/refresh-results` && request.method() === 'POST') return send({ study, jobs: [] });
+    if (path === `/studies/${ids.study}/upload-batches` && request.method() === 'POST') return send({ batch_id: '00000000-0000-4000-8000-000000000798' });
+    if (path === `/studies/${ids.study}/upload-batches/complete` && request.method() === 'POST') return send({ batch_id: parsedBody.batch_id });
     if (/^\/studies\/[^/]+$/.test(path) && request.method() === 'GET') {
       const targetId = path.split('/').at(-1);
       return send(studiesList.find(item => item.id === targetId) || study);
@@ -122,13 +155,43 @@ async function fixture(page, {
       record = {
         ...record,
         status: 'processing',
-        summary_data: { _system: { uploadStatus: 'processing', sourceUploadFileName: 'checkout_session_01.m4a' } },
+        summary_data: { _system: { uploadStatus: 'processing', sourceUploadFileName: 'checkout_session_01.m4a', autoSummaryRequested: true, sourceSummaryRevision: 0, startedAt: '2026-09-30T00:00:00.000Z' } },
       };
       return send(record, 202);
     }
     if (path === `/interviews/${ids.interview}`) {
       if (request.method() === 'DELETE') { interviewsList = interviewsList.filter(item => item.id !== ids.interview); return send({ id: ids.interview }); }
+      if (request.method() === 'PATCH') {
+        record = { ...record, title: parsedBody.title, transcript_data: parsedBody.transcript_data,
+          status: 'draft', research_revision: record.research_revision + 1,
+          transcript_revision: record.transcript_revision + 1, summary_stale: record.summary_revision > 0 };
+        interviewsList = [record, ...interviewsList.filter(item => item.id !== ids.interview)];
+        return send(record);
+      }
+      if (finishUpload && record.status === 'processing' && ++uploadReads >= 2) {
+        record = { ...record, status: 'draft', transcript_revision: 1, research_revision: 1,
+          transcript_data: [{ id: 'uploaded-segment', speaker: 'Participant', timestamp: '00:02', text: 'I found delivery details.' }],
+          summary_data: { _system: { uploadStatus: 'completed', autoSummaryRequested: true, sourceSummaryRevision: 0, startedAt: '2026-09-30T00:00:00.000Z' } } };
+      } else if (finishUpload && record.status === 'draft' && record.summary_revision === 0 && ++uploadReads >= 5) {
+        record = { ...record, status: 'completed', transcript_revision: 1, summary_revision: 1, research_revision: 1,
+          current_transcript_version_id: 'transcript-upload-v1', summary_source_job_id: 'summary-upload-1', summary_stale: false,
+          summary_data: { summary: { generalInsight: 'The participant found delivery details.' }, _system: { uploadStatus: 'completed', autoSummaryRequested: true, sourceSummaryRevision: 0 } },
+          transcript_data: [{ id: 'uploaded-segment', speaker: 'Participant', timestamp: '00:02', text: 'I found delivery details.' }] };
+        interviewsList = [record, ...interviewsList.filter(item => item.id !== ids.interview)];
+      }
       return send(record);
+    }
+    if (path === `/studies/${ids.study}/participants`) {
+      if (request.method() === 'POST') { const created = { id: 'participant-1', pseudonym: parsedBody.pseudonym }; participants.push(created); return send(created, 201); }
+      return send(participants);
+    }
+    if (path === `/interviews/${ids.interview}/participant` && request.method() === 'PATCH') {
+      record = { ...record, research_participant_id: parsedBody.participant_id, research_revision: record.research_revision + 1 };
+      return send(record);
+    }
+    if (path === `/interviews/${ids.interview}/evidence-job`) return send(evidenceJob);
+    if (path === `/interviews/${ids.interview}/evidence-jobs` && request.method() === 'POST') {
+      evidenceJob = { id: 'evidence-1', status: 'queued' }; return send(evidenceJob, 202);
     }
     if (path === `/interviews/${ids.interview}/transcript-versions` && request.method() === 'GET') return send(transcriptVersions);
     if (path.startsWith(`/interviews/${ids.interview}/transcript-versions/`) && request.method() === 'GET') {
@@ -136,9 +199,19 @@ async function fixture(page, {
       return send(transcriptVersions.find(v => v.id === versionId) || { transcript_data: record.transcript_data });
     }
     if (path === `/interviews/${ids.interview}/summary-job`) return send(activeSummaryJob);
+    if (path === `/interviews/${ids.interview}/summary-jobs` && request.method() === 'POST') {
+      if (++summaryEnqueueAttempts <= summaryEnqueueFailures) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ status: 'error', code: 'RESEARCH_LIMIT_REACHED' }) });
+      activeSummaryJob = { id: 'summary-retry-1', status: 'queued' };
+      return send(activeSummaryJob, 202);
+    }
     if (path.startsWith('/jobs/') && path.endsWith('/cancel') && request.method() === 'POST') {
       activeSummaryJob = activeSummaryJob ? { ...activeSummaryJob, status: 'canceled' } : { id: 'job-1', status: 'canceled' };
       return send(activeSummaryJob);
+    }
+    if (path === '/jobs/summary-1' && request.method() === 'GET') return send({ id: 'summary-1', study_version_id: study.current_version_id });
+    if (path === '/jobs/evidence-1' && request.method() === 'GET') {
+      if (++evidencePolls >= 2) evidenceJob = { ...evidenceJob, status: 'completed' };
+      return send(evidenceJob);
     }
     if (path.startsWith('/jobs/') && request.method() === 'GET') return send(activeSummaryJob);
     if (path.endsWith('/impact-jobs')) { impact = { id: 'impact', status: 'completed', study_version_id: study.current_version_id, transcript_version_id: record.current_transcript_version_id, summary_revision: record.summary_revision, output: { decision: 'unaffected', reasons: ['The correction keeps the same observation'], sections: [], segment_ids: [] }, validation: { id: 'validation' } }; return send(impact, 202); }
@@ -146,52 +219,64 @@ async function fixture(page, {
     if (path.includes('/summary-validations/')) { record = { ...record, summary_stale: false, research_revision: 4 }; return send(record); }
     if (path.endsWith('/results')) return send({ tasks: [{ ...task, counts: { success: 1, partial: 0, failure: 0, not_attempted: 0, unknown: 1 }, attempts: 1, success_rate: 1, analyzed: 1, sessions: 2 }],
       coverage: { sessions: 2, linked_participants: 1, unlinked_sessions: 1, current_summaries: 1 },
-      sessions: [{ id: ids.interview, title: record.title, evidence_revision: 1, tasks: [{ task_id: task.id, status: 'success', outcome: { id: 'outcome-1', task_id: task.id, transcript_version_id: record.current_transcript_version_id, segment_ids: ['segment-1'], reason: 'Participant found the date' } }] }] });
+      sessions: [{ id: ids.interview, title: record.title, evidence_revision: 1, tasks: [{ task_id: task.id, status: missingOutcome ? 'unknown' : 'success', outcome: missingOutcome ? null : { id: 'outcome-1', task_id: task.id, transcript_version_id: record.current_transcript_version_id, segment_ids: ['segment-1'], reason: 'Participant found the date' } }] }] });
     if (path.includes('/transcript-versions/')) return send({ transcript_data: record.transcript_data });
     if (path.startsWith('/outcomes/')) return send({ id: 'outcome-2' });
     if (path.endsWith('/uploads') || path.endsWith('/participants') || path.endsWith('/transcript-versions') || path.endsWith('/versions')) return send([]);
     if (path.endsWith('/usage')) return send(usage);
     if (path.endsWith('/members')) return send([{ user_id: ids.user, role: 'owner' }]);
     if (path.endsWith('/invites')) return send(request.method() === 'GET' ? [] : { token: 'a'.repeat(64) });
-    if (path.endsWith('/synthesis')) return send(synthesis);
+    if (path.endsWith('/synthesis')) return send(synthesis ? {
+      id: 'synthesis-fixture', source_manifest: synthesis.source_manifest || [], context_revision: study.context_revision,
+      study_version_id: study.current_version_id, is_current: true, refresh_available: false, stale_reason: null,
+      output: { ...synthesis.output, findings: (synthesis.output?.findings || []).map(finding => ({ category: 'insights', evidence: [], ...finding })) },
+      ...synthesisMeta,
+    } : { id: null, source_manifest: [], output: null, context_revision: null, study_version_id: null,
+      is_current: false, refresh_available: false, stale_reason: null });
     if (path.endsWith('-job')) return send(null);
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
   });
   return writes;
 }
 
-test('shared criteria keep task IDs and save the exact version opened for editing', async ({ page }) => {
+test('shared brief keeps task IDs and saves against the revision opened for editing', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}`);
-  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit plan', exact: true }).click();
+  await page.getByRole('tab', { name: 'Brief', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit goal and brief', exact: true }).click();
   await page.getByRole('textbox', { name: 'Success criterion', exact: true }).fill('A delivery date and price are visible');
   await page.getByRole('textbox', { name: 'Success criterion', exact: true }).pressSequentially('.');
   await expect(page.getByRole('textbox', { name: 'Success criterion', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: 'Save plan version' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(writes[0].body.revision).toBe(1);
-  expect(writes[0].body.plan.tasks[0]).toMatchObject({ id: ids.task, success_criteria: 'A delivery date and price are visible.' });
+  await page.getByTestId('research-shared-brief').getByRole('button', { name: 'Save changes', exact: true }).click();
+  const saved = writes.find(write => write.path === `/studies/${ids.study}/brief` && write.method === 'PATCH');
+  expect(saved.body.revision).toBe(1);
+  expect(saved.body.plan.tasks[0]).toMatchObject({ id: ids.task, success_criteria: 'A delivery date and price are visible.' });
 });
 
-test('AI preparation remains a reviewable proposal until explicitly accepted', async ({ page }) => {
+test('results under an earlier brief stay readable until an explicit refresh', async ({ page }) => {
+  const writes = await fixture(page, { synthesis: { source_manifest: [{ id: ids.interview }],
+    output: { findings: [{ text: 'Earlier observation remains available.', source_ids: [ids.interview] }] } },
+    synthesisMeta: { is_current: false, refresh_available: true, stale_reason: 'brief_changed', context_revision: 0 } });
+  await page.goto(`/studies/${ids.study}`);
+  await expect(page.getByText('Earlier observation remains available.')).toBeVisible();
+  await expect(page.getByText(/previous brief/i)).toBeVisible();
+  expect(writes.filter(write => write.path.endsWith('/refresh-results'))).toHaveLength(0);
+  await page.getByTestId('research-refresh-results').click();
+  expect(writes.find(write => write.path === `/studies/${ids.study}/refresh-results`)?.body).toEqual({ revision: 1 });
+});
+
+test('AI brief expansion remains a reviewable proposal until explicitly saved', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}`);
-  await expect(page.getByTestId('research-inline-preparation')).toBeVisible();
-  await expect(page.getByText('AI uses the current saved goal, brief and plan')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Prepare a study with AI' }).click();
-  await expect(page.getByText('AI uses the current saved goal, brief and plan', { exact: false })).toBeVisible();
-  await expect(page.getByLabel('What are you testing and what do you want to learn?')).toHaveCount(0);
-  await page.getByRole('textbox', { name: 'Optional clarification answers' }).fill('Compare delivery options');
-  await page.getByRole('button', { name: 'Propose a brief' }).click();
-  await expect(page.getByText('Which delivery options are in scope?')).toBeVisible();
-  expect(writes.find(write => write.path.endsWith('/brief-jobs')).body).toEqual({ answers: 'Compare delivery options' });
-  expect(writes.filter(write => write.path.endsWith('/versions'))).toHaveLength(0);
-  await page.getByRole('button', { name: 'Review and accept draft' }).click();
-  await page.getByRole('textbox', { name: 'Study goal', exact: true }).fill('Observe shipping choices');
-  await page.getByRole('button', { name: 'Save plan version' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(writes.at(-1).body).toMatchObject({ preparation_job_id: 'proposal', revision: 1, goal: 'Observe shipping choices' });
+  await page.getByRole('tab', { name: 'Brief', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand brief with AI' }).click();
+  await expect(page.getByText('Observe delivery selection')).toBeVisible();
+  expect(writes.find(write => write.path.endsWith('/brief-jobs')).body.description).toContain('Can people choose delivery?');
+  expect(writes.filter(write => write.path === `/studies/${ids.study}/brief`)).toHaveLength(0);
+  await page.getByRole('button', { name: 'Use proposal' }).click();
+  await page.getByRole('textbox', { name: 'Shared research goal', exact: true }).fill('Observe shipping choices');
+  await page.getByTestId('research-shared-brief').getByRole('button', { name: 'Save changes', exact: true }).click();
+  expect(writes.find(write => write.path === `/studies/${ids.study}/brief`).body).toMatchObject({ preparation_job_id: 'proposal', revision: 1, goal: 'Observe shipping choices' });
 });
 
 test('long labels and compact context stay readable without horizontal overflow', async ({ page }) => {
@@ -202,15 +287,9 @@ test('long labels and compact context stay readable without horizontal overflow'
   const workspace = page.getByTestId('research-workspace');
   await expect(workspace).toHaveAttribute('title', workspaceName);
   await expect.poll(() => workspace.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(255);
-  await expect(page.getByTestId('research-study-counts')).toContainText('Interviews1');
-  await expect(page.getByTestId('research-study-counts')).toContainText('Test tasks1');
-  await expect(page.getByText('Study overview')).toHaveCount(0);
-  await expect(page.getByText('Your next steps')).toHaveCount(0);
-  const alignment = await page.evaluate(() => ({
-    navigation: document.querySelector('.research-section-nav').getBoundingClientRect().left,
-    context: document.querySelector('main .research-card').getBoundingClientRect().left,
-  }));
-  expect(Math.abs(alignment.navigation - alignment.context)).toBeLessThan(1);
+  await expect(page.getByTestId('research-study-page')).toContainText('1 interview');
+  await expect(page.getByRole('tab', { name: 'Brief', exact: true })).toBeVisible();
+  await openAdditionalTools(page);
   const heading = page.getByTestId('research-task-heading');
   await expect(heading).toBeVisible();
   for (const width of [390, 320]) {
@@ -230,36 +309,33 @@ test('long labels and compact context stay readable without horizontal overflow'
     expect(geometry.language.height).toBeGreaterThanOrEqual(44);
     expect(Math.abs(geometry.number.y - geometry.title.y)).toBeLessThanOrEqual(2);
     expect(geometry.title.height).toBeGreaterThan(24);
-    await page.locator('.research-section-nav a[href="#plan"]').click();
-    await expect.poll(() => page.evaluate(() =>
-      document.querySelector('#plan').getBoundingClientRect().top - document.querySelector('header').getBoundingClientRect().bottom
-    )).toBeGreaterThanOrEqual(8);
+    await expect(page.getByTestId('research-plan-tab')).toBeVisible();
+    await expect(page.getByTestId('research-task-heading')).toBeVisible();
   }
-  await page.locator('.research-section-nav a[href="#results"]').click();
-  await expect(page.locator('#results dl dd')).toHaveCount(4);
-  const numberTops = await page.locator('#results dl dd').evaluateAll(items => items.map(element => element.getBoundingClientRect().top));
+  await openComparison(page);
+  await expect(page.getByTestId('research-results-tab').locator('dl dd')).toHaveCount(4);
+  const numberTops = await page.getByTestId('research-results-tab').locator('dl dd').evaluateAll(items => items.map(element => element.getBoundingClientRect().top));
   expect(Math.abs(numberTops[0] - numberTops[1])).toBeLessThan(1);
   expect(Math.abs(numberTops[2] - numberTops[3])).toBeLessThan(1);
 });
 
-test('failed interview loading leaves the compact count unknown', async ({ page }) => {
+test('failed interview loading exposes retry without hiding the study', async ({ page }) => {
   await fixture(page, { interviewsError: true });
   await page.goto(`/studies/${ids.study}`);
+  await expect(page.getByRole('heading', { name: 'Delivery test' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Interviews' }).click();
   await expect(page.getByTestId('research-error').first()).toBeVisible();
-  await expect(page.getByTestId('research-study-counts')).toContainText('Interviews—');
 });
 
 test('impact confirmation is explicit and never regenerates a summary', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
-  await page.getByRole('button', { name: 'Check impact' }).click();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
+  await page.getByRole('button', { name: 'Check changes' }).click();
   await expect(page.getByText('No material impact found')).toBeVisible();
-  await expect(page.getByText('The source has changed', { exact: true }).first()).toBeVisible();
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
+  await expect(page.getByTestId('research-stale-reason')).toBeVisible();
   await page.getByRole('button', { name: 'Confirm summary is current' }).click();
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Check impact' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Check changes' })).toHaveCount(0);
   expect(writes.map(write => write.path).some(path => path.endsWith('/summary-jobs'))).toBe(false);
   expect(writes.at(-1).body.research_revision).toBe(3);
 });
@@ -268,12 +344,12 @@ test('results expose denominators and evidence; corrections preserve source and 
   const writes = await fixture(page);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(`/studies/${ids.study}`);
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
-  await page.getByRole('button', { name: 'Show results' }).click();
+  await openComparison(page);
+  await expect(page.getByTestId('research-results-tab')).toBeVisible();
   await expect(page.getByText('Full success: 1 / 1 attempts (100%)')).toBeVisible();
   await expect(page.getByText('Unknown: 1 · Not attempted: 0 · Analyzed: 1 / 2 sessions')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.screenshot({ path: 'test-results/research-results-desktop.png', fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-results-desktop.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Success', exact: true }).click();
   await expect(page.getByText('I found the delivery date.', { exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Outcome', exact: true }).selectOption('partial');
@@ -299,7 +375,7 @@ test('long plan modal stays usable on mobile and protects unsaved edits on close
   const writes = await fixture(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/studies/${ids.study}`);
-  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await openAdditionalTools(page);
   await page.getByRole('button', { name: 'Edit plan', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Success criterion', exact: true }).fill('Updated but not saved');
@@ -313,7 +389,7 @@ test('long plan modal stays usable on mobile and protects unsaved edits on close
   await dialog.getByRole('button', { name: 'Save plan version' }).scrollIntoViewIfNeeded();
   const actionHeights = await dialog.locator('.research-form-actions > button').evaluateAll(items => items.map(element => element.getBoundingClientRect().height));
   expect(Math.abs(actionHeights[0] - actionHeights[1])).toBeLessThan(1);
-  await page.screenshot({ path: 'test-results/research-plan-modal-mobile.png' });
+  await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-plan-modal-mobile.png' });
   page.once('dialog', prompt => prompt.accept());
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).toHaveCount(0);
@@ -345,7 +421,7 @@ test('summary tabs support keyboard navigation and narrow layouts keep tools rea
   await page.getByRole('button', { name: 'Version history' }).click();
   await expect(page.getByText('History will appear after the first save.')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: 'test-results/research-interview-tools-mobile.png', fullPage: true });
+  await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-interview-tools-mobile.png', fullPage: true });
 });
 
 test('new study dialog keeps keyboard focus and warns before browser navigation discards it', async ({ page }) => {
@@ -353,6 +429,7 @@ test('new study dialog keeps keyboard focus and warns before browser navigation 
   await page.goto(`/studies/${ids.study}`);
   await page.getByRole('link', { name: 'Research home', exact: true }).click();
   await page.getByTestId('research-new-study').click();
+  await page.getByTestId('research-start-manual').click();
   await page.getByTestId('research-study-title').fill('Draft study');
   page.once('dialog', prompt => prompt.dismiss());
   await page.goBack();
@@ -396,34 +473,37 @@ test('results and synthesis findings can be copied, and interviews or studies ar
     },
   });
   await page.goto(`/studies/${ids.study}#results`);
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
+  await openComparison(page);
   await expect(page.getByTestId('research-copy-results')).toBeVisible();
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
+  await openComparison(page);
   await page.getByTestId('research-copy-results').click();
-  await page.getByRole('tab', { name: 'Results', exact: true }).click();
+  await openComparison(page);
   await expect(page.getByTestId('research-copy-results')).toContainText('Copied');
-  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
+  await page.getByTestId('research-synthesis-tab').getByText('Copy or download').click();
   await expect(page.getByTestId('research-copy-synthesis')).toBeVisible();
-  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
   await page.getByTestId('research-copy-synthesis').click();
-  await page.getByRole('tab', { name: 'Synthesis', exact: true }).click();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
   await expect(page.getByTestId('research-copy-synthesis')).toContainText('Copied');
   const copied = await page.evaluate(() => window.__copiedTexts);
   expect(copied[0]).toContain('Delivery test — Task comparison');
   expect(copied[0]).toContain('1. Choose delivery: Full success: 1 / 1 attempts (100%)');
-  expect(copied[1]).toContain('Finding 1\nParticipants want clearer shipping dates.\n(Interview 1)');
+  expect(copied[1]).toContain('Participants want clearer shipping dates.');
+  expect(copied[1]).toContain('Interview 1');
 
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
   await page.getByTestId('research-archive-interview').click();
   await expect(page.getByTestId('research-archive-interview-confirm')).toBeVisible();
   await page.getByTestId('research-confirm-archive-interview').click();
-  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}$`));
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#interviews$`));
   expect(writes.find(write => write.path === `/interviews/${ids.interview}` && write.method === 'DELETE')?.body).toEqual({
     research_revision: 3,
     transcript_revision: 2,
     summary_revision: 1,
   });
 
+  await openAdditionalTools(page);
   await page.getByTestId('research-archive-study').click();
   await expect(page.getByTestId('research-archive-study-confirm')).toBeVisible();
   await page.getByTestId('research-confirm-archive-study').click();
@@ -433,7 +513,7 @@ test('results and synthesis findings can be copied, and interviews or studies ar
   });
 });
 
-test('interview search and status filtering narrow the session list and clear empty filters', async ({ page }) => {
+test('interview search narrows the session list and clears an empty search', async ({ page }) => {
   await fixture(page, {
     extraInterviews: [
       { id: '00000000-0000-4000-8000-000000000710', study_id: ids.study, workspace_id: ids.workspace, title: 'Onboarding interview', status: 'draft', summary_stale: false },
@@ -441,20 +521,13 @@ test('interview search and status filtering narrow the session list and clear em
     ],
   });
   await page.goto(`/studies/${ids.study}`);
+  await page.getByRole('tab', { name: /^Interviews\b/ }).click();
   await expect(page.getByTestId('research-interview-card')).toHaveCount(3);
 
-  const filter = page.getByTestId('research-interview-filter');
   const search = page.getByTestId('research-interview-search');
-
-  await filter.selectOption('stale');
-  await expect(page.getByTestId('research-interview-card')).toHaveCount(1);
-  await expect(page.getByRole('link', { name: 'Interview 1' })).toBeVisible();
-
-  await filter.selectOption('draft');
+  await search.fill('Onboarding');
   await expect(page.getByTestId('research-interview-card')).toHaveCount(1);
   await expect(page.getByRole('link', { name: 'Onboarding interview' })).toBeVisible();
-
-  await filter.selectOption('all');
   await search.fill('Checkout');
   await expect(page.getByTestId('research-interview-card')).toHaveCount(1);
   await expect(page.getByRole('link', { name: 'Checkout session B' })).toBeVisible();
@@ -462,7 +535,7 @@ test('interview search and status filtering narrow the session list and clear em
   await search.fill('nonexistent interview');
   await expect(page.getByTestId('research-interview-card')).toHaveCount(0);
   await expect(page.getByText('No matching studies')).toBeVisible();
-  await page.getByRole('button', { name: 'Clear search' }).click();
+  await search.clear();
   await expect(search).toHaveValue('');
   await expect(page.getByTestId('research-interview-card')).toHaveCount(3);
 });
@@ -509,6 +582,7 @@ test('study plan history restores an earlier version into the plan editor, works
     summaryJob: { id: 'job-running-1', kind: 'interview_summary', status: 'running' },
   });
   await page.goto(`/studies/${ids.study}`);
+  await openAdditionalTools(page);
   await page.getByRole('button', { name: 'Version history', exact: true }).click();
   await page.getByRole('button', { name: /Context · version 1/ }).click();
   await page.getByTestId('research-restore-plan-version').click();
@@ -518,7 +592,7 @@ test('study plan history restores an earlier version into the plan editor, works
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Members', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const usageBox = page.getByTestId('research-workspace-usage');
   await expect(usageBox).toBeVisible();
   await expect(usageBox).toContainText('2 / 5');
@@ -544,8 +618,11 @@ test('results CSV, study synthesis Markdown, interview Markdown, and transcript 
     },
   });
   await page.goto(`/studies/${ids.study}#results`);
+  await expect(page.getByTestId('research-comparison-tools')).toHaveAttribute('open', '');
   await expect(page.getByTestId('research-export-results-csv')).toBeVisible();
   await page.getByTestId('research-export-results-csv').click();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
+  await page.getByTestId('research-synthesis-tab').getByText('Copy or download').click();
   await expect(page.getByTestId('research-export-synthesis-md')).toBeVisible();
   await page.getByTestId('research-export-synthesis-md').click();
 
@@ -577,46 +654,113 @@ test('results CSV, study synthesis Markdown, interview Markdown, and transcript 
   expect(interviewDownloads[1].content).toContain("1,00:02,Participant,'=cmd|'/C calc'!A0");
 });
 
-test('duplicating a study plan creates a new study with cloned tasks and no previous interviews', async ({ page }) => {
+test('duplicating a study creates a new study with cloned shared tasks and no interviews', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}`);
-  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await openAdditionalTools(page);
   await page.getByTestId('research-duplicate-plan').click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.getByTestId('research-study-title')).toHaveValue('Delivery test (copy)');
-  await page.getByTestId('research-study-title').fill('Delivery test v2');
-  await page.getByTestId('research-study-save').click();
-  await expect(page).toHaveURL(/\/studies\/00000000-0000-4000-8000-000000000799$/);
-  await expect(page.getByRole('heading', { name: 'Delivery test v2' })).toBeVisible();
-  await expect(page.getByTestId('research-study-counts')).toContainText('Interviews0');
-  await expect(page.getByTestId('research-study-counts')).toContainText('Test tasks1');
-  const planWrite = writes.find(write => write.path === '/studies/00000000-0000-4000-8000-000000000799/versions' && write.method === 'POST');
-  expect(planWrite.body.plan.tasks).toHaveLength(1);
-  expect(planWrite.body.plan.tasks[0].title).toBe('Choose delivery');
-  expect(planWrite.body.plan.tasks[0].id).not.toBe(ids.task);
+  await expect(page.getByTestId('research-duplicate-study-confirm')).toBeVisible();
+  await page.getByTestId('research-confirm-duplicate-study').click();
+  await expect(page).toHaveURL(/\/studies\/00000000-0000-4000-8000-000000000799#brief$/);
+  await expect(page.getByRole('heading', { name: 'Delivery test' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Brief' })).toHaveAttribute('aria-selected', 'true');
+  const creation = writes.find(write => write.path === '/studies' && write.method === 'POST');
+  expect(creation.body.plan.tasks).toHaveLength(1);
+  expect(creation.body.plan.tasks[0].title).toBe('Choose delivery');
+  expect(creation.body.plan.tasks[0].id).not.toBe(ids.task);
+  expect(writes.filter(write => write.path.endsWith('/versions') && write.method === 'POST')).toHaveLength(0);
 });
 
-test('creating an interview with a recording auto-fills the title, uploads audio immediately, and opens transcription progress', async ({ page }) => {
-  const writes = await fixture(page);
+test('new interview starts at summary intake, upload advances to saved summary, and back restores interviews', async ({ page }) => {
+  const writes = await fixture(page, { finishUpload: true });
   await page.goto(`/studies/${ids.study}#interviews`);
   await page.getByTestId('research-new-interview').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByTestId('research-interview-title').fill('checkout session 01');
   await page.getByRole('button', { name: 'Create interview' }).click();
   await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}/interviews/${ids.interview}$`));
-  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('research-source-intake')).toBeVisible();
   await page.getByTestId('research-interview-audio-input').setInputFiles({
     name: 'checkout_session_01.m4a',
     mimeType: 'audio/mp4',
     buffer: Buffer.from('fake-audio-content'),
   });
-  await expect(page.getByTestId('research-transcription-progress')).toBeVisible();
+  await expect(page.getByTestId('research-summary-progress')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('The participant found delivery details.')).toBeVisible({ timeout: 10000 });
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-summary-flow-desktop.png', animations: 'disabled' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-summary-flow-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.getByTestId('research-back-to-interviews').click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#interviews$`));
+  await expect(page.getByTestId('research-interviews-tab')).toBeVisible();
   expect(writes.some(write => write.path === `/studies/${ids.study}/interviews` && write.method === 'POST')).toBe(true);
   expect(writes.some(write => write.path === `/interviews/${ids.interview}/upload-audio` && write.method === 'POST')).toBe(true);
 });
 
+test('changed study context explains stale summary and offers regeneration without impact analysis', async ({ page }) => {
+  const writes = await fixture(page, { recordOverrides: { summary_source_study_revision: 0, summary_stale: true } });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await expect(page.getByTestId('research-stale-reason')).toContainText('goal, brief or plan changed');
+  await expect(page.getByRole('button', { name: 'Check changes' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Regenerate summary' })).toBeEnabled();
+  expect(writes).toEqual([]);
+});
 
+test('failed automatic summary leaves the transcript and explicit retry available', async ({ page }) => {
+  const writes = await fixture(page, { recordOverrides: { status: 'draft', summary_revision: 0, summary_stale: false,
+    summary_data: { _system: { uploadStatus: 'completed', autoSummaryRequested: true, autoSummaryError: 'PROVIDER_FAILED', sourceSummaryRevision: 0 } } } });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await expect(page.getByTestId('research-source-intake')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate summary' })).toBeEnabled();
+  await page.getByRole('tab', { name: 'Transcript', exact: true }).click();
+  await expect(page.getByLabel('What was said')).toHaveValue('I found the delivery date.');
+  expect(writes).toEqual([]);
+});
 
+test('summary quota failure after transcript save is visible and can be retried without reupload', async ({ page }) => {
+  const writes = await fixture(page, { summaryEnqueueFailures: 1, recordOverrides: {
+    status: 'draft', summary_revision: 0, summary_data: null, summary_source_job_id: null, summary_stale: false,
+  } });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await page.getByRole('tab', { name: 'Transcript', exact: true }).click();
+  await page.getByLabel('What was said').fill('The participant needed help locating delivery details.');
+  await page.getByTestId('research-save-and-summarize').click();
+  await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('research-error').first()).toContainText('Workspace limit reached');
+  expect(writes.filter(write => write.path === `/interviews/${ids.interview}` && write.method === 'PATCH')).toHaveLength(1);
+  expect(writes.filter(write => write.path === `/interviews/${ids.interview}/summary-jobs`)).toHaveLength(1);
+  await page.getByRole('tab', { name: 'Transcript', exact: true }).click();
+  await expect(page.getByLabel('What was said')).toHaveValue('The participant needed help locating delivery details.');
+  await expect(page.getByTestId('research-save-transcript')).toBeDisabled();
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click();
+  await page.getByRole('button', { name: 'Generate summary' }).click();
+  await expect.poll(() => writes.filter(write => write.path === `/interviews/${ids.interview}/summary-jobs`).length).toBe(2);
+  await expect(page.getByTestId('research-error')).toHaveCount(0);
+  expect(writes.filter(write => write.path === `/interviews/${ids.interview}/upload-audio`)).toHaveLength(0);
+});
 
+test('participant creation assigns the session and records its revision', async ({ page }) => {
+  const writes = await fixture(page);
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await page.getByTestId('research-participant-name').fill('Participant A');
+  await page.getByTestId('research-participant-create').click();
+  await expect(page.getByTestId('research-participant-select')).toHaveValue('participant-1');
+  expect(writes.find(write => write.path === `/studies/${ids.study}/participants`)?.body).toEqual({ pseudonym: 'Participant A' });
+  expect(writes.find(write => write.path === `/interviews/${ids.interview}/participant`)?.body).toEqual({ participant_id: 'participant-1', research_revision: 3 });
+});
 
-
+test('task comparison explains missing analysis and restores an evidence job after reload', async ({ page }) => {
+  const writes = await fixture(page, { recordOverrides: { summary_stale: false }, missingOutcome: true });
+  await page.goto(`/studies/${ids.study}#results`);
+  await expect(page.getByTestId('research-task-readiness')).toBeVisible();
+  await expect(page.getByTestId('research-analyze-missing')).toBeEnabled();
+  await page.getByTestId('research-analyze-missing').click();
+  await expect.poll(() => writes.filter(write => write.path === `/interviews/${ids.interview}/evidence-jobs`).length).toBe(1);
+  await page.reload();
+  await expect(page.getByTestId('research-results-tab')).toBeVisible();
+  await expect(page.getByTestId('research-task-readiness')).toBeVisible();
+  expect(writes.filter(write => write.path === `/interviews/${ids.interview}/evidence-jobs`)).toHaveLength(1);
+});

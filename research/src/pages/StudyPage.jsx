@@ -1,229 +1,92 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ArrowUpRight, BookOpen, Check, ClipboardList, FileAudio, ListChecks, Plus, Sparkles, Trash2, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Plus } from 'lucide-react';
 import { useResearchContext } from '../app/App';
-import { decodeUploadFileName, researchKey, researchRequest, uploadInterviewAudio, useResearchQuery } from '../hooks/useResearch';
-import { EmptyState, ErrorState, Loading, Modal, ModalForm, Status } from '../components/UI';
-import StudyForm from '../components/StudyForm';
-import StudyPlanPanel from '../components/StudyPlanPanel';
-import PreparationPanel from '../components/PreparationPanel';
-import ResultsPanel from '../components/ResultsPanel';
+import { researchKey, researchRequest, useResearchQuery } from '../hooks/useResearch';
+import { EmptyState, ErrorState, Loading, Modal, ModalForm } from '../components/UI';
+import BulkInterviewUpload from '../components/BulkInterviewUpload';
+import SharedBriefPanel from '../components/SharedBriefPanel';
 import SynthesisPanel from '../components/SynthesisPanel';
+import StudyPlanPanel from '../components/StudyPlanPanel';
+import ResultsPanel from '../components/ResultsPanel';
+import { interviewStage, STUDY_TABS, studyTabFromHash, summaryIsCurrent } from '../utils/researchFlow';
 
 export default function StudyPage() {
   const { t } = useTranslation();
   const { studyId } = useParams();
-  const location = useLocation();
+  const { hash } = useLocation();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const client = useQueryClient();
   const { user, workspace } = useResearchContext();
-  const initialTab = ['overview', 'interviews', 'plan', 'results', 'synthesis'].includes(location.hash?.substring(1)) 
-    ? location.hash.substring(1) 
-    : 'overview';
-  const [activeTab, setActiveTab] = useState(initialTab);
-
-  useEffect(() => {
-    const hashTab = location.hash?.substring(1);
-    if (['overview', 'interviews', 'plan', 'results', 'synthesis'].includes(hashTab)) {
-      setActiveTab(hashTab);
-    }
-  }, [location.hash]);
+  const [tab, setTab] = useState(() => studyTabFromHash(hash));
   const [dialog, setDialog] = useState(null);
-  const [editingStudy, setEditingStudy] = useState(null);
+  const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState('');
-  const [page, setPage] = useState([]);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [search, setSearch] = useState('');
+  const [more, setMore] = useState([]);
   const [hasMore, setHasMore] = useState(true);
-  const [sessionSearch, setSessionSearch] = useState('');
-  const [sessionStatus, setSessionStatus] = useState('all');
-  const [newTitle, setNewTitle] = useState('');
-  
-  const study = useResearchQuery(user.id, workspace.id, ['study', studyId], `/studies/${studyId}`);
-  const interviews = useResearchQuery(user.id, workspace.id, ['interviews', studyId], `/studies/${studyId}/interviews`);
-  const close = useCallback(() => {
-    setDialog(null);
-    setError(null);
-    setNewTitle('');
-  }, []);
+  useEffect(() => setTab(studyTabFromHash(hash)), [hash]);
+  const study = useResearchQuery(user.id, workspace.id, ['study', studyId], `/studies/${studyId}`, true, 4000);
+  const interviews = useResearchQuery(user.id, workspace.id, ['interviews', studyId], `/studies/${studyId}/interviews`, true, 4000);
   const refresh = async () => {
-    setPage([]); setHasMore(true);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'study', studyId) }),
-      queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'interviews', studyId) }),
-      queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'studies') }),
-      queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'synthesis', studyId) }),
-    ]);
+    await Promise.all(['study', 'interviews', 'synthesis', 'studies'].map(part => client.invalidateQueries({ queryKey: part === 'studies' ? researchKey(user.id, workspace.id, part) : researchKey(user.id, workspace.id, part, studyId) })));
   };
-  const save = async (values) => {
-    setBusy(true); setError(null);
-    try {
-      await researchRequest(`/studies/${studyId}`, { method: 'PATCH', body: JSON.stringify({ ...values, revision: editingStudy.revision }) });
-      await refresh(); close(); setNotice('briefSaved');
-    } catch (err) { setError(err); } finally { setBusy(false); }
-  };
-  const create = async (event) => {
+  const createInterview = async event => {
     event.preventDefault(); setBusy(true); setError(null);
     try {
-      const formTitle = new FormData(event.currentTarget).get('title') || newTitle || '';
-      const title = (formTitle || `Interview - ${new Date().toLocaleDateString()}`).slice(0, 240);
-      const interview = await researchRequest(`/studies/${studyId}/interviews`, { method: 'POST', body: JSON.stringify({ title }) });
-      close();
-      await refresh();
-      navigate(`/studies/${studyId}/interviews/${interview.id}`, { state: { initialTab: 'transcript' } });
-    } catch (err) { setError(err); } finally { setBusy(false); }
+      const created = await researchRequest(`/studies/${studyId}/interviews`, { method: 'POST', body: JSON.stringify({ title: title.trim() || t('research.interviews') }) });
+      await refresh(); setDialog(null); setTitle(''); navigate(`/studies/${studyId}/interviews/${created.id}`);
+    } catch (cause) { setError(cause); } finally { setBusy(false); }
   };
-  const archive = async () => {
+  const manageStudy = async action => {
     setBusy(true); setError(null);
     try {
-      await researchRequest(`/studies/${studyId}`, { method: 'DELETE', body: JSON.stringify({ revision: study.data.revision }) });
-      close();
-      await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'studies') });
-      navigate('/');
-    } catch (err) { setError(err); } finally { setBusy(false); }
-  };
-  const duplicate = async (values) => {
-    setBusy(true); setError(null);
-    try {
-      const created = await researchRequest('/studies', { method: 'POST', body: JSON.stringify({ ...values, workspace_id: workspace.id }) });
-      const plan = study.data?.plan;
-      const hasPlan = Boolean(plan && (plan.prototype?.name || plan.prototype?.url || plan.prototype?.version || plan.questions?.length || plan.hypotheses?.length || plan.tasks?.length || plan.guide?.length || plan.summary_sections?.length));
-      if (hasPlan) {
-        await researchRequest(`/studies/${created.id}/versions`, {
-          method: 'POST',
-          body: JSON.stringify({
-            revision: created.revision ?? 0,
-            plan: {
-              ...plan,
-              tasks: (plan.tasks || []).map((task) => ({ ...task, id: crypto.randomUUID() })),
-            },
-          }),
-        });
+      if (action === 'archive') {
+        await researchRequest(`/studies/${studyId}`, { method: 'DELETE', body: JSON.stringify({ revision: study.data.revision }) });
+        await refresh(); navigate('/');
+      } else {
+        const original = study.data;
+        const created = await researchRequest('/studies', { method: 'POST', body: JSON.stringify({ workspace_id: workspace.id,
+          title: original.title, goal: original.goal, brief: original.brief, brief_status: original.brief_status,
+          plan: { ...original.plan, tasks: (original.plan?.tasks || []).map(task => ({ ...task, id: crypto.randomUUID() })) } }) });
+        await refresh(); navigate(`/studies/${created.id}#brief`);
       }
-      close();
-      await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'studies') });
-      navigate(`/studies/${created.id}`);
-    } catch (err) { setError(err); } finally { setBusy(false); }
+      setDialog(null);
+    } catch (cause) { setError(cause); } finally { setBusy(false); }
   };
   const loadMore = async () => {
-    const rows = [...(interviews.data || []), ...page];
-    if (!rows.length) return;
-    setLoadingMore(true);
+    const current = [...(interviews.data || []), ...more];
+    if (!current.length) return;
+    setBusy(true); setError(null);
     try {
-      const next = await researchRequest(`/studies/${studyId}/interviews?before=${encodeURIComponent(rows.at(-1).id)}`);
-      setPage((previous) => [...previous, ...next]);
-      setHasMore(next.length === 50);
-    } catch (err) { setError(err); } finally { setLoadingMore(false); }
+      const next = await researchRequest(`/studies/${studyId}/interviews?before=${encodeURIComponent(current.at(-1).id)}`);
+      setMore(old => [...old, ...next]); setHasMore(next.length === 50);
+    } catch (cause) { setError(cause); } finally { setBusy(false); }
   };
   if (study.isPending) return <Loading />;
-  if (study.isError) return <><Link to="/" className="research-back"><ArrowLeft size={16} />{t('research.returnStudies')}</Link><ErrorState error={study.error} onRetry={() => study.refetch()} /></>;
+  if (study.isError) return <ErrorState error={study.error} onRetry={() => study.refetch()} />;
   if (study.data.workspace_id !== workspace.id) return <ErrorState error={{ status: 404 }} />;
   const item = study.data;
-  const rows = [...(interviews.data || []), ...page];
-  const sessionQuery = sessionSearch.trim().toLowerCase();
-  const filteredRows = rows.filter((row) => {
-    if (sessionStatus === 'stale' && !row.summary_stale) return false;
-    if (sessionStatus !== 'all' && sessionStatus !== 'stale' && row.status !== sessionStatus) return false;
-    if (sessionQuery && !String(row.title || '').toLowerCase().includes(sessionQuery)) return false;
-    return true;
-  });
-  const interviewCount = interviews.isPending || interviews.isError ? '—' : `${rows.length}${hasMore && rows.length > 0 && rows.length % 50 === 0 ? '+' : ''}`;
-  return <div className="mx-auto max-w-[80rem] min-w-0">
-    <Link to="/" className="research-back"><ArrowLeft size={16} />{t('research.studies')}</Link>
-    {notice && <p role="status" className="mb-5 flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check size={16} />{t(`research.${notice}`)}</p>}
-    
-    <div className="grid lg:grid-cols-[220px_1fr] xl:grid-cols-[240px_1fr] gap-8 xl:gap-12 items-start">
-      <nav role="tablist" aria-label={t('research.studyNavigation')} className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-4 lg:pb-0 lg:sticky lg:top-8 scrollbar-none">
-        {[["overview", BookOpen, 'studyContext'], ["interviews", ListChecks, 'interviews'], ["plan", ClipboardList, 'researchPlan'], ["results", Sparkles, 'taskComparison'], ["synthesis", Check, 'studyResults']].map(([id, Icon, label]) => (
-          <button 
-            key={id} 
-            role="tab"
-            aria-selected={activeTab === id}
-            onClick={() => navigate(`#${id}`, { replace: true })}
-            className={`flex shrink-0 items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition whitespace-nowrap ${activeTab === id ? 'bg-white shadow-sm text-slate-900 border border-slate-200/50' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-          >
-            <Icon size={18} className={activeTab === id ? 'text-orange-600' : 'text-slate-400'} />
-            {t(`research.${label}`)}
-          </button>
-        ))}
-      </nav>
-      
-      <div className="space-y-7 min-w-0">
-      {activeTab === 'overview' && (
-        <section className="app-surface-soft p-6 sm:p-8 rounded-3xl" data-testid="research-overview-tab">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div className="research-eyebrow">{t('research.studyContext')}</div>
-            <dl className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500" data-testid="research-study-counts">
-              <div className="flex items-baseline gap-1.5"><dt>{t('research.interviews')}</dt><dd className="font-bold text-slate-800">{interviewCount}</dd></div>
-              <div className="flex items-baseline gap-1.5"><dt>{t('research.sharedTasks')}</dt><dd className="font-bold text-slate-800">{item.plan?.tasks?.length || 0}</dd></div>
-            </dl>
-          </div>
-          <h1 className="research-heading break-words text-2xl font-bold tracking-tight text-slate-900">{item.title}</h1>
-          <p className="mt-6 max-w-3xl whitespace-pre-line break-words text-lg leading-8 text-slate-700">{item.goal}</p>
-          <div className="mt-8 border-t border-slate-200/70 pt-6"><h2 className="research-subheading font-bold">{t('research.brief')}</h2><p className="mt-3 max-w-3xl whitespace-pre-line break-words text-sm leading-7 text-slate-600">{item.brief || t('research.noBrief')}</p></div>
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200/70 pt-6"><span className="text-xs text-slate-400">{t('research.revision', { version: item.revision })}</span><div className="flex flex-wrap items-center gap-3"><button type="button" className="research-secondary" onClick={() => { setError(null); setDialog('archive'); }} data-testid="research-archive-study"><Trash2 size={15} />{t('research.archiveStudy')}</button><button type="button" className="research-secondary" onClick={() => { setEditingStudy(item); setDialog('edit'); }}>{t('research.editBrief')}</button></div></div>
-          <div className="mt-8 pt-4"><PreparationPanel study={item} userId={user.id} workspaceId={workspace.id} /></div>
-        </section>
-      )}
-
-      {activeTab === 'interviews' && (
-        <section id="interviews" data-testid="research-interviews-tab">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4"><h2 className="text-xl font-bold tracking-tight text-slate-900">{t('research.interviews')}</h2><button className="research-primary" onClick={() => setDialog('create')} data-testid="research-new-interview"><Plus size={16} />{t('research.newInterview')}</button></div>
-          {interviews.isPending ? <Loading /> : interviews.isError ? <ErrorState error={interviews.error} onRetry={() => interviews.refetch()} /> : rows.length === 0 ? <EmptyState title={t('research.emptyInterviewsTitle')} description={t('research.emptyInterviewsBody')} action={t('research.newInterview')} onAction={() => setDialog('create')} /> : <div className="space-y-4"><div className="flex flex-wrap items-center gap-3"><input type="search" value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder={t('research.searchInterviews')} aria-label={t('research.searchInterviews')} data-testid="research-interview-search" className="research-field min-w-0 flex-1 sm:max-w-xs" /><select value={sessionStatus} onChange={(event) => setSessionStatus(event.target.value)} aria-label={t('research.filterInterviews')} data-testid="research-interview-filter" className="research-field w-full sm:w-auto"><option value="all">{t('research.filterAllSessions')}</option><option value="completed">{t('research.completed')}</option><option value="draft">{t('research.draft')}</option><option value="stale">{t('research.reviewNeeded')}</option></select></div>{filteredRows.length === 0 ? <EmptyState title={t('research.noSearchResults')} description={t('research.searchHint')} action={t('research.clearSearch')} onAction={() => { setSessionSearch(''); setSessionStatus('all'); }} /> : <div className="space-y-3">{filteredRows.map((row) => <Link data-testid="research-interview-card" key={row.id} to={`/studies/${studyId}/interviews/${row.id}`} className="app-surface group flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5 transition hover:-translate-y-0.5 hover:shadow-lg"><div className="min-w-0 flex-1"><h3 className="break-words text-base font-semibold tracking-tight text-slate-900">{row.title}</h3><div className="mt-2 flex flex-wrap items-center gap-2"><Status status={row.status} />{row.summary_stale && <span className="text-xs text-amber-700">{t('research.reviewNeeded')}</span>}</div></div><ArrowUpRight size={18} className="shrink-0 text-slate-300 group-hover:text-orange-600 transition" /></Link>)}{hasMore && rows.length > 0 && rows.length % 50 === 0 && <button className="research-secondary" disabled={loadingMore} onClick={loadMore}>{t(loadingMore ? 'research.loading' : 'research.loadMore')}</button>}</div>}</div>}
-        </section>
-      )}
-
-      {activeTab === 'plan' && (
-        <div id="plan" data-testid="research-plan-tab"><StudyPlanPanel study={item} userId={user.id} workspaceId={workspace.id} interviews={rows} autoDraftRequested={Boolean(location.state?.autoDraftPlan)} onDuplicate={() => { setError(null); setDialog('duplicate'); }} /></div>
-      )}
-
-      {activeTab === 'results' && (
-        <div id="results" data-testid="research-results-tab"><ResultsPanel study={item} userId={user.id} workspaceId={workspace.id} /></div>
-      )}
-
-      {activeTab === 'synthesis' && (
-        <div id="synthesis" data-testid="research-synthesis-tab"><SynthesisPanel study={item} userId={user.id} workspaceId={workspace.id} studyId={studyId} interviews={rows} /></div>
-      )}
+  const rows = [...(interviews.data || []), ...more.filter(old => !(interviews.data || []).some(row => row.id === old.id))];
+  const filtered = rows.filter(row => String(row.title || '').toLowerCase().includes(search.trim().toLowerCase()));
+  const changeTab = value => navigate(`#${value}`, { replace: true });
+  return <div className="mx-auto max-w-[80rem] min-w-0" data-testid="research-study-page">
+    <div className="mb-7 flex flex-wrap items-center justify-between gap-4"><Link to="/" className="research-back !mb-0"><ArrowLeft size={16} />{t('research.returnStudies')}</Link><button type="button" className="research-primary" onClick={() => setDialog('add')} data-testid="research-new-interview"><Plus size={17} />{t('research.newInterview')}</button></div>
+    <header className="mb-8"><div className="research-eyebrow">{t('research.study')}</div><h1 className="research-heading mt-3 break-words">{item.title}</h1><p className="mt-4 text-sm text-slate-500">{t('research.interviewCount', { count: rows.length })}{item.brief_status === 'confirmed' ? ` · ${t('research.briefConfirmed')}` : ` · ${t('research.briefDraft')}`}</p></header>
+    <nav role="tablist" aria-label={t('research.studyNavigation')} className="mb-8 flex gap-2 overflow-x-auto border-b border-slate-200" data-testid="research-study-tabs">
+      {STUDY_TABS.map((id, index) => <button key={id} role="tab" id={`study-tab-${id}`} aria-selected={tab === id} aria-controls={`study-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => changeTab(id)} onKeyDown={event => { const next = event.key === 'ArrowRight' ? (index + 1) % STUDY_TABS.length : event.key === 'ArrowLeft' ? (index + STUDY_TABS.length - 1) % STUDY_TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? STUDY_TABS.length - 1 : null; if (next == null) return; event.preventDefault(); changeTab(STUDY_TABS[next]); document.getElementById(`study-tab-${STUDY_TABS[next]}`)?.focus(); }} className={`shrink-0 border-b-[3px] px-4 py-3 font-semibold ${tab === id ? 'border-orange-600 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t(id === 'summary' ? 'research.summary' : id === 'brief' ? 'research.brief' : 'research.interviews')}{id === 'interviews' ? ` ${rows.length}` : ''}</button>)}
+    </nav>
+    <div role="tabpanel" id={`study-panel-${tab}`} aria-labelledby={`study-tab-${tab}`} className="min-w-0">
+      {tab === 'summary' && <><SynthesisPanel study={item} userId={user.id} workspaceId={workspace.id} studyId={studyId} interviews={rows} /><details open={hash === '#results'} data-testid="research-comparison-tools" className="mt-8 app-surface-soft rounded-2xl p-5"><summary className="cursor-pointer text-sm font-semibold text-slate-600">{t('research.taskComparison')}</summary><div className="mt-5"><ResultsPanel study={item} userId={user.id} workspaceId={workspace.id} interviews={rows} /></div></details></>}
+      {tab === 'interviews' && <section data-testid="research-interviews-tab"><div className="mb-6 flex flex-wrap items-center justify-between gap-4"><h2 className="research-section-heading">{t('research.interviews')}</h2><input type="search" data-testid="research-interview-search" aria-label={t('research.searchInterviews')} placeholder={t('research.searchInterviews')} value={search} onChange={event => setSearch(event.target.value)} className="research-field w-full sm:w-80" /></div>
+        {interviews.isPending ? <Loading /> : interviews.isError ? <ErrorState error={interviews.error} onRetry={() => interviews.refetch()} /> : rows.length === 0 ? <EmptyState title={t('research.emptyInterviewsTitle')} description={t('research.emptyInterviewsBody')} action={t('research.newInterview')} onAction={() => setDialog('add')} /> : <div className="space-y-3">{filtered.map(row => <Link key={row.id} data-testid="research-interview-card" to={`/studies/${studyId}/interviews/${row.id}`} className="app-surface flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5 transition hover:shadow-lg"><div><h3 className="break-words font-semibold text-slate-900">{row.title}</h3><p className={`mt-2 text-xs ${summaryIsCurrent(row, item) ? 'text-emerald-700' : 'text-slate-500'}`}>{t(`research.${interviewStage(row, item)}`)}</p></div><ArrowUpRight size={18} className="text-slate-400" /></Link>)}{!filtered.length && <p className="text-sm text-slate-500">{t('research.noSearchResults')}</p>}{hasMore && rows.length > 0 && rows.length % 50 === 0 && <button className="research-secondary" disabled={busy} onClick={loadMore}>{t('research.loadMore')}</button>}</div>}{error && <ErrorState error={error} />}
+      </section>}
+      {tab === 'brief' && <><SharedBriefPanel key={`${item.id}:${item.revision}`} study={item} interviews={rows} userId={user.id} workspaceId={workspace.id} onSaved={refresh} /><details data-testid="research-additional-tools" className="mt-8 app-surface-soft rounded-2xl p-5"><summary className="cursor-pointer text-sm font-semibold text-slate-600">{t('research.additionalResearchTools')}</summary><div className="mt-5"><div data-testid="research-plan-tab"><StudyPlanPanel study={item} userId={user.id} workspaceId={workspace.id} interviews={rows} onDuplicate={() => { setError(null); setDialog('duplicate'); }} /></div><button type="button" className="research-text-button mt-5" data-testid="research-archive-study" onClick={() => { setError(null); setDialog('archive'); }}>{t('research.archiveStudy')}</button></div></details></>}
     </div>
-    </div>
-    {dialog === 'edit' && <Modal guardChanges title={t('research.editBrief')} onClose={close} busy={busy}><StudyForm key={editingStudy.revision} study={editingStudy} onSave={save} onCancel={close} busy={busy} error={error} onReload={async () => { const latest = await study.refetch(); if (latest.data) { setEditingStudy(latest.data); setError(null); } }} /></Modal>}
-    {dialog === 'duplicate' && <Modal guardChanges title={t('research.duplicateStudy')} onClose={close} busy={busy}><p className="research-description mb-5">{t('research.duplicateStudyHint')}</p><StudyForm study={{ title: `${item.title} (${t('research.copySuffix')})`, goal: item.goal, brief: item.brief }} submitLabel="research.createDuplicate" onSave={duplicate} onCancel={close} busy={busy} error={error} /></Modal>}
-    {dialog === 'create' && (
-      <Modal guardChanges title={t('research.newInterview')} onClose={close} busy={busy}>
-        <ModalForm
-          onSubmit={create}
-          actions={
-            <>
-              <button type="button" data-modal-dismiss className="research-text-button" onClick={close}>
-                {t('research.cancel')}
-              </button>
-              <button disabled={busy} className="research-primary">
-                {t(busy ? 'research.saving' : 'research.createInterview')}
-              </button>
-            </>
-          }
-        >
-          <p className="research-description">{t('research.newInterviewHint')}</p>
-          {error && <ErrorState error={error} />}
-          <label className="block">
-            <span className="research-label">{t('research.interviewTitle')}</span>
-            <input
-              name="title"
-              maxLength={240}
-              value={newTitle}
-              onChange={(event) => setNewTitle(event.target.value)}
-              className="research-field"
-              placeholder={t('research.interviewTitlePlaceholder')}
-              autoFocus
-              data-testid="research-interview-title"
-            />
-          </label>
-        </ModalForm>
-      </Modal>
-    )}
-    {dialog === 'archive' && <Modal title={t('research.archiveStudy')} onClose={close} busy={busy}><ModalForm as="div" testId="research-archive-study-confirm" actions={<><button type="button" className="research-text-button" disabled={busy} onClick={close}>{t('research.cancel')}</button><button type="button" className="research-primary" disabled={busy} onClick={archive} data-testid="research-confirm-archive-study">{t(busy ? 'research.saving' : 'research.confirmArchive')}</button></>}><p className="research-description">{t('research.archiveStudyConfirm', { title: item.title })}</p>{error && <ErrorState error={error} onRetry={error.status === 409 ? async () => { await study.refetch(); setError(null); } : undefined} />}</ModalForm></Modal>}
+    {['archive', 'duplicate'].includes(dialog) && <Modal title={t(dialog === 'archive' ? 'research.archiveStudy' : 'research.duplicateStudy')} onClose={() => setDialog(null)} busy={busy}><div data-testid={dialog === 'archive' ? 'research-archive-study-confirm' : 'research-duplicate-study-confirm'} className="space-y-6"><p className="text-sm leading-7 text-slate-600">{t(dialog === 'archive' ? 'research.archiveStudyConfirm' : 'research.duplicateStudyHint', { title: item.title })}</p>{error && <ErrorState error={error} />}<div className="flex flex-wrap gap-3"><button className="research-secondary" disabled={busy} onClick={() => setDialog(null)}>{t('research.cancel')}</button><button className="research-primary" disabled={busy} onClick={() => manageStudy(dialog)} data-testid={dialog === 'archive' ? 'research-confirm-archive-study' : 'research-confirm-duplicate-study'}>{t(busy ? 'research.saving' : dialog === 'archive' ? 'research.confirmArchive' : 'research.duplicateStudy')}</button></div></div></Modal>}
+    {dialog === 'add' && <Modal guardChanges title={t('research.newInterview')} onClose={() => setDialog(null)} busy={busy}><div className="space-y-7"><BulkInterviewUpload studyId={studyId} autoSummary={item.brief_status !== 'draft'} onFinished={async complete => { await refresh(); if (complete) setDialog(null); }} /><div className="border-t border-slate-200 pt-6"><h3 className="font-semibold">{t('research.addTranscriptManually')}</h3><form className="mt-4 space-y-4" onSubmit={createInterview}><label className="block"><span className="research-label">{t('research.interviewTitle')}</span><input className="research-field" maxLength={240} value={title} onChange={event => setTitle(event.target.value)} /></label><button className="research-secondary" disabled={busy}>{t('research.createInterview')}</button></form>{error && <ErrorState error={error} />}</div></div></Modal>}
   </div>;
 }

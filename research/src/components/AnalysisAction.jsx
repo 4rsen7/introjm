@@ -3,7 +3,7 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { useAnalysisJob } from '../hooks/useAnalysisJob';
 import { ErrorState } from './UI';
 
-export default function AnalysisAction({ userId, workspaceId, studyId, interviewId, disabled = false, disabledReason, dirty = false }) {
+export default function AnalysisAction({ userId, workspaceId, studyId, interviewId, disabled = false, disabledReason, dirty = false, existing = false, onStart }) {
   const { t } = useTranslation();
   const demo = import.meta.env.VITE_RESEARCH_DEMO === 'true';
   const analysis = useAnalysisJob({ userId, workspaceId, studyId, interviewId });
@@ -11,9 +11,9 @@ export default function AnalysisAction({ userId, workspaceId, studyId, interview
   const status = analysis.job?.status;
   return <div className="space-y-3" data-testid={interviewId ? 'summary-action' : 'synthesis-action'}>
     <div className="flex flex-wrap items-center gap-3">
-      <button className="research-primary" onClick={analysis.enqueue} disabled={disabled || dirty || unavailable || analysis.loading || analysis.busy}>
+      <button className={existing ? 'research-secondary' : 'research-primary'} onClick={() => { onStart?.(); analysis.enqueue(); }} disabled={disabled || dirty || unavailable || analysis.loading || analysis.busy}>
         {analysis.busy || analysis.loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-        {t(`research.${analysis.busy ? 'analysisWorking' : interviewId ? 'generateSummary' : 'generateSynthesis'}`)}
+        {t(`research.${analysis.busy ? 'analysisWorking' : interviewId ? existing ? 'regenerateSummary' : 'generateSummary' : existing ? 'regenerateSynthesis' : 'generateSynthesis'}`)}
       </button>
       {analysis.busy && analysis.job?.id && <button type="button" className="research-secondary" disabled={analysis.canceling} onClick={analysis.cancel} data-testid="research-cancel-job">{t('research.cancelJob')}</button>}
     </div>

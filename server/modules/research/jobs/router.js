@@ -26,7 +26,7 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
         } catch (error) { next(error); }
     };
     async function studyAccess(req, id) {
-        const study = assertDatabaseResult(await db.from('research_studies').select('id,workspace_id,revision,context_revision,current_version_id,archived_at').eq('id', validate.uuid(id)).maybeSingle());
+        const study = assertDatabaseResult(await db.from('research_studies').select('id,workspace_id,revision,context_revision,auto_context_revision,current_version_id,brief_status,refresh_context_revision,flow_pending,flow_error_code,archived_at').eq('id', validate.uuid(id)).maybeSingle());
         if (!study || study.archived_at) throw new ResearchError(404, 'NOT_FOUND', 'Study not found');
         await requireProductWorkspace(db, req.researchUser.id, study.workspace_id);
         return study;
@@ -61,8 +61,10 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
     }
     router.get('/studies/:id/preparation-job', authenticateRoute, route(async (req, res) => {
         const study = await studyAccess(req, req.params.id);
-        send(res, assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,study_version_id,study_revision`)
-            .eq('study_id', study.id).in('kind', ['brief_preparation', 'guide_preparation']).order('created_at', { ascending: false }).limit(1).maybeSingle()));
+        const job = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,study_version_id,study_revision,source_manifest`)
+            .eq('study_id', study.id).in('kind', ['brief_preparation', 'guide_preparation']).order('created_at', { ascending: false }).limit(1).maybeSingle());
+        const sources = job ? await rpc('research_brief_sources', { p_study_id: study.id }) : [];
+        send(res, job ? { ...job, is_current: job.study_version_id === study.current_version_id && isDeepStrictEqual(job.source_manifest, sources) } : null);
     }));
     router.get('/interviews/:id/impact', authenticateRoute, route(async (req, res) => {
         const { interview } = await interviewAccess(req);
@@ -144,9 +146,21 @@ function createResearchJobsRouter({ supabaseAdmin: db, authenticate, enabled = f
         const study = await studyAccess(req, req.params.id);
         const latest = assertDatabaseResult(await db.from('research_analysis_jobs').select(`${JOB_COLUMNS},output,source_manifest,context_revision,study_version_id`)
             .eq('study_id', study.id).eq('kind', 'study_synthesis').eq('status', 'completed').order('created_at', { ascending: false }).limit(1).maybeSingle());
-        if (!latest || !latest.study_version_id || latest.study_version_id !== study.current_version_id || latest.context_revision !== study.context_revision) return send(res, null);
         const manifest = await rpc('research_synthesis_sources', { p_study_id: study.id });
-        send(res, isDeepStrictEqual(manifest, latest.source_manifest) ? latest : null);
+        const interviews = assertDatabaseResult(await db.from('interviews').select('id,transcript_revision,status,summary_stale,summary_source_job_id,summary_source_study_revision')
+            .eq('study_id', study.id).is('research_archived_at', null).limit(501));
+        const hasTranscript = interviews.some(item => item.transcript_revision > 0 && item.status !== 'processing');
+        const outstanding = interviews.some(item => item.status === 'processing' || (item.transcript_revision > 0
+            && (item.summary_stale || !item.summary_source_job_id || item.summary_source_study_revision !== study.context_revision)));
+        const briefChanged = study.auto_context_revision != null && study.auto_context_revision !== study.context_revision
+            || Boolean(latest && (latest.context_revision !== study.context_revision || latest.study_version_id !== study.current_version_id));
+        const isCurrent = Boolean(latest && !briefChanged && !outstanding && isDeepStrictEqual(manifest, latest.source_manifest));
+        const staleReason = briefChanged ? 'brief_changed' : latest && !isCurrent ? 'sources_changed' : null;
+        send(res, { id: latest?.id || null, output: latest?.output || null,
+            source_manifest: latest?.source_manifest || [], context_revision: latest?.context_revision ?? null,
+            study_version_id: latest?.study_version_id || null, is_current: isCurrent,
+            refresh_available: study.brief_status === 'confirmed' && hasTranscript && (!isCurrent || Boolean(study.flow_error_code))
+                && (!study.flow_pending || Boolean(study.flow_error_code)), stale_reason: staleReason });
     }));
     router.use((error, req, res, next) => {
         const message = String(error?.message || '');

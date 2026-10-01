@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ClipboardList, Copy, History, Check, ExternalLink, Loader2, Sparkles } from 'lucide-react';
@@ -41,6 +41,8 @@ export function StudyPlanForm({ plan, busy, error, onSave, onClose, prepend }) {
 export default function StudyPlanPanel({ study, userId, workspaceId, interviews = [], autoDraftRequested = false, onDuplicate }) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const demo = import.meta.env.VITE_RESEARCH_DEMO === 'true';
+  const draftRequested = useRef(false);
   const [draftStudy, setDraftStudy] = useState(null);
   const [aiDraftModal, setAiDraftModal] = useState(null);
   const [aiDraftEnabled, setAiDraftEnabled] = useState(Boolean(autoDraftRequested));
@@ -57,13 +59,15 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
   const hasCompletedInterview = Array.isArray(interviews) && interviews.some(row => row.status === 'completed');
 
   useEffect(() => {
-    if (!autoOpenPending || prepJob.isPending || prepJob.busy) return;
+    if (!autoOpenPending || prepJob.isPending || prepJob.busy || demo) return;
+    if (prepJob.error) { setAutoOpenPending(false); return; }
     if (proposal && proposalIsCurrent) {
-      setAiDraftModal({ ...proposal, jobId: prepJob.data.id, revision: study.revision });
+      setAiDraftModal({ ...proposal, goal: study.goal, brief: study.brief || '', jobId: prepJob.data.id, revision: study.revision });
       setAutoOpenPending(false);
       return;
     }
-    if (!prepJob.data || !proposalIsCurrent) {
+    if ((!prepJob.data || !proposalIsCurrent || prepJob.data.status !== 'completed') && !draftRequested.current) {
+      draftRequested.current = true;
       prepJob.start.mutate({ endpoint: `/studies/${study.id}/brief-jobs`, body: { answers: '' } });
     }
   }, [autoOpenPending, prepJob, proposal, proposalIsCurrent, study.id, study.revision]);
@@ -71,14 +75,12 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
   const handleRequestAiDraft = () => {
     setError(null);
     setSaved(false);
+    draftRequested.current = false;
     setAiDraftEnabled(true);
     if (proposal && proposalIsCurrent) {
-      setAiDraftModal({ ...proposal, jobId: prepJob.data.id, revision: study.revision });
+      setAiDraftModal({ ...proposal, goal: study.goal, brief: study.brief || '', jobId: prepJob.data.id, revision: study.revision });
     } else {
       setAutoOpenPending(true);
-      if (aiDraftEnabled && !prepJob.busy) {
-        prepJob.start.mutate({ endpoint: `/studies/${study.id}/brief-jobs`, body: { answers: '' } });
-      }
     }
   };
 
@@ -118,6 +120,9 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
   return <section className="research-card">
     <div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-3"><ClipboardList size={22} className="text-orange-600" /><h2 className="research-section-heading">{t('research.researchPlan')}</h2></div><span className="text-xs text-slate-400">{t('research.contextVersion', { version: study.context_revision ?? study.revision })}</span></div>
     <p className="research-description mt-3">{t('research.planHint')}</p>
+    <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-5 text-sm leading-7 text-slate-600" data-testid="research-plan-purpose">{t('research.planPurpose')}</div>
+    {interviews.some(row => row.summary_revision > 0) && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-5 text-sm leading-7 text-amber-800" data-testid="research-plan-change-warning">{t('research.planChangeWarning')}</p>}
+    {prepJob.error && <div className="mt-4"><ErrorState error={prepJob.error} /></div>}
     {saved && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-emerald-700"><Check size={16} />{t('research.planSaved')}</p>}
     {plan.prototype?.url && /^https?:\/\//i.test(plan.prototype.url) && <a href={plan.prototype.url} target="_blank" rel="noopener noreferrer" className="research-secondary mt-5"><ExternalLink size={15} />{t('research.openPrototype')}</a>}
     {plan.prototype?.name && <p className="mt-5 text-sm font-semibold">{plan.prototype.name} {plan.prototype.version}</p>}
@@ -140,7 +145,7 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
             </div>
             <button
               type="button"
-              disabled={prepJob.busy}
+              disabled={prepJob.busy || demo}
               onClick={handleRequestAiDraft}
               className="research-primary shrink-0"
               data-testid="research-generate-plan-from-interview"
@@ -168,8 +173,8 @@ export default function StudyPlanPanel({ study, userId, workspaceId, interviews 
     <div className="mt-6 flex flex-wrap gap-3">{plan.tasks.length > 0 && <button className="research-secondary" onClick={() => { setDraftStudy(study); setError(null); setSaved(false); }}>{t('research.editPlan')}</button>}{onDuplicate && <button type="button" className="research-secondary" onClick={onDuplicate} data-testid="research-duplicate-plan"><Copy size={16} />{t('research.duplicateStudy')}</button>}<button aria-expanded={showHistory} className="research-secondary" onClick={() => setShowHistory(value => !value)}><History size={16} />{t('research.versionHistory')}</button></div>
     {showHistory && <div className="mt-5">{history.isPending ? <Loading /> : history.isError ? <ErrorState error={history.error} onRetry={() => history.refetch()} /> : history.data.pages.flat().length === 0 ? <p className="text-sm text-slate-500">{t('research.noHistory')}</p> : <ol className="space-y-2">{history.data.pages.flat().map(row => <li key={row.id}><button className="research-secondary w-full justify-between text-left" onClick={() => setHistoryVersion(row.id)}>{t('research.contextVersion', { version: row.context_revision })} · {new Date(row.created_at).toLocaleDateString()}</button></li>)}</ol>}</div>}
     {showHistory && history.hasNextPage && <button className="research-secondary mt-4" disabled={history.isFetchingNextPage} onClick={() => history.fetchNextPage()}>{t('research.loadMore')}</button>}
-    {draftStudy && <Modal guardChanges title={t('research.editPlan')} onClose={() => !busy && setDraftStudy(null)} busy={busy}><StudyPlanForm plan={draftStudy.plan} onSave={save} onClose={() => setDraftStudy(null)} busy={busy} error={error} /></Modal>}
-    {aiDraftModal && <Modal guardChanges title={t('research.reviewGeneratedPlanDraft')} onClose={() => !busy && setAiDraftModal(null)} busy={busy}><StudyPlanForm plan={aiDraftModal.plan} onSave={saveAiDraft} onClose={() => setAiDraftModal(null)} busy={busy} error={error} prepend={<div className="space-y-4"><label className="block"><span className="research-label">{t('research.sharedGoal')}</span><textarea rows={3} maxLength={12000} className="research-field" value={aiDraftModal.goal} onChange={e => setAiDraftModal(old => ({ ...old, goal: e.target.value }))} /></label><label className="block"><span className="research-label">{t('research.brief')}</span><textarea rows={4} maxLength={30000} className="research-field" value={aiDraftModal.brief || ''} onChange={e => setAiDraftModal(old => ({ ...old, brief: e.target.value }))} /></label></div>} /></Modal>}
+    {draftStudy && <Modal guardChanges title={t('research.editPlan')} onClose={() => !busy && setDraftStudy(null)} busy={busy}><StudyPlanForm plan={draftStudy.plan} onSave={save} onClose={() => setDraftStudy(null)} busy={busy} error={error} prepend={interviews.some(row => row.summary_revision > 0) ? <p className="research-notice">{t('research.planChangeWarning')}</p> : null} /></Modal>}
+    {aiDraftModal && <Modal guardChanges title={t('research.reviewGeneratedPlanDraft')} onClose={() => !busy && setAiDraftModal(null)} busy={busy}><StudyPlanForm plan={aiDraftModal.plan} onSave={saveAiDraft} onClose={() => setAiDraftModal(null)} busy={busy} error={error} prepend={<div className="space-y-4"><p className="research-notice">{t('research.planDraftPreservesContext')}</p>{interviews.some(row => row.summary_revision > 0) && <p className="research-notice">{t('research.planChangeWarning')}</p>}<label className="block"><span className="research-label">{t('research.sharedGoal')}</span><textarea rows={3} maxLength={12000} className="research-field" value={aiDraftModal.goal} onChange={e => setAiDraftModal(old => ({ ...old, goal: e.target.value }))} /></label><label className="block"><span className="research-label">{t('research.brief')}</span><textarea rows={4} maxLength={30000} className="research-field" value={aiDraftModal.brief || ''} onChange={e => setAiDraftModal(old => ({ ...old, brief: e.target.value }))} /></label></div>} /></Modal>}
     {historyVersion && <Modal title={t('research.versionHistory')} onClose={() => setHistoryVersion(null)}>{detail.isPending ? <Loading /> : detail.isError ? <ErrorState error={detail.error} /> : <div className="space-y-5"><p className="font-semibold">{detail.data.goal}</p><p className="whitespace-pre-line text-sm leading-7 text-slate-600">{detail.data.brief}</p>{detail.data.plan.tasks.map(task => <div key={task.id}><h3 className="research-subheading">{task.title}</h3><p className="text-sm leading-6 text-slate-600">{task.instruction}</p><p className="mt-2 text-sm text-emerald-800">{task.success_criteria}</p></div>)}<div className="border-t border-slate-200/70 pt-4"><button type="button" className="research-secondary" onClick={() => { setDraftStudy({ ...study, plan: detail.data.plan }); setHistoryVersion(null); setError(null); setSaved(false); }} data-testid="research-restore-plan-version">{t('research.restorePlanVersion')}</button></div></div>}</Modal>}
   </section>;
 }

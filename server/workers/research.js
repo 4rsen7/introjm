@@ -48,23 +48,12 @@ async function main() {
     while (!stopping) {
         let result;
         try {
+            // Durable flow state is stored in the database, so closing a browser does not stop a batch.
+            const { error: flowError } = await db.rpc('research_continue_flows');
+            if (flowError) throw flowError;
             result = await processNext({ db, generateText, signal: active.signal,
                 runMedia: mediaEnabled ? (job, options) => runMediaTranscriptionJob({ db, storage, job, transcriptionService, ...options }) : undefined,
                 onEvent: event => console.info('[Research worker]', event) });
-            if (result?.kind === 'interview_summary' && result?.status === 'completed' && result?.study_id && result?.requested_by) {
-                try {
-                    const { data: studyRow } = await db.from('research_studies').select('id,plan,archived_at').eq('id', result.study_id).maybeSingle();
-                    if (studyRow && !studyRow.archived_at && (!Array.isArray(studyRow.plan?.tasks) || studyRow.plan.tasks.length === 0)) {
-                        await db.rpc('research_enqueue_intelligence', {
-                            p_user_id: result.requested_by,
-                            p_kind: 'brief_preparation',
-                            p_study_id: result.study_id,
-                            p_interview_id: null,
-                            p_settings: { description: 'Auto-draft plan from first analyzed interview', answers: '' },
-                        });
-                    }
-                } catch (_) { /* non-fatal auto-draft enqueue */ }
-            }
             if (mediaEnabled && Date.now() - cleanedAt > 60000) { await cleanupExpiredMedia({ db, storage }); cleanedAt = Date.now(); }
         }
         catch (error) { console.error('Research worker iteration failed:', error?.code || error?.message || 'ITERATION_FAILED'); }

@@ -35,7 +35,7 @@ async function mockResearch(page) {
         goal: 'Find the delivery time', revision: 0,
       })));
     }
-    if (path === `/studies/${ids.study}`) return send({ id: ids.study, workspace_id: ids.workspace, title: 'Last study', goal: 'Find the delivery time', revision: 0 });
+    if (path === `/studies/${ids.study}`) return send({ id: ids.study, workspace_id: ids.workspace, title: 'Last study', goal: 'Find the delivery time', brief_status: 'confirmed', revision: 0, plan: { tasks: [] } });
     if (path.startsWith('/studies/') && path.endsWith('/interviews')) return send([{ id: ids.interview, study_id: ids.study, workspace_id: ids.workspace, title: 'Session 01', status: 'draft' }]);
     if (path === `/interviews/${ids.interview}`) return send({
       id: ids.interview, study_id: ids.study, workspace_id: ids.workspace, title: 'Session 01', status: 'draft',
@@ -53,6 +53,17 @@ test('study pagination reaches the end and preserves version zero', async ({ pag
   await page.getByTestId('research-load-more').click();
   await expect(page.getByTestId('research-study-card')).toHaveCount(51);
   await expect(page.getByTestId('research-load-more')).toHaveCount(0);
+});
+
+test('study navigation has three primary tabs and places return opposite add interview', async ({ page }) => {
+  await mockResearch(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/studies/${ids.study}`);
+  await expect(page.getByTestId('research-study-tabs').getByRole('tab')).toHaveCount(3);
+  const back = await page.getByRole('link', { name: 'Return to studies' }).boundingBox();
+  const add = await page.getByTestId('research-new-interview').boundingBox();
+  expect(back.x).toBeLessThan(add.x);
+  expect(Math.abs((back.y + back.height / 2) - (add.y + add.height / 2))).toBeLessThan(8);
 });
 
 test('unsaved transcript blocks home, workspace switch, logout, and browser back', async ({ page }) => {
@@ -98,13 +109,10 @@ test('new pages start at the top while study result links still reach their sect
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   
   await page.goBack();
-  await page.getByRole('tab', { name: 'Results' }).click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#interviews$`));
+  await page.goto(`/studies/${ids.study}#results`);
   
   await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#results$`));
-  await expect.poll(() => page.locator('#results').evaluate(element => {
-    if (!element) return 0;
-    const header = document.querySelector('header').getBoundingClientRect();
-    return Math.round(element.getBoundingClientRect().top - header.bottom);
-  })).toBeGreaterThanOrEqual(0);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect(page.getByRole('tab', { name: 'Summary' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('research-comparison-tools')).toHaveAttribute('open', '');
 });

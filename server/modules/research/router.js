@@ -1,8 +1,9 @@
 const express = require('express');
 const { ResearchError, assertDatabaseResult, listProductWorkspaces, requireProductWorkspace } = require('../access/productScope');
 const validate = require('./validation');
+const { wakeResearchWorker } = require('./jobs/worker');
 
-const INTERVIEW_LIST_COLUMNS = 'id,workspace_id,study_id,user_id,title,type,status,created_at,updated_at,research_revision,transcript_revision,summary_revision,summary_stale,research_archived_at';
+const INTERVIEW_LIST_COLUMNS = 'id,workspace_id,study_id,user_id,title,type,status,created_at,updated_at,research_revision,transcript_revision,summary_revision,summary_stale,summary_source_study_revision,summary_source_job_id,research_participant_id,research_archived_at';
 const RPC_ERRORS = {
     RESEARCH_ACCESS_REQUIRED: [403, 'Research beta access is required'],
     RESEARCH_LIMIT_REACHED: [403, 'Research beta limit reached'],
@@ -13,6 +14,10 @@ const RPC_ERRORS = {
     RESEARCH_NO_TASKS: [409, 'Define shared tasks before analyzing task outcomes'],
     RESEARCH_CONTEXT_CHANGED: [409, 'Regenerate the summary for the current study context first'],
     RESEARCH_REPORT_TOO_LARGE: [422, 'This study exceeds the current report limit'],
+    RESEARCH_BRIEF_REQUIRED: [409, 'Confirm the shared brief before analyzing interviews'],
+    RESEARCH_SOURCES_PENDING: [409, 'Wait for all interviews to finish uploading'],
+    RESEARCH_NO_SOURCES: [409, 'Add a completed interview first'],
+    RESEARCH_INPUT_TOO_LARGE: [422, 'The uploaded interviews exceed the current analysis limit'],
 };
 
 function publicError(error) {
@@ -84,13 +89,48 @@ function createResearchRouter({ supabaseAdmin: db, authenticate, enabled = false
         const body = req.body || {};
         const workspaceId = validate.uuid(body.workspace_id, 'workspace_id');
         await requireProductWorkspace(db, req.researchUser.id, workspaceId);
-        send(res, await rpc('research_create_study', {
-            p_user_id: req.researchUser.id, p_workspace_id: workspaceId,
-            p_title: validate.text(body.title, 'title'), p_goal: validate.text(body.goal, 'goal', 12000),
-            p_brief: validate.text(body.brief, 'brief', 30000, true),
-        }), 201);
+        const args = { p_user_id: req.researchUser.id, p_workspace_id: workspaceId,
+            p_title: validate.text(body.title, 'title'),
+            p_goal: body.brief_status === 'draft' ? validate.text(body.goal || '', 'goal', 12000, true) || '' : validate.text(body.goal, 'goal', 12000),
+            p_brief: validate.text(body.brief, 'brief', 30000, true) };
+        if (body.brief_status != null && !['draft', 'confirmed'].includes(body.brief_status)) throw new ResearchError(400, 'RESEARCH_INVALID_INPUT', 'Invalid brief status');
+        send(res, await rpc(body.brief_status == null && body.plan == null ? 'research_create_study' : 'research_create_study_flow',
+            body.brief_status == null && body.plan == null ? args : { ...args, p_brief_status: body.brief_status || 'confirmed',
+                p_plan: validate.studyPlan(body.plan || {}) }), 201);
     }));
     router.get('/studies/:id', route(async (req, res) => send(res, await studyAccess(req.researchUser.id, req.params.id))));
+    async function saveSharedBrief(req, res, confirm) {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        const body = req.body || {};
+        const saved = await rpc('research_save_brief', {
+            p_user_id: req.researchUser.id, p_study_id: study.id, p_revision: validate.revision(body.revision),
+            p_title: validate.text(body.title, 'title'), p_goal: validate.text(body.goal, 'goal', 12000),
+            p_brief: validate.text(body.brief, 'brief', 30000, true), p_plan: validate.studyPlan(body.plan),
+            p_confirm: confirm, p_preparation_job_id: body.preparation_job_id ? validate.uuid(body.preparation_job_id) : null,
+        });
+        if (confirm) wakeResearchWorker();
+        send(res, saved);
+    }
+    router.post('/studies/:id/brief-confirm', route((req, res) => saveSharedBrief(req, res, true)));
+    router.patch('/studies/:id/brief', route((req, res) => saveSharedBrief(req, res, false)));
+    router.post('/studies/:id/refresh-results', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        const result = await rpc('research_refresh_results', { p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_revision: validate.revision(req.body?.revision) });
+        wakeResearchWorker();
+        send(res, result);
+    }));
+    router.post('/studies/:id/upload-batches', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        send(res, await rpc('research_upload_batch', { p_user_id: req.researchUser.id, p_study_id: study.id, p_batch_id: null }));
+    }));
+    router.post('/studies/:id/upload-batches/complete', route(async (req, res) => {
+        const study = await studyAccess(req.researchUser.id, req.params.id);
+        const result = await rpc('research_upload_batch', { p_user_id: req.researchUser.id, p_study_id: study.id,
+            p_batch_id: validate.uuid(req.body?.batch_id, 'batch_id') });
+        wakeResearchWorker();
+        send(res, result);
+    }));
     router.post('/studies/:id/versions', route(async (req, res) => {
         const study = await studyAccess(req.researchUser.id, req.params.id);
         if (req.body?.preparation_job_id) {

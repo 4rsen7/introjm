@@ -15,6 +15,9 @@ import ImpactPanel from '../components/ImpactPanel';
 import { EvidenceAction } from '../components/ResultsPanel';
 import InterviewSources from '../components/InterviewSources';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import InterviewPipeline from '../components/InterviewPipeline';
+import ParticipantPanel from '../components/ParticipantPanel';
+import { interviewStage } from '../utils/researchFlow';
 
 const INTERVIEWER_SPEAKERS = new Set(['interviewer', 'moderator', 'researcher', 'дослідник', 'інтервʼюер', 'інтерв’юер', 'модератор']);
 const isInterviewerSpeaker = (speaker = '') => INTERVIEWER_SPEAKERS.has(String(speaker || '').trim().toLowerCase());
@@ -58,8 +61,6 @@ export default function InterviewPage() {
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [isDraggingAudio, setIsDraggingAudio] = useState(false);
-  const [processingStageIndex, setProcessingStageIndex] = useState(1);
-  const [summaryStageIndex, setSummaryStageIndex] = useState(0);
   const audioInputRef = useRef(null);
   const parsedBulk = useMemo(() => parseBulkTranscript(bulkText), [bulkText]);
   const summaryRef = useRef(null);
@@ -79,7 +80,6 @@ export default function InterviewPage() {
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 2500); return () => clearTimeout(timer); }, [copied]);
   const study = useResearchQuery(user.id, workspace.id, ['study', studyId], `/studies/${studyId}`);
   const interview = useResearchQuery(user.id, workspace.id, ['interview', interviewId], `/interviews/${interviewId}`);
-  const summaryAnalysis = useAnalysisJob({ userId: user.id, workspaceId: workspace.id, studyId, interviewId });
   const record = interview.data;
   const summary = useMemo(() => normalizeInterviewSummary(record?.summary_data), [record?.summary_data]);
   const systemState = record?.summary_data?._system || {};
@@ -87,20 +87,12 @@ export default function InterviewPage() {
   const isProcessingUpload = record?.status === 'processing' || systemState.uploadStatus === 'processing';
   const isFailedUpload = record?.status === 'failed' || systemState.uploadStatus === 'failed';
   const serverUploadError = systemState.uploadError || '';
-
-  useEffect(() => {
-    if (!summaryAnalysis.busy) {
-      setSummaryStageIndex(0);
-      return undefined;
-    }
-    setSummaryStageIndex(0);
-    const t1 = setTimeout(() => setSummaryStageIndex(1), 3500);
-    const t2 = setTimeout(() => setSummaryStageIndex(2), 9000);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
-  }, [summaryAnalysis.busy]);
+  const waitingForAutoSummary = Boolean(systemState.autoSummaryRequested && !isFailedUpload && !systemState.autoSummaryError
+    && record?.summary_revision <= (systemState.sourceSummaryRevision ?? -1));
+  const summaryAnalysis = useAnalysisJob({ userId: user.id, workspaceId: workspace.id, studyId, interviewId, watch: isProcessingUpload || waitingForAutoSummary, watchSince: systemState.startedAt });
+  const autoSummaryStopped = ['failed', 'stale', 'canceled'].includes(summaryAnalysis.job?.status)
+    && (!systemState.startedAt || new Date(summaryAnalysis.job?.created_at) >= new Date(systemState.startedAt));
+  const processingSummary = summaryAnalysis.busy || (waitingForAutoSummary && !autoSummaryStopped && !isProcessingUpload);
 
   useEffect(() => {
     if (!record || dirty) return;
@@ -111,16 +103,12 @@ export default function InterviewPage() {
 
   useEffect(() => {
     if (!record || tabTouched) return;
-    const hasTranscript = Array.isArray(record.transcript_data) && record.transcript_data.length > 0;
-    if (isProcessingUpload || summaryAnalysis?.busy) {
-      setTab('summary');
-    } else if (!summary && !hasTranscript) {
-      setTab('transcript');
-    }
-  }, [record, summary, isProcessingUpload, tabTouched]);
+    if (isProcessingUpload || processingSummary) setTab('summary');
+  }, [record, isProcessingUpload, processingSummary, tabTouched]);
 
   useEffect(() => {
-        const pollTimer = setInterval(async () => {
+    if (!isProcessingUpload && !isUploadingAudio && (!waitingForAutoSummary || autoSummaryStopped) && !summaryAnalysis.busy) return;
+    const pollTimer = setInterval(async () => {
       const latest = await interview.refetch();
       const latestData = latest.data;
       const stillProcessing = latestData?.status === 'processing' || latestData?.summary_data?._system?.uploadStatus === 'processing';
@@ -132,21 +120,18 @@ export default function InterviewPage() {
     return () => {
       clearInterval(pollTimer);
     };
-  }, [isProcessingUpload, isUploadingAudio, interview, queryClient, user.id, workspace.id, studyId, interviewId]);
+  }, [isProcessingUpload, isUploadingAudio, waitingForAutoSummary, autoSummaryStopped, summaryAnalysis.busy, interview.refetch, queryClient, user.id, workspace.id, studyId, interviewId]);
 
   const handleAudioFileUpload = async (file) => {
-    if (!file || isUploadingAudio || isProcessingUpload) return;
+    if (!file || dirty || isUploadingAudio || isProcessingUpload || processingSummary) return;
     setUploadError('');
     setError(null);
     setSaved(false);
-    setTab('transcript');
+    setTab('summary');
     setTabTouched(true);
     setIsUploadingAudio(true);
-    setProcessingStageIndex(0);
-    const stageTimer1 = setTimeout(() => setProcessingStageIndex(1), 3000);
-    const stageTimer2 = setTimeout(() => setProcessingStageIndex(2), 12000);
     try {
-      const updated = await uploadInterviewAudio(interviewId, file, { autoSummary: true });
+      const updated = await uploadInterviewAudio(interviewId, file, { autoSummary: study.data?.brief_status !== 'draft' });
       if (updated) {
         queryClient.setQueryData(researchKey(user.id, workspace.id, 'interview', interviewId), updated);
       } else {
@@ -157,8 +142,6 @@ export default function InterviewPage() {
     } catch (err) {
       setUploadError(err?.message || t('research.uploadFailed'));
     } finally {
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
       setIsUploadingAudio(false);
       if (audioInputRef.current) audioInputRef.current.value = '';
     }
@@ -175,7 +158,7 @@ export default function InterviewPage() {
     setSaved(false);
   };
   const save = async (event) => {
-    event.preventDefault(); setError(null); setSaved(false);
+    event.preventDefault(); const generate = event.nativeEvent.submitter?.value === 'generate'; setError(null); setSaved(false);
     if (segments.some((row) => !row.text?.trim())) { setError({ code: 'INVALID_TRANSCRIPT' }); return; }
     setBusy(true);
     try {
@@ -188,6 +171,7 @@ export default function InterviewPage() {
       await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'synthesis', studyId) });
       await queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'results', studyId) });
       setDirty(false); setSaved(true);
+      if (generate && study.data?.brief_status !== 'draft') { setTab('summary'); setTabTouched(true); await summaryAnalysis.enqueueAsync(); }
     } catch (err) { setError(err); } finally { setBusy(false); }
   };
   const archiveInterview = async () => {
@@ -203,11 +187,11 @@ export default function InterviewPage() {
         queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'synthesis', studyId) }),
         queryClient.invalidateQueries({ queryKey: researchKey(user.id, workspace.id, 'results', studyId) }),
       ]);
-      navigate(`/studies/${studyId}`);
+      navigate(`/studies/${studyId}#interviews`);
     } catch (err) { setArchiveError(err); } finally { setBusy(false); }
   };
   const reset = async () => { setDirty(false); setError(null); setSaved(false); const latest = await interview.refetch(); if (latest.data) { setTitle(latest.data.title || ''); setSegments(Array.isArray(latest.data.transcript_data) ? latest.data.transcript_data : []); } };
-  const back = <Link to={`/studies/${studyId}#interviews`} className="research-back"><ArrowLeft size={16} /><span>{study.data?.title || t('research.returnStudy')}</span></Link>;
+  const back = <Link to={`/studies/${studyId}#interviews`} className="research-back" data-testid="research-back-to-interviews"><ArrowLeft size={16} /><span>{t('research.backToInterviews')}</span></Link>;
   if (study.isPending || interview.isPending) return <Loading />;
   if (study.isError || interview.isError) return <>{back}<ErrorState error={study.error || interview.error} onRetry={() => { study.refetch(); interview.refetch(); }} /></>;
   if (study.data.workspace_id !== workspace.id || record.workspace_id !== workspace.id || record.study_id !== studyId) return <>{back}<ErrorState error={{ status: 404 }} /></>;
@@ -217,16 +201,6 @@ export default function InterviewPage() {
     if (next === null) return;
     event.preventDefault(); setTabTouched(true); setTab(tabs[next]); document.getElementById(`interview-tab-${tabs[next]}`)?.focus();
   };
-  const uploadStages = [
-    t('research.uploadStagePreparing'),
-    t('research.uploadStageTranscribing'),
-    t('research.uploadStageSaving'),
-  ];
-  const summaryStages = [
-    t('research.summaryStage1'),
-    t('research.summaryStage2'),
-    t('research.summaryStage3'),
-  ];
   const activeUploadError = uploadError || (isFailedUpload ? (serverUploadError || t('research.uploadFailed')) : '');
 
   return <>
@@ -241,13 +215,13 @@ export default function InterviewPage() {
     />
     <div className="mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
       <div className="min-w-0 flex-1"><div className="research-eyebrow">{t('research.interviews')}</div><h1 className="research-heading mt-3 break-words">{record.title}</h1>
-        <div className="mt-4 flex flex-wrap items-center gap-3"><Status status={isProcessingUpload ? 'running' : record.status} />{record.summary_stale && <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">{t('research.reviewNeeded')}</span>}</div>
+        <div className="mt-4 flex flex-wrap items-center gap-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{t(processingSummary ? 'research.analysisWorking' : `research.${interviewStage(record, study.data)}`)}</span></div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           className="research-secondary"
-          disabled={dirty || busy || isUploadingAudio || isProcessingUpload}
+          disabled={dirty || busy || isUploadingAudio || isProcessingUpload || processingSummary}
           onClick={() => audioInputRef.current?.click()}
           data-testid="research-upload-audio-btn"
         >
@@ -255,86 +229,23 @@ export default function InterviewPage() {
           {t('research.uploadAudioVideo')}
         </button>
         <button type="button" className="research-secondary" disabled={dirty || busy} onClick={() => { setArchiveError(null); setConfirmArchive(true); }} data-testid="research-archive-interview"><Trash2 size={15} />{t('research.archiveInterview')}</button>
-        <Link className="research-secondary" to={`/studies/${studyId}#results`}>{t('research.toStudyResults')}</Link>
+        <Link className="research-secondary" to={`/studies/${studyId}#summary`}>{t('research.toStudyResults')}</Link>
       </div>
     </div>
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div role="tablist" aria-label={t('research.sourceMaterial')} className="flex max-w-full gap-1 rounded-2xl border border-slate-200/70 bg-white/70 p-1.5">
         {tabs.map((key, index) => <button key={key} id={`interview-tab-${key}`} role="tab" aria-controls={`interview-panel-${key}`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} onKeyDown={event => selectTab(event, index)} onClick={() => { setTabTouched(true); setTab(key); }} className="research-tab">{t(`research.${key}`)}{key === 'transcript' && dirty && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" aria-label={t('research.unsaved')} />}</button>)}
       </div>
-      <AnalysisAction userId={user.id} workspaceId={workspace.id} studyId={studyId} interviewId={interviewId} dirty={dirty} disabled={!record.transcript_data?.length || isProcessingUpload} disabledReason={!record.transcript_data?.length ? t('research.addSourceFirst') : undefined} />
+      {study.data?.brief_status !== 'draft' && <AnalysisAction userId={user.id} workspaceId={workspace.id} studyId={studyId} interviewId={interviewId} dirty={dirty} existing={Boolean(summary)} onStart={() => setError(null)} disabled={!record.transcript_data?.length || isUploadingAudio || isProcessingUpload || processingSummary} disabledReason={!record.transcript_data?.length ? t('research.addSourceFirst') : undefined} />}
     </div>
+    {activeUploadError && <p role="alert" className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm leading-7 text-rose-800">{activeUploadError}</p>}
+    {tab === 'summary' && error && <div className="mb-6"><ErrorState error={error} /></div>}
+    {systemState.autoSummaryError && <p role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-7 text-amber-800">{t('research.autoSummaryFailed')}</p>}
     <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-5">
         <ImpactPanel record={record} study={study.data} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} />
         {tab === 'summary' ? <section role="tabpanel" id="interview-panel-summary" aria-labelledby="interview-tab-summary" className="space-y-5">
-          {summary && (!Array.isArray(study.data?.plan?.tasks) || study.data.plan.tasks.length === 0) && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-orange-200/80 bg-gradient-to-br from-orange-50/70 via-white to-amber-50/40 p-5 shadow-xs" data-testid="research-interview-plan-prompt">
-              <div className="min-w-0 flex-1">
-                <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-orange-700">
-                  <Sparkles size={14} />
-                  {t('research.planDraftBadge')}
-                </div>
-                <h3 className="mt-1 text-base font-bold text-slate-900">{t('research.proposePlanFromInterviewTitle')}</h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{t('research.proposePlanFromInterviewBody')}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate(`/studies/${studyId}#plan`, { state: { autoDraftPlan: true } })}
-                className="research-primary shrink-0"
-                data-testid="research-propose-plan-from-interview-btn"
-              >
-                <Sparkles size={16} />
-                {t('research.generatePlanFromInterview')}
-              </button>
-            </div>
-          )}
-          {(isUploadingAudio || isProcessingUpload) ? (
-            <div className="flex flex-col items-center gap-4 py-16" data-testid="research-transcription-progress">
-              <div className="relative flex items-center justify-center py-4">
-                <div className="absolute inset-0 bg-emerald-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <Loader2 size={64} strokeWidth={2.5} className="animate-spin text-emerald-500 relative z-10 mx-auto" />
-              </div>
-              <div className="text-center">
-                <h3 className="text-xl font-bold text-gray-900 animate-pulse">
-                  {isUploadingAudio ? (
-                    <>
-                      {processingStageIndex === 0 && t('interviews.uploadStage1', 'Завантаження у захищену хмару...')}
-                      {processingStageIndex === 1 && t('interviews.uploadStage2', 'Аналіз аудіо...')}
-                      {processingStageIndex === 2 && t('interviews.uploadStage3', 'Генерація структурованого тексту...')}
-                    </>
-                  ) : (
-                    t('interviews.transcribing', 'Обробляємо транскрипт...')
-                  )}
-                </h3>
-                <p className="text-gray-500 mt-2 transition-opacity duration-300">
-                  {isUploadingAudio ? (
-                    <>
-                      {processingStageIndex === 0 && t('interviews.uploadStage1Desc', 'Безпечно передаємо ваш медіафайл на наші сервери для обробки.')}
-                      {processingStageIndex === 1 && t('interviews.uploadStage2Desc', 'ШІ обробляє запис і готує структуру транскрипту.')}
-                      {processingStageIndex === 2 && t('interviews.uploadStage3Desc', 'Завершуємо форматування тексту та часових міток. Майже готово!')}
-                    </>
-                  ) : (
-                    t('interviews.transcribingDesc', 'Наш ШІ розпізнає мовлення та структурує текст. Це займе кілька хвилин.')
-                  )}
-                </p>
-                {sourceUploadFileName && (
-                  <p className="mt-4 text-xs font-medium text-slate-400">{sourceUploadFileName}</p>
-                )}
-              </div>
-            </div>
-          ) : summaryAnalysis?.busy ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-blue-200/80 bg-gradient-to-b from-blue-50/50 to-white p-10 text-center shadow-sm my-8" data-testid="research-summary-progress">
-              <div className="relative mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-md ring-1 ring-blue-100">
-                <Loader2 size={30} className="animate-spin" />
-                <Sparkles size={14} className="absolute -right-1 -top-1 text-amber-500" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900">{t('research.generatingSummaryTitle')}</h3>
-              <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-                {summaryStages[summaryStageIndex] || summaryStages[0]}
-              </p>
-            </div>
-          ) : summary ? <div className="research-summary">
+          {isUploadingAudio || isProcessingUpload ? <InterviewPipeline stage={isUploadingAudio ? 'upload' : 'transcription'} filename={sourceUploadFileName} /> : processingSummary ? <InterviewPipeline stage="summary" filename={sourceUploadFileName} /> : summary ? <div className="research-summary">
             <div className="mb-7 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200/70 pb-6">
               <div><h2 className="research-section-heading">{t('research.summary')}</h2><p className="mt-2 text-xs text-slate-500">{t('research.revision', { version: record.summary_revision })}</p></div>
               <div className="flex flex-wrap items-center gap-2">
@@ -344,7 +255,8 @@ export default function InterviewPage() {
             </div>
             {copyError && <p role="alert" className="mb-5 text-sm text-amber-800">{t('research.copyFailed')}</p>}
             <div ref={summaryRef}><InterviewSummary normalizedSummary={summary} /></div>
-          </div> : <EmptyState title={t('research.summaryEmptyTitle')} description={t('research.summaryEmptyBody')} action={t('research.addTranscript')} onAction={() => { setTabTouched(true); setTab('transcript'); }} />}
+            <div className="mt-8 border-t border-slate-200/70 pt-6 flex flex-wrap gap-3"><Link className="research-primary" to={`/studies/${studyId}#interviews`}>{t('research.continueInterviews')}</Link><Link className="research-secondary" to={`/studies/${studyId}#summary`}>{t('research.toStudyResults')}</Link></div>
+          </div> : <section className="app-empty-state rounded-3xl p-6 sm:p-8" data-testid="research-source-intake"><h2 className="research-section-heading">{t(record.transcript_data?.length ? 'research.transcriptReadyTitle' : 'research.summaryEmptyTitle')}</h2><p className="mt-3 text-sm leading-7 text-slate-600">{t(record.transcript_data?.length ? 'research.transcriptReadyHint' : 'research.sourceIntakeHint')}</p><div className="mt-6 flex flex-wrap gap-3"><button type="button" className="research-primary" onClick={() => audioInputRef.current?.click()}>{t('research.uploadAudioVideo')}</button><button type="button" className="research-secondary" onClick={() => { setTab('transcript'); setTabTouched(true); setBulkText(''); setBulkOpen(true); }}>{t('research.pasteTranscript')}</button>{record.transcript_data?.length > 0 && <button className="research-secondary" onClick={() => { setTabTouched(true); setTab('transcript'); }}>{t('research.openTranscript')}</button>}</div></section>}
         </section> : <section role="tabpanel" id="interview-panel-transcript" aria-labelledby="interview-tab-transcript">
           <form onSubmit={save} className="research-card" data-testid="research-transcript-form">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -534,12 +446,13 @@ export default function InterviewPage() {
             </div>
             {error && <div className="mt-6">{error.code === 'INVALID_TRANSCRIPT' ? <p role="alert" className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{t('research.invalidTranscript')}</p> : <ErrorState error={error} onRetry={error.status === 409 ? reset : undefined} />}</div>}
             {saved && <p role="status" className="mt-6 flex items-center gap-2 text-sm font-semibold text-emerald-700"><Check size={16} />{t('research.transcriptSaved')}</p>}
-            <div className="research-form-actions mt-8"><span className="mr-auto text-xs text-slate-500">{t(dirty ? 'research.unsaved' : 'research.saved')}</span>{dirty && <button type="button" className="research-secondary" disabled={busy} onClick={() => { if (window.confirm(t('research.discardForm'))) reset(); }}><RotateCcw size={15} />{t('research.discardChanges')}</button>}<button className="research-primary" disabled={!dirty || busy || !title.trim()} data-testid="research-save-transcript">{t(busy ? 'research.saving' : 'research.saveTranscript')}</button></div>
+            <div className="research-form-actions mt-8"><span className="mr-auto text-xs text-slate-500">{t(dirty ? 'research.unsaved' : 'research.saved')}</span>{dirty && <button type="button" className="research-secondary" disabled={busy} onClick={() => { if (window.confirm(t('research.discardForm'))) reset(); }}><RotateCcw size={15} />{t('research.discardChanges')}</button>}<button className="research-secondary" disabled={!dirty || busy || !title.trim()} data-testid="research-save-transcript">{t(busy ? 'research.saving' : 'research.saveTranscript')}</button>{!summary && study.data?.brief_status !== 'draft' && <button className="research-primary" name="action" value="generate" disabled={!dirty || busy || !title.trim() || !segments.length || summaryAnalysis.busy} data-testid="research-save-and-summarize">{t('research.saveAndSummarize')}</button>}</div>
           </form>
         </section>}
       </div>
       <aside className="min-w-0 space-y-5" aria-label={t('research.interviewTools')}>
-        <section className="app-surface-soft rounded-3xl p-5"><div className="research-eyebrow">{t('research.sharedGoal')}</div><p className="mt-3 break-words text-sm leading-7 text-slate-700">{study.data.goal}</p></section>
+        <section className="app-surface-soft rounded-3xl p-5"><div className="research-eyebrow">{t('research.sharedGoal')}</div><p className="mt-3 break-words text-sm leading-7 text-slate-700">{study.data.goal}</p><p className="mt-3 text-xs leading-6 text-slate-500">{t('research.summaryContextHint')}</p>{study.data.brief && <details className="mt-4 text-xs leading-6 text-slate-600"><summary className="cursor-pointer font-semibold">{t('research.brief')}</summary><p className="mt-3 whitespace-pre-line break-words">{study.data.brief}</p></details>}</section>
+        <ParticipantPanel record={record} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy || workspace.role === 'viewer' || isProcessingUpload || processingSummary} />
         <InterviewSources record={record} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} onRestoreTranscript={(restored) => { setSegments(restored); setDirty(true); setSaved(false); setTabTouched(true); setTab('transcript'); }} />
         <EvidenceAction record={record} study={study.data} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} />
       </aside>

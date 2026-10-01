@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { BarChart3, Check, Copy, Download, ListChecks, RefreshCw } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import TaskResultsChart from '../../../client/src/components/interviews/TaskResultsChart';
 import { researchKey, researchRequest, useResearchQuery } from '../hooks/useResearch';
@@ -28,11 +28,11 @@ export function EvidenceAction({ record, study, userId, workspaceId, disabled })
   </section>;
 }
 
-export default function ResultsPanel({ study, userId, workspaceId }) {
+export default function ResultsPanel({ study, userId, workspaceId, interviews = [] }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const location = useLocation();
-  const [open, setOpen] = useState(location.hash === '#results');
+  const [open, setOpen] = useState(true);
   useEffect(() => { if (location.hash === '#results') { setOpen(true); document.getElementById('results')?.scrollIntoView({ block: 'start' }); } }, [location.hash]);
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState('unknown');
@@ -42,6 +42,9 @@ export default function ResultsPanel({ study, userId, workspaceId }) {
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchError, setBatchError] = useState(null);
+  const participants = useResearchQuery(userId, workspaceId, ['participants', study.id], `/studies/${study.id}/participants?limit=100`);
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(false), 2500); return () => clearTimeout(timer); }, [copied]);
   const results = useResearchQuery(userId, workspaceId, ['results', study.id], `/studies/${study.id}/results`, open);
   const source = useResearchQuery(userId, workspaceId, ['transcript-version', selected?.outcome?.transcript_version_id],
@@ -57,6 +60,25 @@ export default function ResultsPanel({ study, userId, workspaceId }) {
     } catch (err) { setError(err); } finally { setBusy(false); }
   };
   const data = results.data;
+  const names = new Map((participants.data || []).map(item => [item.id, item.pseudonym]));
+  const missingSessions = (data?.sessions || []).filter(session => session.tasks.some(task => !task.outcome));
+  const jobs = useQueries({ queries: missingSessions.map(session => {
+    const path = `/interviews/${session.id}/evidence-job`;
+    return { queryKey: researchKey(userId, workspaceId, 'job', path), queryFn: ({ signal }) => researchRequest(path, { signal }), retry: false, refetchInterval: query => ['queued', 'running'].includes(query.state.data?.status) ? 2000 : false };
+  }) });
+  const completedMarker = jobs.map(job => job.data?.status === 'completed' ? job.data.id : '').join(',');
+  useEffect(() => { if (completedMarker.replaceAll(',', '')) client.invalidateQueries({ queryKey: researchKey(userId, workspaceId, 'results', study.id) }); }, [completedMarker, client, userId, workspaceId, study.id]);
+  const actionableSessions = missingSessions.filter(session => interviews.some(item => item.id === session.id && item.transcript_revision > 0 && !['processing', 'failed'].includes(item.status)));
+  const analyzing = jobs.some(job => ['queued', 'running'].includes(job.data?.status)) || batchBusy;
+  const analyzeMissing = async () => {
+    setBatchBusy(true); setBatchError(null);
+    try {
+      for (const session of actionableSessions) {
+        const job = await researchRequest(`/interviews/${session.id}/evidence-jobs`, { method: 'POST' });
+        client.setQueryData(researchKey(userId, workspaceId, 'job', `/interviews/${session.id}/evidence-job`), job);
+      }
+    } catch (err) { setBatchError(err); } finally { setBatchBusy(false); }
+  };
   const copyResults = async () => {
     if (!data) return;
     const lines = [
@@ -79,12 +101,16 @@ export default function ResultsPanel({ study, userId, workspaceId }) {
     <div className="flex flex-wrap items-center justify-between gap-4"><h2 className="research-section-heading flex items-center gap-3"><BarChart3 size={21} className="shrink-0 text-orange-600" />{t('research.taskComparison')}</h2><div className="flex flex-wrap items-center gap-2">{open && data?.tasks?.length > 0 && <><button type="button" className="research-secondary" onClick={copyResults} data-testid="research-copy-results">{copied ? <Check size={15} /> : <Copy size={15} />}{t(copied ? 'research.copied' : 'research.copyResults')}</button><button type="button" className="research-secondary" onClick={exportCsv} data-testid="research-export-results-csv"><Download size={15} />{t('research.exportResultsCsv')}</button></>}<button className="research-secondary" disabled={open && results.isFetching} onClick={() => { setOpen(true); if (open) results.refetch(); }}>{open && <RefreshCw size={15} className={results.isFetching ? 'animate-spin' : ''} />}{t(open ? 'research.refreshResults' : 'research.showResults')}</button></div></div>
     {copyError && <p role="alert" className="mt-3 text-sm text-amber-800">{t('research.copyFailed')}</p>}
     <p className="research-description mt-3">{t('research.resultsHint')}</p>
+    <p className="mt-3 text-xs leading-6 text-slate-500">{t('research.participantOptional')}</p>
+    {batchError && <div className="mt-5"><ErrorState error={batchError} /></div>}
+    {jobs.some(job => job.isError || ['failed', 'stale', 'canceled'].includes(job.data?.status)) && <p role="alert" className="mt-5 text-sm leading-7 text-amber-800">{t('research.taskBatchFailed')}</p>}
     {open && (results.isPending ? <Loading /> : results.isError ? <ErrorState error={results.error} onRetry={() => results.refetch()} /> : <div className="mt-6 space-y-7">
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[['sessions', 'sessionsLabel'], ['current_summaries', 'currentSummariesLabel'], ...(data.coverage.linked_participants > 0 ? [['linked_participants', 'participantsLabel'], ['unlinked_sessions', 'unlinkedLabel']] : [])].map(([key, label]) => <div key={key} className="flex flex-col rounded-2xl border border-slate-200/70 bg-white/60 p-4"><dt className="text-xs leading-5 text-slate-500">{t(`research.${label}`)}</dt><dd className="mt-auto pt-2 text-2xl font-bold tracking-tight text-slate-900">{data.coverage[key]}</dd></div>)}</dl>
-      {(!data.tasks.length || !data.sessions.length) && <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-5"><p className="text-sm leading-6 text-slate-600">{t(!data.tasks.length ? 'research.noTasks' : 'research.noResultSessions')}</p><a className="research-secondary mt-4" href={!data.tasks.length ? '#plan' : '#sessions'}>{t(!data.tasks.length ? 'research.toPlan' : 'research.newInterview')}</a></div>}
+      {data.tasks.length > 0 && missingSessions.length > 0 && <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-5 space-y-4" data-testid="research-task-readiness"><h3 className="font-bold text-sm">{t('research.tasksNeedAnalysis', { count: missingSessions.length })}</h3><p className="text-sm leading-7 text-slate-600">{t('research.tasksNeedAnalysisHint')}</p><button className="research-primary" disabled={analyzing || !actionableSessions.length || import.meta.env.VITE_RESEARCH_DEMO === 'true'} onClick={analyzeMissing} data-testid="research-analyze-missing">{t(analyzing ? 'research.analysisWorking' : 'research.analyzeMissingSessions', { count: actionableSessions.length })}</button>{!actionableSessions.length && <Link className="research-secondary" to={`#interviews`}>{t('research.continueInterviews')}</Link>}<p className="text-xs leading-6 text-slate-500">{t('research.aiActionCosts')}</p></div>}
+      {(!data.tasks.length || !data.sessions.length) && <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-5"><p className="text-sm leading-6 text-slate-600">{t(!data.tasks.length ? 'research.noTasks' : 'research.noResultSessions')}</p><Link className="research-secondary mt-4" to={!data.tasks.length ? '#plan' : '#interviews'}>{t(!data.tasks.length ? 'research.toPlan' : 'research.newInterview')}</Link><Link className="research-secondary mt-4 ml-3" to="#synthesis">{t('research.toStudyResults')}</Link></div>}
       {data.tasks.length > 0 && <div className="h-80" aria-label={t('research.taskComparison')}><TaskResultsChart tasks={data.tasks} statuses={statuses} colors={colors} labels={statuses.map(key => t(`research.outcome_${key}`))} /></div>}
       <ol className="space-y-3">{data.tasks.map((task, i) => <li key={task.id} className="rounded-2xl border border-slate-200/70 p-4"><strong className="text-sm">{i + 1}. {task.title}</strong><p className="mt-2 text-sm text-slate-600">{task.success_rate === null ? t('research.noAttemptData') : t('research.successFraction', { count: task.counts.success, attempts: task.attempts, percent: Math.round(task.success_rate * 100) })}</p><p className="mt-2 text-xs text-slate-500">{t('research.unknownCoverage', { unknown: task.counts.unknown, skipped: task.counts.not_attempted, analyzed: task.analyzed, total: task.sessions })}</p></li>)}</ol>
-      {data.sessions.length > 0 && data.tasks.length > 0 && <div className="overflow-x-auto rounded-2xl border border-slate-200" tabIndex={0} role="region" aria-label={t('research.taskComparison')}><table className="w-full text-left text-sm"><caption className="sr-only">{t('research.taskComparison')}</caption><thead className="bg-slate-50/80 text-xs text-slate-500"><tr><th scope="col" className="p-4">{t('research.interviews')}</th>{data.tasks.map((task, i) => <th scope="col" key={task.id} className="min-w-32 p-4" title={task.title}><span className="block text-slate-800">{i + 1}</span><span className="mt-1 block max-w-48 break-words font-normal">{task.title}</span></th>)}</tr></thead><tbody>{data.sessions.map(session => <tr key={session.id} className="border-t border-slate-200 bg-white/50"><th scope="row" className="min-w-44 p-4 font-semibold"><Link to={`/studies/${study.id}/interviews/${session.id}`} className="break-words text-blue-700 hover:underline">{session.title}</Link></th>{session.tasks.map(task => <td key={task.task_id} className="p-4">{task.outcome ? <button className="min-h-10 rounded-lg px-2 text-left font-semibold text-blue-700 underline decoration-blue-200 underline-offset-4 hover:bg-blue-50" onClick={() => select(session, task)}>{t(`research.outcome_${task.status}`)}</button> : <span className="text-slate-500">{t('research.outcome_unknown')}</span>}</td>)}</tr>)}</tbody></table></div>}
+      {data.sessions.length > 0 && data.tasks.length > 0 && <div className="overflow-x-auto rounded-2xl border border-slate-200" tabIndex={0} role="region" aria-label={t('research.taskComparison')}><table className="w-full text-left text-sm"><caption className="sr-only">{t('research.taskComparison')}</caption><thead className="bg-slate-50/80 text-xs text-slate-500"><tr><th scope="col" className="p-4">{t('research.interviews')}</th>{data.tasks.map((task, i) => <th scope="col" key={task.id} className="min-w-32 p-4" title={task.title}><span className="block text-slate-800">{i + 1}</span><span className="mt-1 block max-w-48 break-words font-normal">{task.title}</span></th>)}</tr></thead><tbody>{data.sessions.map(session => <tr key={session.id} className="border-t border-slate-200 bg-white/50"><th scope="row" className="min-w-44 p-4 font-semibold"><Link to={`/studies/${study.id}/interviews/${session.id}`} className="break-words text-blue-700 hover:underline">{session.title}</Link><p className="mt-2 text-xs font-normal leading-5 text-slate-500">{names.get(session.participant_id) || t('research.sessionOnly')}</p></th>{session.tasks.map(task => <td key={task.task_id} className="p-4">{task.outcome ? <button className="min-h-10 rounded-lg px-2 text-left font-semibold text-blue-700 underline decoration-blue-200 underline-offset-4 hover:bg-blue-50" onClick={() => select(session, task)}>{t(`research.outcome_${task.status}`)}</button> : <span className="text-xs text-slate-500">{t(task.excluded_reason === 'stale_source' ? 'research.taskSourceChanged' : 'research.taskNotAnalyzed')}</span>}</td>)}</tr>)}</tbody></table></div>}
     </div>)}
     {selected && <Modal guardChanges title={t('research.taskEvidence')} onClose={() => !busy && setSelected(null)} busy={busy}><ModalForm onSubmit={save} actions={<><button type="button" data-modal-dismiss className="research-text-button" disabled={busy} onClick={() => setSelected(null)}>{t('research.cancel')}</button><button className="research-primary" disabled={busy || source.isPending || !reason.trim() || (!['unknown', 'not_attempted'].includes(status) && !segmentIds.length)}>{t(busy ? 'research.saving' : 'research.saveCorrection')}</button></>}>
       {error && <ErrorState error={error} />}

@@ -5658,7 +5658,10 @@ const processResearchInterviewAudioUpload = async ({ interviewId, userId, file, 
 
         if (error) throw error;
 
-        if (autoSummary && latestInterview?.study_id && userId) {
+        const { data: researchStudyForUpload } = latestInterview?.study_id
+            ? await rawSupabaseAdmin.from('research_studies').select('brief_status').eq('id', latestInterview.study_id).maybeSingle()
+            : { data: null };
+        if (autoSummary && researchStudyForUpload?.brief_status !== 'draft' && latestInterview?.study_id && userId) {
             const { error: jobErr } = await rawSupabaseAdmin.rpc('research_enqueue_analysis', {
                 p_user_id: userId,
                 p_kind: 'interview_summary',
@@ -5667,10 +5670,23 @@ const processResearchInterviewAudioUpload = async ({ interviewId, userId, file, 
             });
             if (jobErr) {
                 console.warn('[research-interview-upload] auto-summary enqueue warning:', jobErr.message);
+                await rawSupabaseAdmin.from('interviews').update({
+                    summary_data: withInterviewSystemState(nextSummaryData, { autoSummaryError: true }),
+                }).eq('id', interviewId).eq('research_revision', (latestInterview?.research_revision || 0) + 1);
             } else {
                 const { wakeResearchWorker } = require('./modules/research/jobs/worker');
                 wakeResearchWorker();
             }
+        }
+        // A draft study waits for every uploaded transcript before proposing one shared brief.
+        if (latestInterview?.study_id) {
+            if (researchStudyForUpload?.brief_status === 'draft' && userId) {
+                await rawSupabaseAdmin.from('research_studies').update({ flow_pending: true,
+                    flow_requested_by: userId, flow_requested_at: new Date().toISOString(), flow_error_code: null })
+                    .eq('id', latestInterview.study_id).eq('brief_status', 'draft');
+            }
+            const { wakeResearchWorker } = require('./modules/research/jobs/worker');
+            wakeResearchWorker();
         }
     } catch (err) {
         logSystemError(err, `ASYNC research interview upload ${interviewId}`);
@@ -5770,6 +5786,9 @@ async function handleResearchInterviewUploadAudio(req, res) {
         const processingSystemState = {
             uploadStatus: 'processing',
             startedAt: new Date().toISOString(),
+            autoSummaryRequested: String(req.body?.auto_summary || '').toLowerCase() === 'true',
+            sourceSummaryRevision: existing.summary_revision || 0,
+            autoSummaryError: false,
             sourceUploadFileName: uploadFile.originalname || '',
             sourceUploadFileSizeBytes: Number.isFinite(uploadFile.size) ? uploadFile.size : null,
             sourceUploadMimeType: uploadFile.mimetype || '',

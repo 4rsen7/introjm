@@ -61,11 +61,12 @@ export async function uploadInterviewAudio(interviewId, file, { autoSummary = tr
   return result.data;
 }
 
-export function useResearchQuery(userId, workspaceId, parts, path, enabled = true) {
+export function useResearchQuery(userId, workspaceId, parts, path, enabled = true, refetchInterval = false) {
   return useQuery({
     queryKey: researchKey(userId, workspaceId, ...parts),
     queryFn: ({ signal }) => researchRequest(path, { signal }),
     enabled: Boolean(userId && enabled),
+    refetchInterval,
     staleTime: 30_000,
     retry: (count, error) => error.status >= 500 && count < 1,
   });
