@@ -408,7 +408,7 @@ test('result links open the comparison directly and a canceled correction does n
   expect(writes).toHaveLength(0);
 });
 
-test('summary tabs support keyboard navigation and narrow layouts keep tools reachable', async ({ page }) => {
+test('summary tabs support keyboard navigation and narrow layouts without interview sidebar tools', async ({ page }) => {
   await fixture(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
@@ -418,8 +418,10 @@ test('summary tabs support keyboard navigation and narrow layouts keep tools rea
   await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Home');
   await expect(page.getByText('Delivery was found.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Version history' }).click();
-  await expect(page.getByText('History will appear after the first save.')).toBeVisible();
+  await expect(page.getByTestId('research-participant-select')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Version history' })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '/private/tmp/iterojm-research-release/validation/research-interview-tools-mobile.png', fullPage: true });
 });
@@ -540,24 +542,10 @@ test('interview search narrows the session list and clears an empty search', asy
   await expect(page.getByTestId('research-interview-card')).toHaveCount(3);
 });
 
-test('bulk transcript paste imports structured segments and version history restores to draft', async ({ page }) => {
-  await fixture(page, {
-    transcriptVersions: [
-      {
-        id: 'transcript-v1',
-        transcript_revision: 1,
-        created_at: '2026-09-20T10:00:00.000Z',
-        transcript_data: [{ id: 'old-1', speaker: 'Moderator', timestamp: '00:01', text: 'Welcome to version 1' }],
-      },
-    ],
-  });
+test('bulk transcript paste imports structured segments into the transcript draft', async ({ page }) => {
+  await fixture(page);
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-  await page.getByRole('button', { name: 'Version history' }).click();
-  await page.getByRole('button', { name: /Transcript · version 1/ }).click();
-  await page.getByTestId('research-restore-transcript-version').click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.locator('textarea').first()).toHaveValue('Welcome to version 1');
-
+  await page.getByRole('tab', { name: 'Transcript', exact: true }).click();
   await page.getByTestId('research-paste-transcript').click();
   await page.getByTestId('research-paste-transcript-input').fill('[00:10] Moderator: How was delivery?\n00:14 Participant — Very clear and fast.');
   await page.getByTestId('research-import-segments').click();
@@ -742,14 +730,97 @@ test('summary quota failure after transcript save is visible and can be retried 
   expect(writes.filter(write => write.path === `/interviews/${ids.interview}/upload-audio`)).toHaveLength(0);
 });
 
-test('participant creation assigns the session and records its revision', async ({ page }) => {
+for (const status of ['running', 'queued']) {
+  test(`${status} summary has one persistent progress panel across tabs and reload`, async ({ page }) => {
+    const writes = await fixture(page, {
+      summaryJob: { id: `job-${status}-1`, kind: 'interview_summary', status },
+      recordOverrides: { status: 'draft', summary_revision: 0, summary_data: null, summary_stale: false },
+    });
+    await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+    const progress = page.getByTestId('research-summary-progress');
+    await expect(progress).toBeVisible();
+    await expect(progress.getByRole('status')).toHaveCount(1);
+    await expect(page.getByText('Generating the summary', { exact: true })).toHaveCount(1);
+    await expect(page.getByTestId('research-transcription-progress')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Analysis in progress…' })).toHaveCount(0);
+    await expect(page.getByTestId('research-cancel-job')).toHaveCount(1);
+    await expect(page.getByTestId('research-source-intake')).toHaveCount(0);
+
+    await page.getByRole('tab', { name: 'Transcript', exact: true }).click();
+    await expect(progress).toBeVisible();
+    await expect(page.getByText('Generating the summary', { exact: true })).toHaveCount(1);
+    await expect(page.getByLabel('What was said')).toHaveValue('I found the delivery date.');
+    await page.reload();
+    await expect(progress).toBeVisible();
+    await expect(page.getByText('Generating the summary', { exact: true })).toHaveCount(1);
+    await expect(page.getByTestId('research-cancel-job')).toHaveCount(1);
+
+    if (status === 'running') {
+      await page.setViewportSize({ width: 1440, height: 960 });
+      await page.screenshot({ path: '/private/tmp/iterojm-research-ui-simplification/summary-running-desktop.png', animations: 'disabled' });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: '/private/tmp/iterojm-research-ui-simplification/summary-running-mobile.png', fullPage: true, animations: 'disabled' });
+    }
+    expect(writes).toEqual([]);
+  });
+}
+
+test('canceling a running summary calls the job endpoint and restores the idle summary action', async ({ page }) => {
+  const writes = await fixture(page, {
+    summaryJob: { id: 'job-running-cancel', kind: 'interview_summary', status: 'running' },
+    recordOverrides: { status: 'draft', summary_revision: 0, summary_data: null, summary_stale: false },
+  });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await expect(page.getByTestId('research-summary-progress')).toBeVisible();
+  await page.getByTestId('research-cancel-job').click();
+  await expect(page.getByTestId('research-summary-progress')).toHaveCount(0);
+  await expect(page.getByTestId('research-source-intake')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate summary' })).toBeEnabled();
+  await expect(page.getByText('Analysis was canceled. You can run it again anytime.')).toBeVisible();
+  expect(writes).toEqual([{ path: '/jobs/job-running-cancel/cancel', method: 'POST', body: null }]);
+});
+
+test('waiting for the automatic summary cannot cancel a previously completed job', async ({ page }) => {
+  const writes = await fixture(page, {
+    summaryJob: { id: 'previous-completed-job', kind: 'interview_summary', status: 'completed' },
+    recordOverrides: { summary_stale: false, summary_data: { summary: { generalInsight: 'Previous summary' }, _system: { autoSummaryRequested: true, sourceSummaryRevision: 1, uploadStatus: 'completed' } } },
+  });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await expect(page.getByTestId('research-summary-progress')).toBeVisible();
+  await expect(page.getByTestId('research-cancel-job')).toHaveCount(0);
+  expect(writes).toEqual([]);
+});
+
+test('saved interview upload shows one progress panel and transitions to the ready summary', async ({ page }) => {
+  const writes = await fixture(page, {
+    finishUpload: true,
+    recordOverrides: { status: 'draft', transcript_revision: 0, summary_revision: 0, summary_data: null, transcript_data: [], summary_stale: false, summary_source_job_id: null },
+  });
+  await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
+  await expect(page.getByTestId('research-source-intake')).toBeVisible();
+  await page.getByTestId('research-interview-audio-input').setInputFiles({ name: 'session.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('test-audio-content') });
+  await expect(page.getByTestId('research-transcription-progress')).toBeVisible();
+  await expect(page.getByRole('status')).toHaveCount(1);
+  await expect(page.getByTestId('research-summary-progress')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('status')).toHaveCount(1);
+  await expect(page.getByText('The participant found delivery details.')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('research-summary-progress')).toHaveCount(0);
+  await expect(page.getByTestId('research-transcription-progress')).toHaveCount(0);
+  await page.getByTestId('research-back-to-interviews').click();
+  await expect(page).toHaveURL(new RegExp(`/studies/${ids.study}#interviews$`));
+  expect(writes.filter(write => write.path.endsWith('/upload-audio'))).toHaveLength(1);
+});
+
+test('interview opens without participant or history controls and performs no writes', async ({ page }) => {
   const writes = await fixture(page);
   await page.goto(`/studies/${ids.study}/interviews/${ids.interview}`);
-  await page.getByTestId('research-participant-name').fill('Participant A');
-  await page.getByTestId('research-participant-create').click();
-  await expect(page.getByTestId('research-participant-select')).toHaveValue('participant-1');
-  expect(writes.find(write => write.path === `/studies/${ids.study}/participants`)?.body).toEqual({ pseudonym: 'Participant A' });
-  expect(writes.find(write => write.path === `/interviews/${ids.interview}/participant`)?.body).toEqual({ participant_id: 'participant-1', research_revision: 3 });
+  await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Transcript', exact: true })).toBeVisible();
+  await expect(page.getByTestId('research-participant-name')).toHaveCount(0);
+  await expect(page.getByTestId('research-participant-select')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Version history' })).toHaveCount(0);
+  expect(writes).toEqual([]);
 });
 
 test('task comparison explains missing analysis and restores an evidence job after reload', async ({ page }) => {

@@ -35,6 +35,7 @@ export function useAnalysisJob({ userId, workspaceId, studyId, interviewId, watc
     if (interviewId) client.invalidateQueries({ queryKey: researchKey(userId, workspaceId, 'synthesis', studyId) });
   }, [job.data?.id, job.data?.status, client, userId, workspaceId, studyId, interviewId]);
   return { job: job.data, loading: job.isPending, error: enqueue.error || cancel.error || job.error,
+    cancelError: cancel.error,
     busy: enqueue.isPending || ['queued', 'running'].includes(job.data?.status),
     canceling: cancel.isPending,
     enqueue: () => enqueue.mutate(),

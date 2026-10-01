@@ -2,22 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ArrowLeft, Check, Copy, Download, FileAudio, FileText, Loader2, Mic, Plus, RotateCcw, Sparkles, Trash2, UploadCloud, Volume2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Check, Copy, Download, FileAudio, FileText, Mic, Plus, RotateCcw, Trash2, UploadCloud, Volume2 } from 'lucide-react';
 import { useResearchContext } from '../app/App';
 import { decodeUploadFileName, researchKey, researchRequest, uploadInterviewAudio, useResearchQuery } from '../hooks/useResearch';
 import { useAnalysisJob } from '../hooks/useAnalysisJob';
 import { buildInterviewMarkdown, buildTranscriptCsv, downloadFile, slugifyTitle } from '../utils/exportReport';
-import { EmptyState, ErrorState, Loading, Modal, ModalForm, Status } from '../components/UI';
+import { ErrorState, Loading, Modal, ModalForm } from '../components/UI';
 import InterviewSummary from '../../../client/src/components/interviews/InterviewSummary';
 import { normalizeInterviewSummary } from '../../../client/src/components/interviews/summaryDisplay';
 import AnalysisAction from '../components/AnalysisAction';
 import ImpactPanel from '../components/ImpactPanel';
-import { EvidenceAction } from '../components/ResultsPanel';
-import InterviewSources from '../components/InterviewSources';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
 import InterviewPipeline from '../components/InterviewPipeline';
-import ParticipantPanel from '../components/ParticipantPanel';
-import { interviewStage } from '../utils/researchFlow';
 
 const INTERVIEWER_SPEAKERS = new Set(['interviewer', 'moderator', 'researcher', 'дослідник', 'інтервʼюер', 'інтерв’юер', 'модератор']);
 const isInterviewerSpeaker = (speaker = '') => INTERVIEWER_SPEAKERS.has(String(speaker || '').trim().toLowerCase());
@@ -202,6 +198,7 @@ export default function InterviewPage() {
     event.preventDefault(); setTabTouched(true); setTab(tabs[next]); document.getElementById(`interview-tab-${tabs[next]}`)?.focus();
   };
   const activeUploadError = uploadError || (isFailedUpload ? (serverUploadError || t('research.uploadFailed')) : '');
+  const processingStage = isUploadingAudio ? 'upload' : isProcessingUpload ? 'transcription' : processingSummary ? 'summary' : null;
 
   return <>
     {back}
@@ -215,7 +212,6 @@ export default function InterviewPage() {
     />
     <div className="mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
       <div className="min-w-0 flex-1"><div className="research-eyebrow">{t('research.interviews')}</div><h1 className="research-heading mt-3 break-words">{record.title}</h1>
-        <div className="mt-4 flex flex-wrap items-center gap-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{t(processingSummary ? 'research.analysisWorking' : `research.${interviewStage(record, study.data)}`)}</span></div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -236,16 +232,17 @@ export default function InterviewPage() {
       <div role="tablist" aria-label={t('research.sourceMaterial')} className="flex max-w-full gap-1 rounded-2xl border border-slate-200/70 bg-white/70 p-1.5">
         {tabs.map((key, index) => <button key={key} id={`interview-tab-${key}`} role="tab" aria-controls={`interview-panel-${key}`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} onKeyDown={event => selectTab(event, index)} onClick={() => { setTabTouched(true); setTab(key); }} className="research-tab">{t(`research.${key}`)}{key === 'transcript' && dirty && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" aria-label={t('research.unsaved')} />}</button>)}
       </div>
-      {study.data?.brief_status !== 'draft' && <AnalysisAction userId={user.id} workspaceId={workspace.id} studyId={studyId} interviewId={interviewId} dirty={dirty} existing={Boolean(summary)} onStart={() => setError(null)} disabled={!record.transcript_data?.length || isUploadingAudio || isProcessingUpload || processingSummary} disabledReason={!record.transcript_data?.length ? t('research.addSourceFirst') : undefined} />}
+      {!processingStage && study.data?.brief_status !== 'draft' && <AnalysisAction userId={user.id} workspaceId={workspace.id} studyId={studyId} interviewId={interviewId} dirty={dirty} existing={Boolean(summary)} onStart={() => setError(null)} disabled={!record.transcript_data?.length} disabledReason={!record.transcript_data?.length ? t('research.addSourceFirst') : undefined} />}
     </div>
+    {processingStage && <div className="mb-6"><InterviewPipeline stage={processingStage} filename={sourceUploadFileName} onCancel={processingStage === 'summary' && ['queued', 'running'].includes(summaryAnalysis.job?.status) && summaryAnalysis.job?.id ? summaryAnalysis.cancel : undefined} canceling={summaryAnalysis.canceling} />{summaryAnalysis.cancelError && <div className="mt-4"><ErrorState error={summaryAnalysis.cancelError} /></div>}</div>}
     {activeUploadError && <p role="alert" className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm leading-7 text-rose-800">{activeUploadError}</p>}
     {tab === 'summary' && error && <div className="mb-6"><ErrorState error={error} /></div>}
     {systemState.autoSummaryError && <p role="alert" className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-7 text-amber-800">{t('research.autoSummaryFailed')}</p>}
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div>
       <div className="min-w-0 space-y-5">
-        <ImpactPanel record={record} study={study.data} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} />
+        {!processingStage && <ImpactPanel record={record} study={study.data} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} />}
         {tab === 'summary' ? <section role="tabpanel" id="interview-panel-summary" aria-labelledby="interview-tab-summary" className="space-y-5">
-          {isUploadingAudio || isProcessingUpload ? <InterviewPipeline stage={isUploadingAudio ? 'upload' : 'transcription'} filename={sourceUploadFileName} /> : processingSummary ? <InterviewPipeline stage="summary" filename={sourceUploadFileName} /> : summary ? <div className="research-summary">
+          {processingStage ? null : summary ? <div className="research-summary">
             <div className="mb-7 flex flex-wrap items-start justify-between gap-4 border-b border-slate-200/70 pb-6">
               <div><h2 className="research-section-heading">{t('research.summary')}</h2><p className="mt-2 text-xs text-slate-500">{t('research.revision', { version: record.summary_revision })}</p></div>
               <div className="flex flex-wrap items-center gap-2">
@@ -450,12 +447,6 @@ export default function InterviewPage() {
           </form>
         </section>}
       </div>
-      <aside className="min-w-0 space-y-5" aria-label={t('research.interviewTools')}>
-        <section className="app-surface-soft rounded-3xl p-5"><div className="research-eyebrow">{t('research.sharedGoal')}</div><p className="mt-3 break-words text-sm leading-7 text-slate-700">{study.data.goal}</p><p className="mt-3 text-xs leading-6 text-slate-500">{t('research.summaryContextHint')}</p>{study.data.brief && <details className="mt-4 text-xs leading-6 text-slate-600"><summary className="cursor-pointer font-semibold">{t('research.brief')}</summary><p className="mt-3 whitespace-pre-line break-words">{study.data.brief}</p></details>}</section>
-        <ParticipantPanel record={record} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy || workspace.role === 'viewer' || isProcessingUpload || processingSummary} />
-        <InterviewSources record={record} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} onRestoreTranscript={(restored) => { setSegments(restored); setDirty(true); setSaved(false); setTabTouched(true); setTab('transcript'); }} />
-        <EvidenceAction record={record} study={study.data} userId={user.id} workspaceId={workspace.id} disabled={dirty || busy} />
-      </aside>
     </div>
     {bulkOpen && <Modal guardChanges title={t('research.pasteTranscript')} onClose={() => setBulkOpen(false)}><ModalForm onSubmit={(event) => { event.preventDefault(); if (!parsedBulk.length) return; setSegments(previous => [...previous, ...parsedBulk]); setDirty(true); setSaved(false); setBulkOpen(false); setBulkText(''); }} testId="research-paste-transcript-form" actions={<><button type="button" data-modal-dismiss className="research-text-button" onClick={() => setBulkOpen(false)}>{t('research.cancel')}</button><button className="research-primary" disabled={!parsedBulk.length} data-testid="research-import-segments">{t('research.importSegments', { count: parsedBulk.length })}</button></>}><p className="research-description">{t('research.pasteTranscriptHint')}</p><label className="block"><span className="research-label">{t('research.pasteTranscriptLabel')}</span><textarea required rows={8} maxLength={200000} value={bulkText} onChange={event => setBulkText(event.target.value)} className="research-field resize-y" placeholder={t('research.pasteTranscriptPlaceholder')} autoFocus data-testid="research-paste-transcript-input" /></label></ModalForm></Modal>}
     {confirmArchive && <Modal title={t('research.archiveInterview')} onClose={() => { if (!busy) { setConfirmArchive(false); setArchiveError(null); } }} busy={busy}><ModalForm as="div" testId="research-archive-interview-confirm" actions={<><button type="button" className="research-text-button" disabled={busy} onClick={() => { setConfirmArchive(false); setArchiveError(null); }}>{t('research.cancel')}</button><button type="button" className="research-primary" disabled={busy} onClick={archiveInterview} data-testid="research-confirm-archive-interview">{t(busy ? 'research.saving' : 'research.confirmArchive')}</button></>}><p className="research-description">{t('research.archiveInterviewConfirm', { title: record.title })}</p>{archiveError && <ErrorState error={archiveError} onRetry={archiveError.status === 409 ? async () => { await interview.refetch(); setArchiveError(null); } : undefined} />}</ModalForm></Modal>}

@@ -285,6 +285,7 @@
   "discardChanges": "Discard changes",
   "returnStudy": "Back to study",
   "copySummary": "Copy summary",
+  "exportStudyMd": "Download summary (.md)",
   "copyFailed": "Could not copy automatically. Select the text and copy it manually.",
   "addSourceFirst": "Add and save a transcript, or upload a recording first.",
   "addTranscript": "Add transcript",
@@ -333,7 +334,7 @@
   "demoAnalysis": "AI is disabled in this demo. You can explore the prepared example findings.",
   "demoRecording": "Recording uploads will be available once test storage and processing are connected.",
   "archiveStudy": "Archive study",
-  "archiveStudyConfirm": "Archive “{{title}}”? It will be removed from active studies.",
+  "archiveStudyConfirm": "Archive “{{title}}”? It will be removed from active studies. Its interviews and results will be retained.",
   "archiveInterview": "Archive interview",
   "archiveInterviewConfirm": "Archive “{{title}}”? It will no longer be included in study results or synthesis.",
   "confirmArchive": "Archive",
@@ -420,6 +421,7 @@
   "pipeline_upload": "Uploading the recording",
   "pipeline_transcription": "Transcribing the interview",
   "pipeline_summary": "Generating the summary",
+  "pipelineBackgroundHint": "You can return later — the result will be saved here.",
   "pipeline_uploadHint": "Once uploaded, the recording will be transcribed and summarized automatically using this study’s goal and brief.",
   "pipeline_transcriptionHint": "We are turning the recording into text. Summary generation starts automatically when the transcript is saved.",
   "pipeline_summaryHint": "The transcript is ready. We are extracting findings using the study’s goal, brief and saved plan.",
@@ -498,5 +500,10 @@
   "createResults": "Create results",
   "expandBriefWithAi": "Expand brief with AI",
   "aiBriefOptional": "The proposal only changes your brief after you save it.",
-  "reportActions": "Copy or download"
+  "reportActions": "Copy or download",
+  "exportStudyPdf": "Download summary (.pdf)",
+  "pdfPreparing": "Preparing PDF…",
+  "pdfFailed": "Could not prepare the PDF. Try again.",
+  "pdfContext": "Study context",
+  "pdfHistoricalNotice": "Historical results. Interview sources changed since these findings were saved. Refresh the results to reflect the current study."
 }

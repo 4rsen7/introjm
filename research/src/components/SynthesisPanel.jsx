@@ -2,15 +2,16 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { ArrowUpRight, Check, Diamond } from 'lucide-react';
 import { researchKey, researchRequest, useResearchQuery } from '../hooks/useResearch';
 import { ErrorState, Loading } from './UI';
 import { buildStudyReportMarkdown, downloadFile, slugifyTitle } from '../utils/exportReport';
 
 const groups = [
-  ['insights', 'research.findingsInsights'],
-  ['pain_points', 'research.findingsPainPoints'],
-  ['what_worked', 'research.findingsWorked'],
-  ['what_did_not_work', 'research.findingsDidNotWork'],
+  ['insights', 'research.findingsInsights', Diamond, 'bg-blue-50 text-blue-700'],
+  ['pain_points', 'research.findingsPainPoints', null, 'bg-orange-50 text-orange-700'],
+  ['what_worked', 'research.findingsWorked', Check, 'bg-emerald-50 text-emerald-700'],
+  ['what_did_not_work', 'research.findingsDidNotWork', ArrowUpRight, 'bg-rose-50 text-rose-700'],
 ];
 
 export default function SynthesisPanel({ study, userId, workspaceId, studyId, interviews }) {
@@ -20,6 +21,8 @@ export default function SynthesisPanel({ study, userId, workspaceId, studyId, in
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState(false);
   const names = new Map(interviews.map(row => [row.id, row.title]));
   const synthesis = useResearchQuery(userId, workspaceId, ['synthesis', studyId], `/studies/${studyId}/synthesis`, true, 4000);
   const result = synthesis.data;
@@ -41,6 +44,14 @@ export default function SynthesisPanel({ study, userId, workspaceId, studyId, in
   const copy = async () => {
     try { await navigator.clipboard.writeText(report()); setCopied(true); setCopyError(false); }
     catch { setCopyError(true); }
+  };
+  const downloadPdf = async () => {
+    setPdfBusy(true); setPdfError(false);
+    try {
+      const { downloadStudyPdf } = await import('../utils/exportStudyPdf');
+      await downloadStudyPdf({ study, result, interviews, t, origin: window.location.origin });
+    } catch { setPdfError(true); }
+    finally { setPdfBusy(false); }
   };
   const refresh = async () => {
     setBusy(true); setError(null);
@@ -71,9 +82,17 @@ export default function SynthesisPanel({ study, userId, workspaceId, studyId, in
     {study.flow_error_code && <p className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm leading-6 text-rose-800" role="alert">{t('research.resultsUpdateFailed')}</p>}
     {error && <ErrorState error={error} />}
     {copyError && <p role="alert" className="text-sm text-amber-800">{t('research.copyFailed')}</p>}
-    {findings.length > 0 && <details className="app-surface-soft rounded-2xl p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-600">{t('research.reportActions')}</summary><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="research-secondary" data-testid="research-copy-synthesis" onClick={copy}>{t(copied ? 'research.copied' : 'research.copySummary')}</button><button type="button" className="research-secondary" data-testid="research-export-synthesis-md" onClick={() => downloadFile({ filename: `${slugifyTitle(study.title)}-report.md`, content: report(), mimeType: 'text/markdown;charset=utf-8' })}>{t('research.exportStudyMd')}</button></div></details>}
+    {findings.length > 0 && <details className="app-surface-soft rounded-2xl p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-600">{t('research.reportActions')}</summary><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="research-secondary" data-testid="research-copy-synthesis" onClick={copy}>{t(copied ? 'research.copied' : 'research.copySummary')}</button><button type="button" className="research-secondary" data-testid="research-export-synthesis-md" onClick={() => downloadFile({ filename: `${slugifyTitle(study.title)}-report.md`, content: report(), mimeType: 'text/markdown;charset=utf-8' })}>{t('research.exportStudyMd')}</button><button type="button" className="research-secondary" data-testid="research-export-synthesis-pdf" onClick={downloadPdf} disabled={pdfBusy} aria-busy={pdfBusy}>{t(pdfBusy ? 'research.pdfPreparing' : 'research.exportStudyPdf')}</button></div>{pdfError && <p role="alert" className="mt-3 text-sm text-rose-700">{t('research.pdfFailed')}</p>}</details>}
     {synthesis.isPending ? <Loading /> : synthesis.isError ? <ErrorState error={synthesis.error} onRetry={() => synthesis.refetch()} /> : findings.length ? <>
-      <div className="grid gap-5 lg:grid-cols-2">{groups.map(([category, title]) => <section key={category} className="app-surface rounded-3xl p-6 sm:p-7" data-testid={`research-findings-${category}`}><h3 className="mb-5 text-xl font-bold tracking-tight text-slate-900">{t(title)}</h3>{findings.filter(finding => finding.category === category).length ? findings.filter(finding => finding.category === category).map(renderFinding) : <p className="text-sm text-slate-500">{t('research.noCategoryFindings')}</p>}</section>)}</div>
+      <div className="grid gap-5 lg:grid-cols-2">{groups.map(([category, title, Icon, iconTone]) => <section key={category} className="app-surface rounded-3xl p-6 sm:p-7" data-testid={`research-findings-${category}`}>
+        <div className="mb-5 flex items-center gap-3">
+          <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTone}`}>
+            {Icon ? <Icon size={20} strokeWidth={1.75} /> : <span className="text-xl font-semibold">!</span>}
+          </span>
+          <h3 className="min-w-0 break-words text-xl font-bold tracking-tight text-slate-900">{t(title)}</h3>
+        </div>
+        {findings.filter(finding => finding.category === category).length ? findings.filter(finding => finding.category === category).map(renderFinding) : <p className="text-sm text-slate-500">{t('research.noCategoryFindings')}</p>}
+      </section>)}</div>
       {legacy.length > 0 && <details className="app-surface rounded-3xl p-6"><summary className="cursor-pointer font-semibold">{t('research.legacyFindings')}</summary><div className="mt-4">{legacy.map(renderFinding)}</div></details>}
     </> : <div className="app-empty-state rounded-3xl p-8"><h3 className="research-section-heading">{t('research.summaryEmptyTitle')}</h3><p className="mt-3 text-sm leading-7 text-slate-600">{study.brief_status === 'draft' ? t('research.confirmBriefFirst') : t('research.synthesisEmpty')}</p><Link className="research-secondary mt-5" to={`#${study.brief_status === 'draft' ? 'brief' : 'interviews'}`}>{t(study.brief_status === 'draft' ? 'research.brief' : 'research.interviews')}</Link></div>}
   </section>;
